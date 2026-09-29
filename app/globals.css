@@ -1,26 +1,82 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --primary: #f16623;
+  --primary-hover: #d95318;
+  --font-sora: 'Sora', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-primary: #f16623;
+  --color-primary-hover: #d95318;
+  --font-sans: var(--font-sora);
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 6px;
+  --radius-xl: 6px;
+  --radius-2xl: 6px;
+  --radius-3xl: 6px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* 1. Global Sora font for each and every text */
+*, *::before, *::after, html, body, button, input, select, textarea, optgroup {
+  font-family: var(--font-sora), 'Sora', sans-serif !important;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 2. Wherever button, input, dropdown, accordions are there max-height 34px */
+button,
+input,
+select,
+[role="button"],
+.btn,
+.dropdown-trigger,
+.accordion-header {
+  max-height: 34px !important;
+  box-sizing: border-box;
+}
+
+/* 3. Wherever border-radius is there max to be 6px */
+*, *::before, *::after {
+  border-top-left-radius: min(var(--tw-border-radius, 6px), 6px);
+  border-top-right-radius: min(var(--tw-border-radius, 6px), 6px);
+  border-bottom-left-radius: min(var(--tw-border-radius, 6px), 6px);
+  border-bottom-right-radius: min(var(--tw-border-radius, 6px), 6px);
+}
+
+/* Ensure common rounded utility classes never exceed 6px */
+.rounded,
+.rounded-sm,
+.rounded-md,
+.rounded-lg,
+.rounded-xl,
+.rounded-2xl,
+.rounded-3xl,
+.rounded-full {
+  border-radius: 6px !important;
+}
+
+/* Custom subtle scrollbar */
+.scrollbar-thin::-webkit-scrollbar {
+  width: 5px;
+}
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #e2e8f0;
+  border-radius: 6px !important;
+}
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: #cbd5e1;
 }

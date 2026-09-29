@@ -1,5 +1,5 @@
 import { ComingSoonView } from "@/components/ComingSoonView";
 
-export default function HomePage() {
+export default function DashboardPage() {
   return <ComingSoonView moduleId="dashboard" />;
 }
