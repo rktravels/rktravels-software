@@ -5,7 +5,7 @@ import { DashboardShell } from "@/components/DashboardShell";
 
 const sora = Sora({
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700", "800"],
+  weight: ["300", "400", "500"],
   variable: "--font-sora",
   display: "swap",
 });
@@ -25,7 +25,7 @@ export default function RootLayout({
       lang="en"
       className={`${sora.variable} ${sora.className} h-full antialiased`}
     >
-      <body className="min-h-full bg-[#f8fafc] text-slate-800 antialiased font-sans selection:bg-[#f16623]/20 selection:text-[#f16623]">
+      <body className="min-h-full bg-[#f8fafc] text-slate-800 antialiased font-sans font-normal selection:bg-[#f16623]/20 selection:text-[#f16623]">
         <DashboardShell>{children}</DashboardShell>
       </body>
     </html>

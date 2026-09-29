@@ -20,8 +20,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         {/* Top Header bar */}
         <Header onOpenMobile={() => setMobileOpen(true)} />
 
-        {/* Page Content */}
-        <main className="flex-1 p-4 sm:p-6 md:p-8">
+        {/* Page Content with compact padding */}
+        <main className="flex-1 p-2.5 sm:p-3.5 md:p-4">
           {children}
         </main>
       </div>

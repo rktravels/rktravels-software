@@ -31,17 +31,17 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
         {/* Brand / Logo Section */}
         <div className="h-14 px-4 flex items-center justify-between border-b border-slate-100 shrink-0">
           <Link href="/dashboard" className="flex items-center gap-2.5 group">
-            <div className="w-[34px] h-[34px] max-h-[34px] rounded-[6px] bg-[#f16623] flex items-center justify-center text-white font-bold text-sm shadow-xs shadow-[#f16623]/25 group-hover:scale-105 transition-transform">
+            <div className="w-[34px] h-[34px] max-h-[34px] rounded-[6px] bg-[#f16623] flex items-center justify-center text-white font-medium text-sm shadow-xs shadow-[#f16623]/25 group-hover:scale-105 transition-transform">
               RK
             </div>
             <div className="flex flex-col">
               <div className="flex items-center gap-1">
-                <span className="font-bold text-base tracking-tight text-slate-900 leading-none">
+                <span className="font-medium text-base tracking-tight text-slate-900 leading-none">
                   RK<span className="text-[#f16623]">Travels</span>
                 </span>
                 <span className="w-1.5 h-1.5 rounded-[2px] bg-[#f16623]"></span>
               </div>
-              <span className="text-[10px] text-slate-400 font-medium tracking-tight">
+              <span className="text-[10px] text-slate-400 font-normal tracking-tight">
                 powered by GamaNext
               </span>
             </div>
@@ -59,7 +59,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
 
         {/* Menu Section Header */}
         <div className="px-4 pt-3.5 pb-1.5 flex items-center justify-between shrink-0">
-          <span className="text-[10px] font-semibold tracking-wider text-slate-400 uppercase">
+          <span className="text-[10px] font-medium tracking-wider text-slate-400 uppercase">
             MENU
           </span>
           <button
@@ -70,7 +70,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
           </button>
         </div>
 
-        {/* Navigation Items List (strictly max-height 34px and rounded 6px per item) */}
+        {/* Navigation Items List (strictly max-height 34px, rounded 6px, max font-weight 500) */}
         <div className="flex-1 px-2.5 py-1 space-y-1 overflow-y-auto scrollbar-thin">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
@@ -86,7 +86,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
                 className={`group flex items-center gap-2.5 px-3 h-[34px] max-h-[34px] rounded-[6px] text-xs font-medium transition-all duration-150 ${
                   isActive
                     ? "bg-[#f16623] text-white shadow-xs shadow-[#f16623]/30"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-normal"
                 }`}
               >
                 <Icon
@@ -112,7 +112,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
               <ArrowLeftRight className="w-3.5 h-3.5 text-slate-400" />
               <span>Onboarding</span>
             </button>
-            <span className="font-medium text-slate-300">RKTravels</span>
+            <span className="font-normal text-slate-400">RKTravels</span>
           </div>
         </div>
       </aside>

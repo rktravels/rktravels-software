@@ -1,6 +1,7 @@
 import {
   LayoutDashboard,
   CalendarCheck,
+  Route,
   CreditCard,
   WalletCards,
   Users,
@@ -56,6 +57,22 @@ export const NAV_ITEMS: PageModuleInfo[] = [
       "Live trip dispatch console with instant WhatsApp passenger confirmations",
       "Dynamic distance & toll-integrated fare calculation engine",
       "Multi-stop scheduling, passenger manifests & cancelation workflows",
+    ],
+  },
+  {
+    id: "travels",
+    name: "Travels",
+    href: "/travels",
+    category: "OPERATIONS",
+    icon: Route,
+    description:
+      "Travel directory and agency contacts registry. Manage partner travels, dispatch networks, and direct phone lines.",
+    primaryAction: "Add Travel",
+    secondaryAction: "Export Travels",
+    plannedFeatures: [
+      "Direct travel operator database with instant call & WhatsApp connect",
+      "Real-time Firebase Firestore synchronization and offline caching",
+      "Associated vehicles, driver roster and active trip assignment",
     ],
   },
   {

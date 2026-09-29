@@ -25,28 +25,28 @@ export function Header({ onOpenMobile }: HeaderProps) {
           <Menu className="w-4 h-4" />
         </button>
 
-        <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400 font-medium">
+        <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400 font-normal">
           <span className="w-1.5 h-1.5 rounded-[2px] bg-emerald-500 animate-pulse"></span>
           <span>System Online</span>
         </div>
       </div>
 
-      {/* Right Controls matching the image */}
+      {/* Right Controls */}
       <div className="flex items-center gap-2 sm:gap-3">
-        {/* Store / Hub Switcher (strictly max-height 34px and rounded 6px) */}
+        {/* Store / Hub Switcher */}
         <button
           type="button"
-          className="hidden sm:inline-flex items-center gap-2 h-[34px] max-h-[34px] px-3 rounded-[6px] border border-slate-200 bg-slate-50/70 hover:bg-slate-100/70 text-xs font-medium text-slate-700 transition"
+          className="hidden sm:inline-flex items-center gap-2 h-[34px] max-h-[34px] px-3 rounded-[6px] border border-slate-200 bg-slate-50/70 hover:bg-slate-100/70 text-xs font-normal text-slate-700 transition"
         >
           <span className="w-1.5 h-1.5 rounded-[2px] bg-[#f16623]"></span>
           <span>Store 1</span>
           <ChevronDown className="w-3.5 h-3.5 text-slate-400 ml-0.5" />
         </button>
 
-        {/* Connect Printer Button (strictly max-height 34px and rounded 6px) */}
+        {/* Connect Printer Button */}
         <button
           type="button"
-          className="hidden md:inline-flex items-center gap-2 h-[34px] max-h-[34px] px-3 rounded-[6px] border border-slate-200 bg-slate-50/70 hover:bg-slate-100/70 text-xs font-medium text-slate-700 transition"
+          className="hidden md:inline-flex items-center gap-2 h-[34px] max-h-[34px] px-3 rounded-[6px] border border-slate-200 bg-slate-50/70 hover:bg-slate-100/70 text-xs font-normal text-slate-700 transition"
         >
           <span className="w-1.5 h-1.5 rounded-[2px] bg-slate-400"></span>
           <Printer className="w-3.5 h-3.5 text-slate-500" />
@@ -55,22 +55,19 @@ export function Header({ onOpenMobile }: HeaderProps) {
 
         {/* User Profile Component */}
         <div className="flex items-center gap-2.5 pl-2 sm:border-l border-slate-200">
-          {/* Avatar initials with #f16623 background, max-height 34px, rounded 6px */}
-          <div className="w-[34px] h-[34px] max-h-[34px] rounded-[6px] bg-[#f16623] flex items-center justify-center text-white text-xs font-bold shadow-xs">
+          <div className="w-[34px] h-[34px] max-h-[34px] rounded-[6px] bg-[#f16623] flex items-center justify-center text-white text-xs font-medium shadow-xs">
             AR
           </div>
 
-          {/* User details */}
           <div className="hidden xl:flex flex-col text-left">
-            <span className="text-xs font-semibold text-slate-800 leading-tight truncate max-w-[130px]">
+            <span className="text-xs font-medium text-slate-800 leading-tight truncate max-w-[130px]">
               arumullasivakrishna6...
             </span>
-            <span className="text-[10px] text-slate-400 font-medium leading-none">
+            <span className="text-[10px] text-slate-400 font-normal leading-none">
               Administrator
             </span>
           </div>
 
-          {/* Logout / Exit icon (max-height 34px, rounded 6px) */}
           <button
             type="button"
             title="Sign out"
