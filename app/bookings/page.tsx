@@ -26,6 +26,8 @@ import {
   QrCode,
   CreditCard,
   Coins,
+  UserCheck,
+  Calendar,
 } from "lucide-react";
 import {
   collection,
@@ -36,6 +38,7 @@ import {
   onSnapshot,
   deleteDoc,
   doc,
+  updateDoc,
   type Timestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -65,6 +68,14 @@ interface BusinessOwnerOption {
   gstNumber?: string;
 }
 
+interface DriverOption {
+  id: string;
+  name: string;
+  mobile: string;
+  vehicleName?: string;
+  licenseNumber?: string;
+}
+
 interface PaymentSplits {
   cash: number;
   upi: number;
@@ -84,6 +95,12 @@ interface BookingRecord {
   clientMobile: string;
   clientEmail?: string;
   companyName?: string;
+  driverId?: string | null;
+  driverName?: string | null;
+  driverMobile?: string | null;
+  pickupDate?: string | null;
+  pickupTime?: string | null;
+  tripStatus?: "unassigned" | "assigned" | "in_progress" | "completed";
   amount: number;
   discountType?: "rupees" | "percent";
   discountValue?: number;
@@ -106,6 +123,27 @@ export default function BookingsPage() {
   const [selectedPlanId, setSelectedPlanId] = useState("");
   const [selectedPlanName, setSelectedPlanName] = useState("");
   const [amount, setAmount] = useState<string>("");
+
+  // Driver Assignment & Timing
+  const [selectedDriverId, setSelectedDriverId] = useState("");
+  const [selectedDriverName, setSelectedDriverName] = useState("");
+  const [selectedDriverMobile, setSelectedDriverMobile] = useState("");
+  const [pickupDate, setPickupDate] = useState<string>(() => {
+    return new Date().toISOString().split("T")[0];
+  });
+  const [pickupTime, setPickupTime] = useState<string>(() => {
+    const now = new Date();
+    const hrs = String(now.getHours()).padStart(2, "0");
+    const mins = String(now.getMinutes()).padStart(2, "0");
+    return `${hrs}:${mins}`;
+  });
+
+  // Reassign Driver State from Table
+  const [assigningBooking, setAssigningBooking] = useState<BookingRecord | null>(
+    null
+  );
+  const [reassignDriverId, setReassignDriverId] = useState("");
+  const [isReassigning, setIsReassigning] = useState(false);
 
   // Discount: Rupees or Percentage
   const [discountType, setDiscountType] = useState<"rupees" | "percent">("rupees");
@@ -149,6 +187,7 @@ export default function BookingsPage() {
 
   // Firestore collections data
   const [plans, setPlans] = useState<PlanItem[]>([]);
+  const [drivers, setDrivers] = useState<DriverOption[]>([]);
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [businessOwners, setBusinessOwners] = useState<BusinessOwnerOption[]>([]);
   const [bookings, setBookings] = useState<BookingRecord[]>([]);
@@ -200,7 +239,45 @@ export default function BookingsPage() {
     }
   }, []);
 
-  // 2. Subscribe to Customers
+  // 2. Subscribe to Drivers
+  useEffect(() => {
+    try {
+      const q = query(collection(db, "drivers"), orderBy("name", "asc"));
+      const unsub = onSnapshot(
+        q,
+        (snap) => {
+          const items: DriverOption[] = snap.docs.map((docSnap) => ({
+            id: docSnap.id,
+            name: docSnap.data().name || "Unnamed Driver",
+            mobile: docSnap.data().mobile || "",
+            vehicleName: docSnap.data().vehicleName || "",
+            licenseNumber: docSnap.data().licenseNumber || "",
+          }));
+          setDrivers(items);
+        },
+        (err) => {
+          console.error("Drivers fallback listener:", err);
+          const fallback = query(collection(db, "drivers"));
+          const unsubFallback = onSnapshot(fallback, (snap) => {
+            const items: DriverOption[] = snap.docs.map((docSnap) => ({
+              id: docSnap.id,
+              name: docSnap.data().name || "Unnamed Driver",
+              mobile: docSnap.data().mobile || "",
+              vehicleName: docSnap.data().vehicleName || "",
+              licenseNumber: docSnap.data().licenseNumber || "",
+            }));
+            setDrivers(items);
+          });
+          return () => unsubFallback();
+        }
+      );
+      return () => unsub();
+    } catch (err) {
+      console.error("Failed to load drivers:", err);
+    }
+  }, []);
+
+  // 3. Subscribe to Customers
   useEffect(() => {
     try {
       const q = query(collection(db, "customers"), orderBy("createdAt", "desc"));
@@ -236,7 +313,7 @@ export default function BookingsPage() {
     }
   }, []);
 
-  // 3. Subscribe to Business Owners
+  // 4. Subscribe to Business Owners
   useEffect(() => {
     try {
       const q = query(
@@ -279,7 +356,7 @@ export default function BookingsPage() {
     }
   }, []);
 
-  // 4. Subscribe to Bookings
+  // 5. Subscribe to Bookings
   useEffect(() => {
     try {
       const q = query(collection(db, "bookings"), orderBy("createdAt", "desc"));
@@ -402,7 +479,6 @@ export default function BookingsPage() {
         createdAt: serverTimestamp(),
       });
 
-      // Auto-select newly created customer
       setSelectedClient({
         id: docRef.id,
         name: tName,
@@ -410,7 +486,6 @@ export default function BookingsPage() {
         email: tEmail || undefined,
       });
 
-      // Reset inline form
       setNewCustName("");
       setNewCustMobile("");
       setNewCustEmail("");
@@ -449,7 +524,6 @@ export default function BookingsPage() {
         createdAt: serverTimestamp(),
       });
 
-      // Auto-select newly created business owner
       setSelectedClient({
         id: docRef.id,
         name: tName,
@@ -458,7 +532,6 @@ export default function BookingsPage() {
         companyName: tCompany,
       });
 
-      // Reset inline form
       setNewOwnerName("");
       setNewOwnerMobile("");
       setNewOwnerCompany("");
@@ -474,7 +547,7 @@ export default function BookingsPage() {
     }
   };
 
-  // Submit Main Booking Form
+  // Submit Main Booking Form with Driver Assignment & Payments Log
   const handleCreateBooking = async (e: React.FormEvent) => {
     e.preventDefault();
     setFeedback(null);
@@ -514,7 +587,6 @@ export default function BookingsPage() {
     setIsSubmittingBooking(true);
 
     try {
-      // Generate clean Booking Reference
       const bookingNo = `RKB-${Date.now().toString().slice(-6)}`;
 
       const splitsData: PaymentSplits | null =
@@ -526,7 +598,8 @@ export default function BookingsPage() {
             }
           : null;
 
-      await addDoc(collection(db, "bookings"), {
+      // 1. Save Booking Document in Firestore
+      const bookingDocRef = await addDoc(collection(db, "bookings"), {
         bookingNumber: bookingNo,
         fromLocation: fromTrimmed,
         toLocation: toTrimmed,
@@ -538,6 +611,12 @@ export default function BookingsPage() {
         clientMobile: selectedClient.mobile,
         clientEmail: selectedClient.email || null,
         companyName: selectedClient.companyName || null,
+        driverId: selectedDriverId || null,
+        driverName: selectedDriverName || null,
+        driverMobile: selectedDriverMobile || null,
+        pickupDate: pickupDate || new Date().toISOString().split("T")[0],
+        pickupTime: pickupTime || "09:00",
+        tripStatus: selectedDriverId ? "assigned" : "unassigned",
         amount: parsedAmount,
         discountType: discountType,
         discountValue: rawDiscountInput,
@@ -547,9 +626,29 @@ export default function BookingsPage() {
         paymentSplits: splitsData,
         receivedAmount: effectiveReceived,
         balanceAmount: balanceDue,
-        status: "confirmed",
+        status: balanceDue === 0 ? "completed" : "confirmed",
         createdAt: serverTimestamp(),
       });
+
+      // 2. If receivedAmount > 0, log to payments collection for the Payments page
+      if (effectiveReceived > 0) {
+        await addDoc(collection(db, "payments"), {
+          bookingId: bookingDocRef.id,
+          bookingNumber: bookingNo,
+          clientType: clientType,
+          clientId: selectedClient.id,
+          clientName: selectedClient.name,
+          clientMobile: selectedClient.mobile,
+          companyName: selectedClient.companyName || null,
+          fromLocation: fromTrimmed,
+          toLocation: toTrimmed,
+          amountCollected: effectiveReceived,
+          paymentMode: paymentMode,
+          splits: splitsData,
+          note: "Advance received on booking creation",
+          createdAt: serverTimestamp(),
+        });
+      }
 
       // Reset form states
       setFromLocation("");
@@ -557,6 +656,9 @@ export default function BookingsPage() {
       setSelectedPlanId("");
       setSelectedPlanName("");
       setAmount("");
+      setSelectedDriverId("");
+      setSelectedDriverName("");
+      setSelectedDriverMobile("");
       setDiscountType("rupees");
       setDiscountValue("0");
       setPaymentMode("cash");
@@ -572,7 +674,11 @@ export default function BookingsPage() {
       setIsOffCanvasOpen(false);
       setFeedback({
         type: "success",
-        message: `Booking #${bookingNo} created successfully for ${selectedClient.name}!`,
+        message: `Booking #${bookingNo} created! ${
+          selectedDriverName
+            ? `Assigned to driver ${selectedDriverName}.`
+            : "Driver can be assigned anytime."
+        }`,
       });
 
       setTimeout(() => setFeedback(null), 4000);
@@ -583,6 +689,41 @@ export default function BookingsPage() {
       setFeedback({ type: "error", message: errMsg });
     } finally {
       setIsSubmittingBooking(false);
+    }
+  };
+
+  // Reassign Driver to an existing booking
+  const handleSaveReassignDriver = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!assigningBooking) return;
+
+    setIsReassigning(true);
+    try {
+      const found = drivers.find((d) => d.id === reassignDriverId);
+      const bookingRef = doc(db, "bookings", assigningBooking.id);
+
+      await updateDoc(bookingRef, {
+        driverId: found ? found.id : null,
+        driverName: found ? found.name : null,
+        driverMobile: found ? found.mobile : null,
+        tripStatus: found ? "assigned" : "unassigned",
+        updatedAt: serverTimestamp(),
+      });
+
+      setFeedback({
+        type: "success",
+        message: found
+          ? `Driver "${found.name}" assigned to Booking #${assigningBooking.bookingNumber}!`
+          : `Booking #${assigningBooking.bookingNumber} marked as unassigned.`,
+      });
+
+      setAssigningBooking(null);
+      setTimeout(() => setFeedback(null), 3000);
+    } catch (err) {
+      console.error("Error reassigning driver:", err);
+      alert("Failed to update driver assignment.");
+    } finally {
+      setIsReassigning(false);
     }
   };
 
@@ -615,7 +756,7 @@ export default function BookingsPage() {
         b.fromLocation?.toLowerCase().includes(q) ||
         b.toLocation?.toLowerCase().includes(q) ||
         b.planName?.toLowerCase().includes(q) ||
-        b.paymentMode?.toLowerCase().includes(q) ||
+        b.driverName?.toLowerCase().includes(q) ||
         (b.companyName && b.companyName.toLowerCase().includes(q))
     );
   }, [bookings, tableSearchQuery]);
@@ -660,7 +801,7 @@ export default function BookingsPage() {
               </span>
             </div>
             <p className="text-[11px] text-slate-400 font-normal">
-              Manage routes, tariffs, customer/owner assignments & instant billing
+              Manage routes, tariffs, customer/owner assignments & instant driver dispatch
             </p>
           </div>
         </div>
@@ -671,7 +812,7 @@ export default function BookingsPage() {
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Search booking, client, route, mode..."
+              placeholder="Search booking, driver, client..."
               value={tableSearchQuery}
               onChange={(e) => setTableSearchQuery(e.target.value)}
               className="w-full h-[34px] max-h-[34px] pl-8 pr-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal transition"
@@ -800,9 +941,7 @@ export default function BookingsPage() {
               {tableSearchQuery ? "No matching bookings found" : "No bookings created yet"}
             </h4>
             <p className="text-[11px] text-slate-400 max-w-sm mx-auto mt-0.5 font-normal">
-              {tableSearchQuery
-                ? "Try searching with a different client name, booking ID, or route."
-                : "Click on 'Add Booking' to select route locations, tariff plan, customer or business owner, discount & payment split."}
+              Click on &apos;Add Booking&apos; to schedule trips, assign drivers, and manage tariffs.
             </p>
             {!tableSearchQuery && (
               <button
@@ -821,27 +960,17 @@ export default function BookingsPage() {
               <thead className="bg-slate-50/80 text-[10px] uppercase tracking-wider text-slate-500 font-medium border-b border-slate-200">
                 <tr>
                   <th className="py-2 px-3 font-medium">Booking #</th>
+                  <th className="py-2 px-3 font-medium">Pickup Timing</th>
                   <th className="py-2 px-3 font-medium">Route (From ➔ To)</th>
-                  <th className="py-2 px-3 font-medium">Client / Stakeholder</th>
-                  <th className="py-2 px-3 font-medium">Plan & Tariff</th>
+                  <th className="py-2 px-3 font-medium">Client</th>
+                  <th className="py-2 px-3 font-medium">Assigned Driver</th>
                   <th className="py-2 px-3 font-medium">Net Amount</th>
-                  <th className="py-2 px-3 font-medium">Payment Mode</th>
                   <th className="py-2 px-3 font-medium">Received / Balance</th>
-                  <th className="py-2 px-3 font-medium">Date</th>
                   <th className="py-2 px-3 text-right font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredBookings.map((b) => {
-                  let dateStr = "Just now";
-                  if (b.createdAt && typeof b.createdAt.toDate === "function") {
-                    dateStr = b.createdAt.toDate().toLocaleDateString("en-IN", {
-                      day: "2-digit",
-                      month: "short",
-                      year: "numeric",
-                    });
-                  }
-
                   const isCust = b.clientType === "customer";
 
                   return (
@@ -856,6 +985,19 @@ export default function BookingsPage() {
                         </span>
                       </td>
 
+                      {/* Pickup Timing */}
+                      <td className="py-2 px-3">
+                        <div className="flex flex-col">
+                          <span className="font-mono text-xs font-medium text-slate-900 flex items-center gap-1">
+                            <Clock className="w-3 h-3 text-[#f16623]" />
+                            {b.pickupTime || "09:00"}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-normal">
+                            {b.pickupDate || "Today"}
+                          </span>
+                        </div>
+                      </td>
+
                       {/* Route */}
                       <td className="py-2 px-3">
                         <div className="flex items-center gap-1.5">
@@ -867,6 +1009,9 @@ export default function BookingsPage() {
                             {b.toLocation}
                           </span>
                         </div>
+                        <span className="text-[10px] text-slate-400 block font-normal">
+                          {b.planName}
+                        </span>
                       </td>
 
                       {/* Client */}
@@ -883,34 +1028,58 @@ export default function BookingsPage() {
                                   : "bg-purple-50 text-purple-700 border-purple-200"
                               }`}
                             >
-                              {isCust ? "Customer" : "Business Owner"}
+                              {isCust ? "Customer" : "Owner"}
                             </span>
                           </div>
-                          <div className="flex items-center gap-2 text-[10px] text-slate-400 font-normal">
-                            <span className="flex items-center gap-0.5">
-                              <PhoneCall className="w-2.5 h-2.5" />
-                              {b.clientMobile}
-                            </span>
-                            {b.companyName && (
-                              <span className="text-slate-500">
-                                • {b.companyName}
-                              </span>
-                            )}
-                          </div>
+                          <span className="text-[10px] text-slate-400 font-normal flex items-center gap-0.5">
+                            <PhoneCall className="w-2.5 h-2.5" />
+                            {b.clientMobile}
+                          </span>
                         </div>
                       </td>
 
-                      {/* Plan */}
+                      {/* REQUIREMENT 2: ASSIGNED DRIVER */}
                       <td className="py-2 px-3">
-                        <span className="px-2 py-0.5 rounded-[4px] bg-orange-50 text-[#f16623] border border-[#f16623]/20 font-medium text-[11px] inline-flex items-center gap-1">
-                          <Layers className="w-3 h-3 shrink-0" />
-                          <span className="truncate max-w-[130px]">
-                            {b.planName}
-                          </span>
-                        </span>
+                        {b.driverName ? (
+                          <div className="flex items-center justify-between gap-1.5">
+                            <div className="flex flex-col">
+                              <span className="font-medium text-slate-900 text-xs flex items-center gap-1">
+                                <UserCheck className="w-3 h-3 text-emerald-600" />
+                                {b.driverName}
+                              </span>
+                              {b.driverMobile && (
+                                <span className="text-[10px] text-slate-400 font-normal">
+                                  {b.driverMobile}
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAssigningBooking(b);
+                                setReassignDriverId(b.driverId || "");
+                              }}
+                              className="text-[10px] text-slate-400 hover:text-[#f16623] underline"
+                            >
+                              Change
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAssigningBooking(b);
+                              setReassignDriverId("");
+                            }}
+                            className="h-[26px] max-h-[34px] px-2 rounded-[4px] bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 text-[10px] font-medium inline-flex items-center gap-1 transition cursor-pointer"
+                          >
+                            <UserCheck className="w-3 h-3 text-amber-600" />
+                            <span>Assign Driver</span>
+                          </button>
+                        )}
                       </td>
 
-                      {/* Net Amount with discount details */}
+                      {/* Net Amount */}
                       <td className="py-2 px-3">
                         <div className="flex flex-col">
                           <span className="font-mono font-medium text-slate-900 text-xs">
@@ -918,49 +1087,10 @@ export default function BookingsPage() {
                           </span>
                           {b.discount > 0 && (
                             <span className="text-[10px] text-emerald-600 font-normal">
-                              {b.discountType === "percent"
-                                ? `(-₹${b.discount} / ${b.discountValue}%)`
-                                : `(-₹${b.discount})`}
+                              (-₹{b.discount})
                             </span>
                           )}
                         </div>
-                      </td>
-
-                      {/* Payment Mode Badge & Breakdown */}
-                      <td className="py-2 px-3">
-                        {b.paymentMode === "cash" && (
-                          <span className="px-2 py-0.5 rounded-[4px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium text-[10px] inline-flex items-center gap-1">
-                            <Banknote className="w-3 h-3" />
-                            Cash
-                          </span>
-                        )}
-                        {b.paymentMode === "upi" && (
-                          <span className="px-2 py-0.5 rounded-[4px] bg-blue-50 text-blue-700 border border-blue-200 font-medium text-[10px] inline-flex items-center gap-1">
-                            <QrCode className="w-3 h-3" />
-                            UPI
-                          </span>
-                        )}
-                        {b.paymentMode === "card" && (
-                          <span className="px-2 py-0.5 rounded-[4px] bg-purple-50 text-purple-700 border border-purple-200 font-medium text-[10px] inline-flex items-center gap-1">
-                            <CreditCard className="w-3 h-3" />
-                            Card
-                          </span>
-                        )}
-                        {b.paymentMode === "split" && (
-                          <div className="flex flex-col gap-0.5">
-                            <span className="px-1.5 py-0.5 rounded-[4px] bg-orange-50 text-[#f16623] border border-[#f16623]/25 font-medium text-[10px] inline-flex items-center gap-1 w-fit">
-                              <Coins className="w-3 h-3" />
-                              Split Payment
-                            </span>
-                            {b.paymentSplits && (
-                              <span className="text-[9px] text-slate-500 font-mono">
-                                {b.paymentSplits.cash > 0 && `Cash: ₹${b.paymentSplits.cash} `}
-                                {b.paymentSplits.upi > 0 && `UPI: ₹${b.paymentSplits.upi} `}
-                                {b.paymentSplits.card > 0 && `Card: ₹${b.paymentSplits.card}`}
-                              </span>
-                            )}
-                          </div>
-                        )}
                       </td>
 
                       {/* Received & Balance */}
@@ -979,11 +1109,6 @@ export default function BookingsPage() {
                             Bal: ₹{Number(b.balanceAmount).toLocaleString("en-IN")}
                           </span>
                         </div>
-                      </td>
-
-                      {/* Date */}
-                      <td className="py-2 px-3 text-slate-400 text-[10px] font-normal">
-                        {dateStr}
                       </td>
 
                       {/* Actions */}
@@ -1008,17 +1133,17 @@ export default function BookingsPage() {
         )}
       </div>
 
-      {/* Right Side Off-Canvas Drawer for Adding Booking */}
+      {/* Right Side Off-Canvas Drawer for Creating New Booking */}
       <OffCanvas
         isOpen={isOffCanvasOpen}
         onClose={() => {
           if (!isSubmittingBooking) setIsOffCanvasOpen(false);
         }}
         title="Create New Booking"
-        subtitle="Route dispatch, tariff plan selection, customer/business owner billing"
+        subtitle="Route dispatch, driver assignment, customer/business owner billing"
       >
         <form onSubmit={handleCreateBooking} className="space-y-3.5">
-          {/* Section: Route Locations (From / To) */}
+          {/* Section: Route Coordinates */}
           <div className="bg-slate-50/70 p-2.5 rounded-[6px] border border-slate-200/80 space-y-2.5">
             <span className="text-[10px] font-medium text-slate-700 uppercase tracking-wider flex items-center gap-1">
               <MapPin className="w-3 h-3 text-[#f16623]" />
@@ -1026,7 +1151,6 @@ export default function BookingsPage() {
             </span>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {/* From Location */}
               <div className="space-y-1">
                 <label
                   htmlFor="from-location"
@@ -1045,7 +1169,6 @@ export default function BookingsPage() {
                 />
               </div>
 
-              {/* To Location */}
               <div className="space-y-1">
                 <label
                   htmlFor="to-location"
@@ -1066,7 +1189,75 @@ export default function BookingsPage() {
             </div>
           </div>
 
-          {/* Section: Select the Plan */}
+          {/* Section: REQUIREMENT 2 - Pickup Timing & Driver Assignment */}
+          <div className="bg-slate-50/70 p-2.5 rounded-[6px] border border-slate-200/80 space-y-2.5">
+            <span className="text-[10px] font-medium text-slate-700 uppercase tracking-wider flex items-center gap-1">
+              <UserCheck className="w-3 h-3 text-[#f16623]" />
+              Pickup Schedule & Driver Assignment
+            </span>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider flex items-center gap-1">
+                  <Calendar className="w-3 h-3 text-slate-400" />
+                  Pickup Date <span className="text-[#f16623]">*</span>
+                </label>
+                <input
+                  type="date"
+                  required
+                  value={pickupDate}
+                  onChange={(e) => setPickupDate(e.target.value)}
+                  className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] font-normal"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider flex items-center gap-1">
+                  <Clock className="w-3 h-3 text-slate-400" />
+                  Pickup Time <span className="text-[#f16623]">*</span>
+                </label>
+                <input
+                  type="time"
+                  required
+                  value={pickupTime}
+                  onChange={(e) => setPickupTime(e.target.value)}
+                  className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] font-normal"
+                />
+              </div>
+            </div>
+
+            {/* Driver Dropdown */}
+            <div className="space-y-1 pt-1">
+              <label
+                htmlFor="driver-select"
+                className="text-[10px] font-medium text-slate-600 uppercase tracking-wider flex items-center gap-1"
+              >
+                <UserCheck className="w-3 h-3 text-[#f16623]" />
+                Assign Driver (Optional)
+              </label>
+              <select
+                id="driver-select"
+                value={selectedDriverId}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSelectedDriverId(val);
+                  const found = drivers.find((d) => d.id === val);
+                  setSelectedDriverName(found ? found.name : "");
+                  setSelectedDriverMobile(found ? found.mobile : "");
+                }}
+                className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] font-normal"
+              >
+                <option value="">-- Assign Later / Unassigned --</option>
+                {drivers.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name} {d.mobile ? `(${d.mobile})` : ""} {d.vehicleName ? `• ${d.vehicleName}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Section: Select Plan */}
           <div className="space-y-1">
             <div className="flex items-center justify-between">
               <label
@@ -1098,16 +1289,6 @@ export default function BookingsPage() {
                 </option>
               ))}
             </select>
-
-            {plans.length === 0 && (
-              <p className="text-[10px] text-slate-400">
-                No plans created yet. Create a plan in the{" "}
-                <Link href="/plans" className="text-[#f16623] underline">
-                  Plans page
-                </Link>
-                .
-              </p>
-            )}
           </div>
 
           {/* Section: Client Selection (Customer vs Business Owner) */}
@@ -1118,7 +1299,6 @@ export default function BookingsPage() {
                 Client / Account Type <span className="text-[#f16623]">*</span>
               </span>
 
-              {/* Toggle switch between Customer and Business Owner */}
               <div className="flex rounded-[6px] bg-slate-200/80 p-0.5 text-xs">
                 <button
                   type="button"
@@ -1157,7 +1337,6 @@ export default function BookingsPage() {
               </div>
             </div>
 
-            {/* Display Selected Client (if one is chosen) */}
             {selectedClient ? (
               <div className="bg-white p-2 rounded-[6px] border border-[#f16623]/30 flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -1194,7 +1373,6 @@ export default function BookingsPage() {
                 </button>
               </div>
             ) : (
-              /* Search & Add Client Box */
               <div className="space-y-2">
                 <div className="flex items-center gap-1.5">
                   <div className="relative flex-1">
@@ -1204,7 +1382,7 @@ export default function BookingsPage() {
                       placeholder={`Search ${
                         clientType === "customer"
                           ? "customer by name or mobile..."
-                          : "business owner by name, mobile, or company..."
+                          : "business owner by name, mobile, company..."
                       }`}
                       value={clientSearchQuery}
                       onChange={(e) => setClientSearchQuery(e.target.value)}
@@ -1212,7 +1390,6 @@ export default function BookingsPage() {
                     />
                   </div>
 
-                  {/* Add Customer / Owner Button */}
                   <button
                     type="button"
                     onClick={() => {
@@ -1225,19 +1402,15 @@ export default function BookingsPage() {
                       }
                     }}
                     className="h-[34px] max-h-[34px] px-2.5 rounded-[6px] bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium flex items-center gap-1 transition shrink-0 cursor-pointer"
-                    title={`Add New ${
-                      clientType === "customer" ? "Customer" : "Business Owner"
-                    }`}
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>
-                      Add{" "}
-                      {clientType === "customer" ? "Customer" : "Owner"}
+                      Add {clientType === "customer" ? "Customer" : "Owner"}
                     </span>
                   </button>
                 </div>
 
-                {/* Inline Add Customer Sub-Form */}
+                {/* Inline Add Customer */}
                 {showAddCustomerInline && clientType === "customer" && (
                   <div className="bg-white p-2.5 rounded-[6px] border border-orange-200/80 shadow-xs space-y-2">
                     <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
@@ -1260,21 +1433,21 @@ export default function BookingsPage() {
                         placeholder="Customer Name *"
                         value={newCustName}
                         onChange={(e) => setNewCustName(e.target.value)}
-                        className="h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623]"
+                        className="h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
                       />
                       <input
                         type="tel"
                         placeholder="Mobile Number *"
                         value={newCustMobile}
                         onChange={(e) => setNewCustMobile(e.target.value)}
-                        className="h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623]"
+                        className="h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
                       />
                       <input
                         type="email"
                         placeholder="Email (Optional)"
                         value={newCustEmail}
                         onChange={(e) => setNewCustEmail(e.target.value)}
-                        className="h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623]"
+                        className="h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
                       />
                     </div>
 
@@ -1296,7 +1469,7 @@ export default function BookingsPage() {
                   </div>
                 )}
 
-                {/* Inline Add Business Owner Sub-Form */}
+                {/* Inline Add Business Owner */}
                 {showAddOwnerInline && clientType === "business_owner" && (
                   <div className="bg-white p-2.5 rounded-[6px] border border-orange-200/80 shadow-xs space-y-2">
                     <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
@@ -1319,28 +1492,28 @@ export default function BookingsPage() {
                         placeholder="Owner Name *"
                         value={newOwnerName}
                         onChange={(e) => setNewOwnerName(e.target.value)}
-                        className="h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623]"
+                        className="h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
                       />
                       <input
                         type="tel"
                         placeholder="Mobile Number *"
                         value={newOwnerMobile}
                         onChange={(e) => setNewOwnerMobile(e.target.value)}
-                        className="h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623]"
+                        className="h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
                       />
                       <input
                         type="text"
                         placeholder="Company Name *"
                         value={newOwnerCompany}
                         onChange={(e) => setNewOwnerCompany(e.target.value)}
-                        className="h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623]"
+                        className="h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
                       />
                       <input
                         type="text"
                         placeholder="GST Number (Optional)"
                         value={newOwnerGst}
                         onChange={(e) => setNewOwnerGst(e.target.value)}
-                        className="h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623]"
+                        className="h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
                       />
                     </div>
 
@@ -1442,17 +1615,15 @@ export default function BookingsPage() {
             )}
           </div>
 
-          {/* Section: Financials (Amount, Discount Mode, Payment Mode & Split) */}
+          {/* Section: Financials (Amount, Attached Discount & Payment Modes) */}
           <div className="bg-slate-50/70 p-2.5 rounded-[6px] border border-slate-200/80 space-y-2.5">
             <span className="text-[10px] font-medium text-slate-700 uppercase tracking-wider flex items-center gap-1">
               <IndianRupee className="w-3 h-3 text-[#f16623]" />
               Tariff, Discount & Payment Modes
             </span>
 
-            {/* Row 1: Amount & Discount */}
-            {/* Row 1: Amount & Discount */}
+            {/* Row 1: Amount & Attached Discount Segment */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {/* Fare / Amount */}
               <div className="space-y-1">
                 <label
                   htmlFor="booking-amount"
@@ -1548,7 +1719,6 @@ export default function BookingsPage() {
               </label>
 
               <div className="grid grid-cols-4 gap-1.5">
-                {/* Cash */}
                 <button
                   type="button"
                   onClick={() => setPaymentMode("cash")}
@@ -1562,7 +1732,6 @@ export default function BookingsPage() {
                   <span>Cash</span>
                 </button>
 
-                {/* UPI */}
                 <button
                   type="button"
                   onClick={() => setPaymentMode("upi")}
@@ -1576,7 +1745,6 @@ export default function BookingsPage() {
                   <span>UPI</span>
                 </button>
 
-                {/* Card */}
                 <button
                   type="button"
                   onClick={() => setPaymentMode("card")}
@@ -1590,12 +1758,9 @@ export default function BookingsPage() {
                   <span>Card</span>
                 </button>
 
-                {/* Split */}
                 <button
                   type="button"
-                  onClick={() => {
-                    setPaymentMode("split");
-                  }}
+                  onClick={() => setPaymentMode("split")}
                   className={`h-[34px] max-h-[34px] rounded-[6px] border text-xs font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
                     paymentMode === "split"
                       ? "bg-orange-50 border-[#f16623] text-[#f16623] shadow-xs"
@@ -1608,7 +1773,7 @@ export default function BookingsPage() {
               </div>
             </div>
 
-            {/* Row 3: Received Amount Inputs (Single Mode vs Split Mode) */}
+            {/* Row 3: Received Amount Inputs */}
             {paymentMode !== "split" ? (
               <div className="space-y-1">
                 <div className="flex items-center justify-between">
@@ -1642,7 +1807,6 @@ export default function BookingsPage() {
                 </div>
               </div>
             ) : (
-              /* Split Breakdown Inputs: Cash, UPI, Card */
               <div className="p-2 bg-white rounded-[6px] border border-orange-200 space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-[10px] font-medium text-slate-800 uppercase tracking-wider flex items-center gap-1">
@@ -1655,7 +1819,6 @@ export default function BookingsPage() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
-                  {/* Split Cash */}
                   <div className="space-y-0.5">
                     <label className="text-[9px] font-medium text-slate-600 flex items-center gap-1">
                       <Banknote className="w-2.5 h-2.5 text-emerald-600" />
@@ -1667,11 +1830,10 @@ export default function BookingsPage() {
                       placeholder="0"
                       value={splitCash}
                       onChange={(e) => setSplitCash(e.target.value)}
-                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623]"
+                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
                     />
                   </div>
 
-                  {/* Split UPI */}
                   <div className="space-y-0.5">
                     <label className="text-[9px] font-medium text-slate-600 flex items-center gap-1">
                       <QrCode className="w-2.5 h-2.5 text-blue-600" />
@@ -1683,11 +1845,10 @@ export default function BookingsPage() {
                       placeholder="0"
                       value={splitUpi}
                       onChange={(e) => setSplitUpi(e.target.value)}
-                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623]"
+                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
                     />
                   </div>
 
-                  {/* Split Card */}
                   <div className="space-y-0.5">
                     <label className="text-[9px] font-medium text-slate-600 flex items-center gap-1">
                       <CreditCard className="w-2.5 h-2.5 text-purple-600" />
@@ -1699,7 +1860,7 @@ export default function BookingsPage() {
                       placeholder="0"
                       value={splitCard}
                       onChange={(e) => setSplitCard(e.target.value)}
-                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623]"
+                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
                     />
                   </div>
                 </div>
@@ -1777,6 +1938,91 @@ export default function BookingsPage() {
             </button>
           </div>
         </form>
+      </OffCanvas>
+
+      {/* REASSIGN DRIVER MODAL */}
+      <OffCanvas
+        isOpen={Boolean(assigningBooking)}
+        onClose={() => {
+          if (!isReassigning) setAssigningBooking(null);
+        }}
+        title="Assign Driver"
+        subtitle={`Booking #${assigningBooking?.bookingNumber || ""} • ${assigningBooking?.fromLocation || ""} ➔ ${assigningBooking?.toLocation || ""}`}
+      >
+        {assigningBooking && (
+          <form onSubmit={handleSaveReassignDriver} className="space-y-3.5">
+            <div className="bg-slate-50 p-2.5 rounded-[6px] border border-slate-200/80 space-y-1.5 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-normal">Passenger / Client:</span>
+                <span className="font-medium text-slate-900">{assigningBooking.clientName}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-normal">Pickup Time:</span>
+                <span className="font-mono font-medium text-slate-900">
+                  {assigningBooking.pickupTime || "09:00"} ({assigningBooking.pickupDate || "Today"})
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-slate-500 font-normal">Currently Assigned:</span>
+                <span className="font-medium text-[#f16623]">
+                  {assigningBooking.driverName || "None (Unassigned)"}
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label
+                htmlFor="reassign-driver"
+                className="text-[10px] font-medium text-slate-600 uppercase tracking-wider flex items-center gap-1"
+              >
+                <UserCheck className="w-3 h-3 text-[#f16623]" />
+                Select Fleet Driver <span className="text-[#f16623]">*</span>
+              </label>
+              <select
+                id="reassign-driver"
+                value={reassignDriverId}
+                onChange={(e) => setReassignDriverId(e.target.value)}
+                className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal"
+              >
+                <option value="">-- Remove Driver (Mark Unassigned) --</option>
+                {drivers.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name} {d.mobile ? `(${d.mobile})` : ""} {d.vehicleName ? `• ${d.vehicleName}` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={isReassigning}
+                onClick={() => setAssigningBooking(null)}
+                className="h-[34px] max-h-[34px] px-3 rounded-[6px] border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-medium transition cursor-pointer"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="submit"
+                disabled={isReassigning}
+                className="h-[34px] max-h-[34px] px-4 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] disabled:opacity-60 text-white text-xs font-medium shadow-xs shadow-[#f16623]/25 transition flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                {isReassigning ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Assigning...</span>
+                  </>
+                ) : (
+                  <>
+                    <UserCheck className="w-3.5 h-3.5" />
+                    <span>Confirm Assignment</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        )}
       </OffCanvas>
     </div>
   );

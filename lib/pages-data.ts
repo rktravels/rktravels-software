@@ -11,6 +11,7 @@ import {
   Car,
   UserCog,
   ShieldCheck,
+  Compass,
   type LucideIcon,
 } from "lucide-react";
 
@@ -169,6 +170,22 @@ export const NAV_ITEMS: PageModuleInfo[] = [
       "Live GPS status, active duty shifts & vehicle assignment pairing",
       "Commercial driving license, badge & police verification expiry alerts",
       "Performance incentives, customer rating logs & tip disbursements",
+    ],
+  },
+  {
+    id: "driver-trip-plan",
+    name: "Driver Trip Plan",
+    href: "/driver-trip-plan",
+    category: "FLEET & CREW",
+    icon: Compass,
+    description:
+      "Chronological driver trip manifest, timing-ordered run sheets, and on-trip fare settlement with completion logging.",
+    primaryAction: "Trip Manifest",
+    secondaryAction: "Driver Dispatch",
+    plannedFeatures: [
+      "Chronological timing-wise itinerary (earliest trip first)",
+      "Instant trip completion with passenger payment settlement",
+      "Real-time fare reconciliation with payments register",
     ],
   },
   {
