@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, Fragment } from "react";
 import Link from "next/link";
 import {
   WalletCards,
@@ -17,11 +17,13 @@ import {
   Banknote,
   QrCode,
   CreditCard,
+  Coins,
   Layers,
   ChevronDown,
   ChevronUp,
   Receipt,
   FileCheck,
+  X,
 } from "lucide-react";
 import {
   collection,
@@ -93,15 +95,31 @@ export default function CreditPage() {
   // Expanded client row in customer/owner views
   const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
 
-  // Partial Payment Settlement Off-Canvas state
+  // INLINE Quick Collect on each order row
+  const [activeInlineOrderId, setActiveInlineOrderId] = useState<string | null>(
+    null
+  );
+  const [inlineAmount, setInlineAmount] = useState<string>("");
+  const [inlineMethod, setInlineMethod] = useState<
+    "cash" | "upi" | "card" | "split"
+  >("cash");
+  const [inlineSplitCash, setInlineSplitCash] = useState<string>("");
+  const [inlineSplitUpi, setInlineSplitUpi] = useState<string>("");
+  const [inlineSplitCard, setInlineSplitCard] = useState<string>("");
+  const [isSubmittingInline, setIsSubmittingInline] = useState(false);
+
+  // DRAWER Collect state (for full view)
   const [selectedBookingForPayment, setSelectedBookingForPayment] =
     useState<BookingRecord | null>(null);
   const [collectAmount, setCollectAmount] = useState<string>("");
-  const [collectMode, setCollectMode] = useState<"cash" | "upi" | "card">(
-    "cash"
-  );
-  const [collectNote, setCollectNote] = useState<string>("");
+  const [collectMode, setCollectMode] = useState<
+    "cash" | "upi" | "card" | "split"
+  >("cash");
+  const [collectSplitCash, setCollectSplitCash] = useState<string>("");
+  const [collectSplitUpi, setCollectSplitUpi] = useState<string>("");
+  const [collectSplitCard, setCollectSplitCard] = useState<string>("");
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
     message: string;
@@ -271,28 +289,133 @@ export default function CreditPage() {
     );
   }, [ownerSummaries, searchQuery]);
 
-  // Open Collect Payment Drawer
-  const handleOpenCollectPayment = (b: BookingRecord) => {
+  // Open Inline Quick Collect on a specific order
+  const handleOpenInlineCollect = (b: BookingRecord) => {
+    if (activeInlineOrderId === b.id) {
+      setActiveInlineOrderId(null);
+      return;
+    }
+    setActiveInlineOrderId(b.id);
+    setInlineAmount(String(b.balanceAmount));
+    setInlineMethod("cash");
+    setInlineSplitCash("");
+    setInlineSplitUpi("");
+    setInlineSplitCard("");
+  };
+
+  // Submit Inline Quick Payment
+  const handleSubmitInlinePayment = async (b: BookingRecord) => {
+    let paymentNum = Number(inlineAmount);
+
+    if (inlineMethod === "split") {
+      const c = Math.max(0, Number(inlineSplitCash) || 0);
+      const u = Math.max(0, Number(inlineSplitUpi) || 0);
+      const cd = Math.max(0, Number(inlineSplitCard) || 0);
+      paymentNum = c + u + cd;
+    }
+
+    if (isNaN(paymentNum) || paymentNum <= 0) {
+      alert("Please enter a payment amount greater than 0.");
+      return;
+    }
+
+    if (paymentNum > b.balanceAmount) {
+      alert(
+        `Amount cannot exceed the current balance due of ₹${b.balanceAmount.toLocaleString(
+          "en-IN"
+        )}.`
+      );
+      return;
+    }
+
+    setIsSubmittingInline(true);
+
+    try {
+      const newReceived = (b.receivedAmount || 0) + paymentNum;
+      const newBalance = Math.max(0, (b.balanceAmount || 0) - paymentNum);
+
+      // Update in Firestore
+      const bookingRef = doc(db, "bookings", b.id);
+      await updateDoc(bookingRef, {
+        receivedAmount: newReceived,
+        balanceAmount: newBalance,
+        status: newBalance === 0 ? "completed" : "confirmed",
+        updatedAt: serverTimestamp(),
+      });
+
+      // Record in payments ledger
+      await addDoc(collection(db, "payments"), {
+        bookingId: b.id,
+        bookingNumber: b.bookingNumber,
+        clientType: b.clientType,
+        clientId: b.clientId,
+        clientName: b.clientName,
+        clientMobile: b.clientMobile,
+        companyName: b.companyName || null,
+        amountCollected: paymentNum,
+        paymentMode: inlineMethod,
+        splits:
+          inlineMethod === "split"
+            ? {
+                cash: Number(inlineSplitCash) || 0,
+                upi: Number(inlineSplitUpi) || 0,
+                card: Number(inlineSplitCard) || 0,
+              }
+            : null,
+        createdAt: serverTimestamp(),
+      });
+
+      setFeedback({
+        type: "success",
+        message: `₹${paymentNum.toLocaleString(
+          "en-IN"
+        )} collected via ${inlineMethod.toUpperCase()} for Booking #${
+          b.bookingNumber
+        }!`,
+      });
+
+      setActiveInlineOrderId(null);
+      setTimeout(() => setFeedback(null), 4000);
+    } catch (err) {
+      console.error("Error saving inline payment:", err);
+      alert("Failed to record payment. Please try again.");
+    } finally {
+      setIsSubmittingInline(false);
+    }
+  };
+
+  // Open Drawer Collect Payment
+  const handleOpenDrawerCollect = (b: BookingRecord) => {
     setSelectedBookingForPayment(b);
     setCollectAmount(String(b.balanceAmount));
     setCollectMode("cash");
-    setCollectNote("");
+    setCollectSplitCash("");
+    setCollectSplitUpi("");
+    setCollectSplitCard("");
   };
 
-  // Submit Partial Payment Collection
-  const handleSubmitPayment = async (e: React.FormEvent) => {
+  // Submit Drawer Payment
+  const handleSubmitDrawerPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedBookingForPayment) return;
 
-    const paymentNum = Number(collectAmount);
+    let paymentNum = Number(collectAmount);
+
+    if (collectMode === "split") {
+      const c = Math.max(0, Number(collectSplitCash) || 0);
+      const u = Math.max(0, Number(collectSplitUpi) || 0);
+      const cd = Math.max(0, Number(collectSplitCard) || 0);
+      paymentNum = c + u + cd;
+    }
+
     if (isNaN(paymentNum) || paymentNum <= 0) {
-      alert("Please enter a valid payment amount greater than 0.");
+      alert("Please enter a payment amount greater than 0.");
       return;
     }
 
     if (paymentNum > selectedBookingForPayment.balanceAmount) {
       alert(
-        `Amount cannot exceed the current balance due of ₹${selectedBookingForPayment.balanceAmount.toLocaleString(
+        `Amount cannot exceed the balance due of ₹${selectedBookingForPayment.balanceAmount.toLocaleString(
           "en-IN"
         )}.`
       );
@@ -309,7 +432,6 @@ export default function CreditPage() {
         (selectedBookingForPayment.balanceAmount || 0) - paymentNum
       );
 
-      // 1. Update booking in Firestore
       const bookingRef = doc(db, "bookings", selectedBookingForPayment.id);
       await updateDoc(bookingRef, {
         receivedAmount: newReceived,
@@ -318,7 +440,6 @@ export default function CreditPage() {
         updatedAt: serverTimestamp(),
       });
 
-      // 2. Record payment transaction in payments collection
       await addDoc(collection(db, "payments"), {
         bookingId: selectedBookingForPayment.id,
         bookingNumber: selectedBookingForPayment.bookingNumber,
@@ -329,7 +450,14 @@ export default function CreditPage() {
         companyName: selectedBookingForPayment.companyName || null,
         amountCollected: paymentNum,
         paymentMode: collectMode,
-        note: collectNote.trim() || null,
+        splits:
+          collectMode === "split"
+            ? {
+                cash: Number(collectSplitCash) || 0,
+                upi: Number(collectSplitUpi) || 0,
+                card: Number(collectSplitCard) || 0,
+              }
+            : null,
         createdAt: serverTimestamp(),
       });
 
@@ -337,7 +465,7 @@ export default function CreditPage() {
         type: "success",
         message: `₹${paymentNum.toLocaleString(
           "en-IN"
-        )} collected successfully for Booking #${
+        )} collected via ${collectMode.toUpperCase()} for Booking #${
           selectedBookingForPayment.bookingNumber
         }!`,
       });
@@ -345,7 +473,7 @@ export default function CreditPage() {
       setSelectedBookingForPayment(null);
       setTimeout(() => setFeedback(null), 4000);
     } catch (err) {
-      console.error("Error submitting credit settlement payment:", err);
+      console.error("Error submitting drawer payment:", err);
       alert("Failed to record payment. Please try again.");
     } finally {
       setIsSubmittingPayment(false);
@@ -377,11 +505,11 @@ export default function CreditPage() {
                 Credit & Partial Payment Ledgers
               </h1>
               <span className="px-2 py-0.5 rounded-[6px] text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
-                {creditBookings.length} Pending Orders
+                {creditBookings.length} Orders with Dues
               </span>
             </div>
             <p className="text-[11px] text-slate-400 font-normal">
-              Track outstanding dues across orders, customers and business partners
+              Quickly collect pending payments order-wise, customer-wise and partner-wise
             </p>
           </div>
         </div>
@@ -450,7 +578,7 @@ export default function CreditPage() {
         <div className="bg-white p-2.5 rounded-[6px] border border-slate-200/80 shadow-xs flex items-center justify-between">
           <div>
             <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
-              Accounts in Due
+              Accounts with Dues
             </span>
             <span className="text-base font-medium text-slate-900 font-mono">
               {customerSummaries.length + ownerSummaries.length}
@@ -462,10 +590,9 @@ export default function CreditPage() {
         </div>
       </div>
 
-      {/* View Switcher Tabs: Order Wise, Customer Wise, Business Owner Wise */}
+      {/* View Switcher Tabs */}
       <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-1.5 rounded-[6px] shadow-xs">
         <div className="flex items-center gap-1.5">
-          {/* Order Wise Tab */}
           <button
             type="button"
             onClick={() => setActiveTab("orders")}
@@ -488,7 +615,6 @@ export default function CreditPage() {
             </span>
           </button>
 
-          {/* Customer Wise Tab */}
           <button
             type="button"
             onClick={() => setActiveTab("customers")}
@@ -511,7 +637,6 @@ export default function CreditPage() {
             </span>
           </button>
 
-          {/* Business Owner Wise Tab */}
           <button
             type="button"
             onClick={() => setActiveTab("owners")}
@@ -536,7 +661,9 @@ export default function CreditPage() {
         </div>
 
         <span className="text-[11px] text-slate-400 font-normal hidden sm:inline">
-          Showing {activeTab === "orders" ? "Individual Orders" : activeTab === "customers" ? "Customer Accounts" : "Business Owner Accounts"}
+          {activeTab === "orders"
+            ? "Click 'Collect' on any order to record payment & payment method"
+            : "Grouped ledger view with quick collection per order"}
         </span>
       </div>
 
@@ -558,14 +685,14 @@ export default function CreditPage() {
         </div>
       )}
 
-      {/* TAB 1: ORDER WISE VIEW */}
+      {/* TAB 1: ORDER WISE VIEW WITH INLINE QUICK COLLECT */}
       {activeTab === "orders" && (
         <div className="bg-white rounded-[6px] border border-slate-200/80 shadow-xs overflow-hidden">
           <div className="px-3.5 py-2.5 border-b border-slate-100 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-[2px] bg-amber-500"></span>
               <h3 className="text-xs font-medium text-slate-900">
-                Partial Payment Orders & Invoices
+                Order Dues & Immediate Payment Collection
               </h3>
             </div>
             <span className="text-[11px] text-slate-400 font-normal">
@@ -589,9 +716,7 @@ export default function CreditPage() {
                 {searchQuery ? "No matching credit orders" : "No pending credit dues!"}
               </h4>
               <p className="text-[11px] text-slate-400 max-w-sm mx-auto mt-0.5 font-normal">
-                {searchQuery
-                  ? "Try checking spelling or search for another client name/booking ID."
-                  : "All bookings are currently fully paid. Any booking with partial payment will appear here automatically."}
+                All bookings are currently fully settled.
               </p>
             </div>
           ) : (
@@ -607,7 +732,7 @@ export default function CreditPage() {
                     <th className="py-2 px-3 font-medium">Paid</th>
                     <th className="py-2 px-3 font-medium text-amber-600">Balance Due</th>
                     <th className="py-2 px-3 font-medium">Date</th>
-                    <th className="py-2 px-3 text-right font-medium">Actions</th>
+                    <th className="py-2 px-3 text-right font-medium">Collect Payment</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -622,103 +747,313 @@ export default function CreditPage() {
                     }
 
                     const isCust = b.clientType === "customer";
+                    const isInlineOpen = activeInlineOrderId === b.id;
 
                     return (
-                      <tr
-                        key={b.id}
-                        className="hover:bg-orange-50/30 transition-colors group"
-                      >
-                        {/* Booking Number */}
-                        <td className="py-2 px-3 font-mono font-medium text-slate-900 text-[11px]">
-                          <span className="px-1.5 py-0.5 rounded-[4px] bg-slate-100 border border-slate-200">
-                            {b.bookingNumber}
-                          </span>
-                        </td>
-
-                        {/* Route */}
-                        <td className="py-2 px-3">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-medium text-slate-900">
-                              {b.fromLocation}
+                      <Fragment key={b.id}>
+                        <tr
+                          className={`hover:bg-orange-50/30 transition-colors ${
+                            isInlineOpen ? "bg-orange-50/40" : ""
+                          }`}
+                        >
+                          {/* Booking Number */}
+                          <td className="py-2 px-3 font-mono font-medium text-slate-900 text-[11px]">
+                            <span className="px-1.5 py-0.5 rounded-[4px] bg-slate-100 border border-slate-200">
+                              {b.bookingNumber}
                             </span>
-                            <ArrowRight className="w-3 h-3 text-[#f16623] shrink-0" />
-                            <span className="font-medium text-slate-900">
-                              {b.toLocation}
-                            </span>
-                          </div>
-                        </td>
+                          </td>
 
-                        {/* Client */}
-                        <td className="py-2 px-3">
-                          <div className="flex flex-col">
+                          {/* Route */}
+                          <td className="py-2 px-3">
                             <div className="flex items-center gap-1.5">
                               <span className="font-medium text-slate-900">
-                                {b.clientName}
+                                {b.fromLocation}
                               </span>
-                              <span
-                                className={`px-1.5 py-0.2 rounded-[3px] text-[9px] font-medium border ${
-                                  isCust
-                                    ? "bg-blue-50 text-blue-700 border-blue-200"
-                                    : "bg-purple-50 text-purple-700 border-purple-200"
-                                }`}
-                              >
-                                {isCust ? "Customer" : "Business Owner"}
+                              <ArrowRight className="w-3 h-3 text-[#f16623] shrink-0" />
+                              <span className="font-medium text-slate-900">
+                                {b.toLocation}
                               </span>
                             </div>
-                            <div className="flex items-center gap-2 text-[10px] text-slate-400 font-normal">
-                              <span className="flex items-center gap-0.5">
-                                <PhoneCall className="w-2.5 h-2.5" />
-                                {b.clientMobile}
-                              </span>
-                              {b.companyName && (
-                                <span className="text-slate-500">
-                                  • {b.companyName}
+                          </td>
+
+                          {/* Client */}
+                          <td className="py-2 px-3">
+                            <div className="flex flex-col">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-medium text-slate-900">
+                                  {b.clientName}
                                 </span>
-                              )}
+                                <span
+                                  className={`px-1.5 py-0.2 rounded-[3px] text-[9px] font-medium border ${
+                                    isCust
+                                      ? "bg-blue-50 text-blue-700 border-blue-200"
+                                      : "bg-purple-50 text-purple-700 border-purple-200"
+                                  }`}
+                                >
+                                  {isCust ? "Customer" : "Business Owner"}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 text-[10px] text-slate-400 font-normal">
+                                <span className="flex items-center gap-0.5">
+                                  <PhoneCall className="w-2.5 h-2.5" />
+                                  {b.clientMobile}
+                                </span>
+                                {b.companyName && (
+                                  <span className="text-slate-500">
+                                    • {b.companyName}
+                                  </span>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        </td>
+                          </td>
 
-                        {/* Plan */}
-                        <td className="py-2 px-3">
-                          <span className="px-2 py-0.5 rounded-[4px] bg-orange-50 text-[#f16623] border border-[#f16623]/20 font-medium text-[11px] inline-flex items-center gap-1 max-w-[120px] truncate">
-                            <Layers className="w-3 h-3 shrink-0" />
-                            <span className="truncate">{b.planName}</span>
-                          </span>
-                        </td>
+                          {/* Plan */}
+                          <td className="py-2 px-3">
+                            <span className="px-2 py-0.5 rounded-[4px] bg-orange-50 text-[#f16623] border border-[#f16623]/20 font-medium text-[11px] inline-flex items-center gap-1 max-w-[120px] truncate">
+                              <Layers className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{b.planName}</span>
+                            </span>
+                          </td>
 
-                        {/* Net Fare */}
-                        <td className="py-2 px-3 font-mono text-slate-900 text-xs">
-                          ₹{Number(b.netAmount).toLocaleString("en-IN")}
-                        </td>
+                          {/* Net Fare */}
+                          <td className="py-2 px-3 font-mono text-slate-900 text-xs">
+                            ₹{Number(b.netAmount).toLocaleString("en-IN")}
+                          </td>
 
-                        {/* Paid Amount */}
-                        <td className="py-2 px-3 font-mono text-emerald-600 text-xs">
-                          ₹{Number(b.receivedAmount).toLocaleString("en-IN")}
-                        </td>
+                          {/* Paid Amount */}
+                          <td className="py-2 px-3 font-mono text-emerald-600 text-xs">
+                            ₹{Number(b.receivedAmount).toLocaleString("en-IN")}
+                          </td>
 
-                        {/* Pending Balance Due */}
-                        <td className="py-2 px-3 font-mono font-medium text-amber-600 text-xs">
-                          ₹{Number(b.balanceAmount).toLocaleString("en-IN")}
-                        </td>
+                          {/* Pending Balance Due */}
+                          <td className="py-2 px-3 font-mono font-medium text-amber-600 text-xs">
+                            ₹{Number(b.balanceAmount).toLocaleString("en-IN")}
+                          </td>
 
-                        {/* Date */}
-                        <td className="py-2 px-3 text-slate-400 text-[10px] font-normal">
-                          {dateStr}
-                        </td>
+                          {/* Date */}
+                          <td className="py-2 px-3 text-slate-400 text-[10px] font-normal">
+                            {dateStr}
+                          </td>
 
-                        {/* Actions: Collect Payment Button */}
-                        <td className="py-2 px-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => handleOpenCollectPayment(b)}
-                            className="h-[28px] max-h-[34px] px-2.5 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] text-white text-[11px] font-medium transition inline-flex items-center gap-1 shadow-xs cursor-pointer"
-                          >
-                            <IndianRupee className="w-3 h-3" />
-                            <span>Collect</span>
-                          </button>
-                        </td>
-                      </tr>
+                          {/* Collect Action Button */}
+                          <td className="py-2 px-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenInlineCollect(b)}
+                              className={`h-[28px] max-h-[34px] px-3 rounded-[6px] text-[11px] font-medium transition inline-flex items-center gap-1 shadow-xs cursor-pointer ${
+                                isInlineOpen
+                                  ? "bg-slate-800 text-white"
+                                  : "bg-[#f16623] hover:bg-[#d95318] text-white"
+                              }`}
+                            >
+                              <IndianRupee className="w-3 h-3" />
+                              <span>{isInlineOpen ? "Cancel" : "Collect"}</span>
+                            </button>
+                          </td>
+                        </tr>
+
+                        {/* INLINE QUICK COLLECT ACTION ROW */}
+                        {isInlineOpen && (
+                          <tr className="bg-orange-50/50 border-b-2 border-orange-200">
+                            <td colSpan={9} className="p-3">
+                              <div className="bg-white p-3 rounded-[6px] border border-[#f16623]/30 shadow-xs space-y-2.5">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-[#f16623]"></span>
+                                    <span className="text-xs font-medium text-slate-900">
+                                      Collect Payment for #{b.bookingNumber} ({b.clientName})
+                                    </span>
+                                    <span className="text-[11px] text-amber-600 font-mono font-medium">
+                                      Due: ₹{b.balanceAmount.toLocaleString("en-IN")}
+                                    </span>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenDrawerCollect(b)}
+                                    className="text-[11px] text-[#f16623] hover:underline font-medium cursor-pointer"
+                                  >
+                                    Open Full Drawer View
+                                  </button>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
+                                  {/* Field 1: Amount */}
+                                  <div className="sm:col-span-4 space-y-1">
+                                    <div className="flex items-center justify-between">
+                                      <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider">
+                                        Payment Amount (₹) <span className="text-[#f16623]">*</span>
+                                      </label>
+                                      <button
+                                        type="button"
+                                        onClick={() => setInlineAmount(String(b.balanceAmount))}
+                                        className="text-[10px] text-[#f16623] hover:underline font-medium"
+                                      >
+                                        Full Due (₹{b.balanceAmount})
+                                      </button>
+                                    </div>
+                                    <div className="relative">
+                                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-mono">
+                                        ₹
+                                      </span>
+                                      <input
+                                        type="number"
+                                        min="1"
+                                        max={b.balanceAmount}
+                                        value={inlineAmount}
+                                        onChange={(e) => setInlineAmount(e.target.value)}
+                                        placeholder="Enter amount"
+                                        className="w-full h-[34px] max-h-[34px] pl-6 pr-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal"
+                                      />
+                                    </div>
+                                  </div>
+
+                                  {/* Field 2: Payment Method */}
+                                  <div className="sm:col-span-5 space-y-1">
+                                    <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                                      Payment Method <span className="text-[#f16623]">*</span>
+                                    </label>
+                                    <div className="grid grid-cols-4 gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => setInlineMethod("cash")}
+                                        className={`h-[34px] max-h-[34px] rounded-[6px] border text-[11px] font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
+                                          inlineMethod === "cash"
+                                            ? "bg-emerald-50 border-emerald-500 text-emerald-700 shadow-xs"
+                                            : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-white"
+                                        }`}
+                                      >
+                                        <Banknote className="w-3 h-3" />
+                                        <span>Cash</span>
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => setInlineMethod("upi")}
+                                        className={`h-[34px] max-h-[34px] rounded-[6px] border text-[11px] font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
+                                          inlineMethod === "upi"
+                                            ? "bg-blue-50 border-blue-500 text-blue-700 shadow-xs"
+                                            : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-white"
+                                        }`}
+                                      >
+                                        <QrCode className="w-3 h-3" />
+                                        <span>UPI</span>
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => setInlineMethod("card")}
+                                        className={`h-[34px] max-h-[34px] rounded-[6px] border text-[11px] font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
+                                          inlineMethod === "card"
+                                            ? "bg-purple-50 border-purple-500 text-purple-700 shadow-xs"
+                                            : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-white"
+                                        }`}
+                                      >
+                                        <CreditCard className="w-3 h-3" />
+                                        <span>Card</span>
+                                      </button>
+
+                                      <button
+                                        type="button"
+                                        onClick={() => setInlineMethod("split")}
+                                        className={`h-[34px] max-h-[34px] rounded-[6px] border text-[11px] font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
+                                          inlineMethod === "split"
+                                            ? "bg-orange-50 border-[#f16623] text-[#f16623] shadow-xs"
+                                            : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-white"
+                                        }`}
+                                      >
+                                        <Coins className="w-3 h-3" />
+                                        <span>Split</span>
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* Field 3: Save Button */}
+                                  <div className="sm:col-span-3 flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      disabled={isSubmittingInline}
+                                      onClick={() => handleSubmitInlinePayment(b)}
+                                      className="flex-1 h-[34px] max-h-[34px] px-3 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] disabled:opacity-60 text-white text-xs font-medium shadow-xs transition flex items-center justify-center gap-1.5 active:scale-[0.98] cursor-pointer"
+                                    >
+                                      {isSubmittingInline ? (
+                                        <>
+                                          <Loader2 className="w-3 h-3 animate-spin" />
+                                          <span>Saving...</span>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <CheckCircle2 className="w-3.5 h-3.5" />
+                                          <span>Save Payment</span>
+                                        </>
+                                      )}
+                                    </button>
+
+                                    <button
+                                      type="button"
+                                      onClick={() => setActiveInlineOrderId(null)}
+                                      className="h-[34px] max-h-[34px] w-[34px] rounded-[6px] border border-slate-200 hover:bg-slate-100 text-slate-500 flex items-center justify-center transition cursor-pointer"
+                                      title="Close"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* Split Breakdown if Split is chosen */}
+                                {inlineMethod === "split" && (
+                                  <div className="pt-2 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                                    <div className="space-y-0.5">
+                                      <label className="text-[9px] font-medium text-slate-600 flex items-center gap-1">
+                                        <Banknote className="w-2.5 h-2.5 text-emerald-600" />
+                                        Cash (₹)
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        placeholder="0"
+                                        value={inlineSplitCash}
+                                        onChange={(e) => setInlineSplitCash(e.target.value)}
+                                        className="w-full h-[32px] px-2 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
+                                      />
+                                    </div>
+
+                                    <div className="space-y-0.5">
+                                      <label className="text-[9px] font-medium text-slate-600 flex items-center gap-1">
+                                        <QrCode className="w-2.5 h-2.5 text-blue-600" />
+                                        UPI (₹)
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        placeholder="0"
+                                        value={inlineSplitUpi}
+                                        onChange={(e) => setInlineSplitUpi(e.target.value)}
+                                        className="w-full h-[32px] px-2 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
+                                      />
+                                    </div>
+
+                                    <div className="space-y-0.5">
+                                      <label className="text-[9px] font-medium text-slate-600 flex items-center gap-1">
+                                        <CreditCard className="w-2.5 h-2.5 text-purple-600" />
+                                        Card (₹)
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        placeholder="0"
+                                        value={inlineSplitCard}
+                                        onChange={(e) => setInlineSplitCard(e.target.value)}
+                                        className="w-full h-[32px] px-2 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
                     );
                   })}
                 </tbody>
@@ -844,7 +1179,7 @@ export default function CreditPage() {
                                 </span>
                                 <button
                                   type="button"
-                                  onClick={() => handleOpenCollectPayment(ord)}
+                                  onClick={() => handleOpenDrawerCollect(ord)}
                                   className="h-[26px] max-h-[34px] px-2 rounded-[4px] bg-[#f16623] hover:bg-[#d95318] text-white text-[10px] font-medium transition inline-flex items-center gap-1 cursor-pointer"
                                 >
                                   <IndianRupee className="w-2.5 h-2.5" />
@@ -985,7 +1320,7 @@ export default function CreditPage() {
                                 </span>
                                 <button
                                   type="button"
-                                  onClick={() => handleOpenCollectPayment(ord)}
+                                  onClick={() => handleOpenDrawerCollect(ord)}
                                   className="h-[26px] max-h-[34px] px-2 rounded-[4px] bg-[#f16623] hover:bg-[#d95318] text-white text-[10px] font-medium transition inline-flex items-center gap-1 cursor-pointer"
                                 >
                                   <IndianRupee className="w-2.5 h-2.5" />
@@ -1015,7 +1350,7 @@ export default function CreditPage() {
         subtitle={`Settle balance for Booking #${selectedBookingForPayment?.bookingNumber || ""}`}
       >
         {selectedBookingForPayment && (
-          <form onSubmit={handleSubmitPayment} className="space-y-3.5">
+          <form onSubmit={handleSubmitDrawerPayment} className="space-y-3.5">
             {/* Booking & Client Overview Card */}
             <div className="bg-slate-50/70 p-2.5 rounded-[6px] border border-slate-200/80 space-y-2">
               <div className="flex items-center justify-between">
@@ -1127,13 +1462,13 @@ export default function CreditPage() {
               </div>
             </div>
 
-            {/* Payment Mode Selection */}
+            {/* Payment Method Selection: Cash, UPI, Card, Split */}
             <div className="space-y-1.5">
               <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
-                Collection Payment Mode <span className="text-[#f16623]">*</span>
+                Payment Method <span className="text-[#f16623]">*</span>
               </label>
 
-              <div className="grid grid-cols-3 gap-1.5">
+              <div className="grid grid-cols-4 gap-1.5">
                 <button
                   type="button"
                   onClick={() => setCollectMode("cash")}
@@ -1172,40 +1507,76 @@ export default function CreditPage() {
                   <CreditCard className="w-3.5 h-3.5" />
                   <span>Card</span>
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setCollectMode("split")}
+                  className={`h-[34px] max-h-[34px] rounded-[6px] border text-xs font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
+                    collectMode === "split"
+                      ? "bg-orange-50 border-[#f16623] text-[#f16623] shadow-xs"
+                      : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  <Coins className="w-3.5 h-3.5" />
+                  <span>Split</span>
+                </button>
               </div>
             </div>
 
-            {/* Note / Reference */}
-            <div className="space-y-1">
-              <label
-                htmlFor="collect-note"
-                className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block"
-              >
-                Payment Note / Transaction ID (Optional)
-              </label>
-              <input
-                id="collect-note"
-                type="text"
-                placeholder="e.g. Paid via GPay / Handed cash to office"
-                value={collectNote}
-                onChange={(e) => setCollectNote(e.target.value)}
-                className="w-full h-[34px] max-h-[34px] px-3 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal transition"
-              />
-            </div>
+            {/* Split Breakdown in Drawer */}
+            {collectMode === "split" && (
+              <div className="p-2 bg-slate-50 rounded-[6px] border border-orange-200 space-y-2">
+                <span className="text-[10px] font-medium text-slate-700 uppercase tracking-wider block">
+                  Split Amount Breakdown
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                  <div className="space-y-0.5">
+                    <label className="text-[9px] font-medium text-slate-600 flex items-center gap-1">
+                      <Banknote className="w-2.5 h-2.5 text-emerald-600" />
+                      Cash (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={collectSplitCash}
+                      onChange={(e) => setCollectSplitCash(e.target.value)}
+                      className="w-full h-[32px] px-2 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800"
+                    />
+                  </div>
 
-            {/* Live Remaining Preview */}
-            <div className="bg-slate-50 p-2 rounded-[6px] border border-slate-200 flex items-center justify-between text-xs">
-              <span className="text-[11px] text-slate-500 font-normal">
-                Remaining Balance after collection:
-              </span>
-              <span className="font-mono font-medium text-slate-900">
-                ₹
-                {Math.max(
-                  0,
-                  selectedBookingForPayment.balanceAmount - (Number(collectAmount) || 0)
-                ).toLocaleString("en-IN")}
-              </span>
-            </div>
+                  <div className="space-y-0.5">
+                    <label className="text-[9px] font-medium text-slate-600 flex items-center gap-1">
+                      <QrCode className="w-2.5 h-2.5 text-blue-600" />
+                      UPI (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={collectSplitUpi}
+                      onChange={(e) => setCollectSplitUpi(e.target.value)}
+                      className="w-full h-[32px] px-2 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800"
+                    />
+                  </div>
+
+                  <div className="space-y-0.5">
+                    <label className="text-[9px] font-medium text-slate-600 flex items-center gap-1">
+                      <CreditCard className="w-2.5 h-2.5 text-purple-600" />
+                      Card (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={collectSplitCard}
+                      onChange={(e) => setCollectSplitCard(e.target.value)}
+                      className="w-full h-[32px] px-2 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Action Buttons */}
             <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
@@ -1226,12 +1597,12 @@ export default function CreditPage() {
                 {isSubmittingPayment ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Saving...</span>
+                    <span>Saving Payment...</span>
                   </>
                 ) : (
                   <>
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Record Payment</span>
+                    <span>Save Payment</span>
                   </>
                 )}
               </button>
