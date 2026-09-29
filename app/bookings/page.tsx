@@ -22,8 +22,10 @@ import {
   UserPlus,
   X,
   Clock,
-  Car,
-  FileText,
+  Banknote,
+  QrCode,
+  CreditCard,
+  Coins,
 } from "lucide-react";
 import {
   collection,
@@ -45,7 +47,6 @@ interface PlanItem {
   amount: number;
   travelId?: string;
   travelName?: string;
-  packageType?: string;
 }
 
 interface CustomerOption {
@@ -64,6 +65,12 @@ interface BusinessOwnerOption {
   gstNumber?: string;
 }
 
+interface PaymentSplits {
+  cash: number;
+  upi: number;
+  card: number;
+}
+
 interface BookingRecord {
   id: string;
   bookingNumber: string;
@@ -78,8 +85,12 @@ interface BookingRecord {
   clientEmail?: string;
   companyName?: string;
   amount: number;
+  discountType?: "rupees" | "percent";
+  discountValue?: number;
   discount: number;
   netAmount: number;
+  paymentMode: "cash" | "upi" | "card" | "split";
+  paymentSplits?: PaymentSplits | null;
   receivedAmount: number;
   balanceAmount: number;
   status: "confirmed" | "completed" | "cancelled";
@@ -89,19 +100,28 @@ interface BookingRecord {
 export default function BookingsPage() {
   const [isOffCanvasOpen, setIsOffCanvasOpen] = useState(false);
 
-  // Form Fields - Booking details
+  // Form Fields - Booking route & plan
   const [fromLocation, setFromLocation] = useState("");
   const [toLocation, setToLocation] = useState("");
   const [selectedPlanId, setSelectedPlanId] = useState("");
   const [selectedPlanName, setSelectedPlanName] = useState("");
   const [amount, setAmount] = useState<string>("");
-  const [discount, setDiscount] = useState<string>("0");
-  const [receivedAmount, setReceivedAmount] = useState<string>("0");
+
+  // Discount: Rupees or Percentage
+  const [discountType, setDiscountType] = useState<"rupees" | "percent">("rupees");
+  const [discountValue, setDiscountValue] = useState<string>("0");
+
+  // Payment Mode & Received Amount
+  const [paymentMode, setPaymentMode] = useState<"cash" | "upi" | "card" | "split">("cash");
+  const [singleReceived, setSingleReceived] = useState<string>("0");
+
+  // Split payment amounts
+  const [splitCash, setSplitCash] = useState<string>("");
+  const [splitUpi, setSplitUpi] = useState<string>("");
+  const [splitCard, setSplitCard] = useState<string>("");
 
   // Client Selection
-  const [clientType, setClientType] = useState<"customer" | "business_owner">(
-    "customer"
-  );
+  const [clientType, setClientType] = useState<"customer" | "business_owner">("customer");
   const [clientSearchQuery, setClientSearchQuery] = useState("");
   const [selectedClient, setSelectedClient] = useState<{
     id: string;
@@ -155,7 +175,6 @@ export default function BookingsPage() {
             amount: Number(docSnap.data().amount) || 0,
             travelId: docSnap.data().travelId,
             travelName: docSnap.data().travelName,
-            packageType: docSnap.data().packageType,
           }));
           setPlans(items);
         },
@@ -169,7 +188,6 @@ export default function BookingsPage() {
               amount: Number(docSnap.data().amount) || 0,
               travelId: docSnap.data().travelId,
               travelName: docSnap.data().travelName,
-              packageType: docSnap.data().packageType,
             }));
             setPlans(items);
           });
@@ -337,10 +355,31 @@ export default function BookingsPage() {
 
   // Financial calculations
   const parsedAmount = Math.max(0, Number(amount) || 0);
-  const parsedDiscount = Math.max(0, Number(discount) || 0);
-  const netPayable = Math.max(0, parsedAmount - parsedDiscount);
-  const parsedReceived = Math.max(0, Number(receivedAmount) || 0);
-  const balanceDue = Math.max(0, netPayable - parsedReceived);
+
+  // Discount calculation based on type
+  const rawDiscountInput = Math.max(0, Number(discountValue) || 0);
+  const calculatedDiscount = useMemo(() => {
+    if (discountType === "percent") {
+      const pct = Math.min(100, rawDiscountInput);
+      return Math.round((parsedAmount * pct) / 100);
+    }
+    return Math.min(parsedAmount, rawDiscountInput);
+  }, [discountType, rawDiscountInput, parsedAmount]);
+
+  const netPayable = Math.max(0, parsedAmount - calculatedDiscount);
+
+  // Received amount calculation based on mode
+  const effectiveReceived = useMemo(() => {
+    if (paymentMode === "split") {
+      const c = Math.max(0, Number(splitCash) || 0);
+      const u = Math.max(0, Number(splitUpi) || 0);
+      const cd = Math.max(0, Number(splitCard) || 0);
+      return c + u + cd;
+    }
+    return Math.max(0, Number(singleReceived) || 0);
+  }, [paymentMode, splitCash, splitUpi, splitCard, singleReceived]);
+
+  const balanceDue = Math.max(0, netPayable - effectiveReceived);
 
   // Save new Customer inline
   const handleSaveCustomerInline = async (e: React.FormEvent) => {
@@ -478,6 +517,15 @@ export default function BookingsPage() {
       // Generate clean Booking Reference
       const bookingNo = `RKB-${Date.now().toString().slice(-6)}`;
 
+      const splitsData: PaymentSplits | null =
+        paymentMode === "split"
+          ? {
+              cash: Math.max(0, Number(splitCash) || 0),
+              upi: Math.max(0, Number(splitUpi) || 0),
+              card: Math.max(0, Number(splitCard) || 0),
+            }
+          : null;
+
       await addDoc(collection(db, "bookings"), {
         bookingNumber: bookingNo,
         fromLocation: fromTrimmed,
@@ -491,9 +539,13 @@ export default function BookingsPage() {
         clientEmail: selectedClient.email || null,
         companyName: selectedClient.companyName || null,
         amount: parsedAmount,
-        discount: parsedDiscount,
+        discountType: discountType,
+        discountValue: rawDiscountInput,
+        discount: calculatedDiscount,
         netAmount: netPayable,
-        receivedAmount: parsedReceived,
+        paymentMode: paymentMode,
+        paymentSplits: splitsData,
+        receivedAmount: effectiveReceived,
         balanceAmount: balanceDue,
         status: "confirmed",
         createdAt: serverTimestamp(),
@@ -505,8 +557,13 @@ export default function BookingsPage() {
       setSelectedPlanId("");
       setSelectedPlanName("");
       setAmount("");
-      setDiscount("0");
-      setReceivedAmount("0");
+      setDiscountType("rupees");
+      setDiscountValue("0");
+      setPaymentMode("cash");
+      setSingleReceived("0");
+      setSplitCash("");
+      setSplitUpi("");
+      setSplitCard("");
       setSelectedClient(null);
       setClientSearchQuery("");
       setShowAddCustomerInline(false);
@@ -558,6 +615,7 @@ export default function BookingsPage() {
         b.fromLocation?.toLowerCase().includes(q) ||
         b.toLocation?.toLowerCase().includes(q) ||
         b.planName?.toLowerCase().includes(q) ||
+        b.paymentMode?.toLowerCase().includes(q) ||
         (b.companyName && b.companyName.toLowerCase().includes(q))
     );
   }, [bookings, tableSearchQuery]);
@@ -613,7 +671,7 @@ export default function BookingsPage() {
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Search booking, client, route..."
+              placeholder="Search booking, client, route, mode..."
               value={tableSearchQuery}
               onChange={(e) => setTableSearchQuery(e.target.value)}
               className="w-full h-[34px] max-h-[34px] pl-8 pr-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal transition"
@@ -744,7 +802,7 @@ export default function BookingsPage() {
             <p className="text-[11px] text-slate-400 max-w-sm mx-auto mt-0.5 font-normal">
               {tableSearchQuery
                 ? "Try searching with a different client name, booking ID, or route."
-                : "Click on 'Add Booking' to select route locations, tariff plan, customer or business owner, and calculate fares."}
+                : "Click on 'Add Booking' to select route locations, tariff plan, customer or business owner, discount & payment split."}
             </p>
             {!tableSearchQuery && (
               <button
@@ -767,6 +825,7 @@ export default function BookingsPage() {
                   <th className="py-2 px-3 font-medium">Client / Stakeholder</th>
                   <th className="py-2 px-3 font-medium">Plan & Tariff</th>
                   <th className="py-2 px-3 font-medium">Net Amount</th>
+                  <th className="py-2 px-3 font-medium">Payment Mode</th>
                   <th className="py-2 px-3 font-medium">Received / Balance</th>
                   <th className="py-2 px-3 font-medium">Date</th>
                   <th className="py-2 px-3 text-right font-medium">Actions</th>
@@ -851,7 +910,7 @@ export default function BookingsPage() {
                         </span>
                       </td>
 
-                      {/* Net Amount */}
+                      {/* Net Amount with discount details */}
                       <td className="py-2 px-3">
                         <div className="flex flex-col">
                           <span className="font-mono font-medium text-slate-900 text-xs">
@@ -859,10 +918,49 @@ export default function BookingsPage() {
                           </span>
                           {b.discount > 0 && (
                             <span className="text-[10px] text-emerald-600 font-normal">
-                              (₹{b.discount} off)
+                              {b.discountType === "percent"
+                                ? `(-₹${b.discount} / ${b.discountValue}%)`
+                                : `(-₹${b.discount})`}
                             </span>
                           )}
                         </div>
+                      </td>
+
+                      {/* Payment Mode Badge & Breakdown */}
+                      <td className="py-2 px-3">
+                        {b.paymentMode === "cash" && (
+                          <span className="px-2 py-0.5 rounded-[4px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium text-[10px] inline-flex items-center gap-1">
+                            <Banknote className="w-3 h-3" />
+                            Cash
+                          </span>
+                        )}
+                        {b.paymentMode === "upi" && (
+                          <span className="px-2 py-0.5 rounded-[4px] bg-blue-50 text-blue-700 border border-blue-200 font-medium text-[10px] inline-flex items-center gap-1">
+                            <QrCode className="w-3 h-3" />
+                            UPI
+                          </span>
+                        )}
+                        {b.paymentMode === "card" && (
+                          <span className="px-2 py-0.5 rounded-[4px] bg-purple-50 text-purple-700 border border-purple-200 font-medium text-[10px] inline-flex items-center gap-1">
+                            <CreditCard className="w-3 h-3" />
+                            Card
+                          </span>
+                        )}
+                        {b.paymentMode === "split" && (
+                          <div className="flex flex-col gap-0.5">
+                            <span className="px-1.5 py-0.5 rounded-[4px] bg-orange-50 text-[#f16623] border border-[#f16623]/25 font-medium text-[10px] inline-flex items-center gap-1 w-fit">
+                              <Coins className="w-3 h-3" />
+                              Split Payment
+                            </span>
+                            {b.paymentSplits && (
+                              <span className="text-[9px] text-slate-500 font-mono">
+                                {b.paymentSplits.cash > 0 && `Cash: ₹${b.paymentSplits.cash} `}
+                                {b.paymentSplits.upi > 0 && `UPI: ₹${b.paymentSplits.upi} `}
+                                {b.paymentSplits.card > 0 && `Card: ₹${b.paymentSplits.card}`}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </td>
 
                       {/* Received & Balance */}
@@ -1344,20 +1442,23 @@ export default function BookingsPage() {
             )}
           </div>
 
-          {/* Section: Financials (Amount, Discount, Received, Balance) */}
+          {/* Section: Financials (Amount, Discount Mode, Payment Mode & Split) */}
           <div className="bg-slate-50/70 p-2.5 rounded-[6px] border border-slate-200/80 space-y-2.5">
             <span className="text-[10px] font-medium text-slate-700 uppercase tracking-wider flex items-center gap-1">
               <IndianRupee className="w-3 h-3 text-[#f16623]" />
-              Tariff & Payment Billing
+              Tariff, Discount & Payment Modes
             </span>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            {/* Row 1: Amount & Discount */}
+            {/* Row 1: Amount & Discount */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {/* Fare / Amount */}
               <div className="space-y-1">
                 <label
                   htmlFor="booking-amount"
-                  className="text-[10px] font-medium text-slate-600 uppercase tracking-wider"
+                  className="text-[10px] font-medium text-slate-600 uppercase tracking-wider flex items-center gap-1"
                 >
+                  <IndianRupee className="w-3 h-3 text-[#f16623]" />
                   Amount (₹) <span className="text-[#f16623]">*</span>
                 </label>
                 <div className="relative">
@@ -1377,38 +1478,154 @@ export default function BookingsPage() {
                 </div>
               </div>
 
-              {/* Discount */}
+              {/* Discount with Attached Segmented Toggle */}
               <div className="space-y-1">
-                <label
-                  htmlFor="booking-discount"
-                  className="text-[10px] font-medium text-slate-600 uppercase tracking-wider"
-                >
-                  Discount (₹)
-                </label>
-                <div className="relative">
-                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-mono">
-                    ₹
-                  </span>
+                <div className="flex items-center justify-between">
+                  <label
+                    htmlFor="booking-discount"
+                    className="text-[10px] font-medium text-slate-600 uppercase tracking-wider flex items-center gap-1"
+                  >
+                    <Percent className="w-3 h-3 text-[#f16623]" />
+                    Discount
+                  </label>
+                  {discountType === "percent" && rawDiscountInput > 0 && (
+                    <span className="text-[10px] text-emerald-600 font-mono font-medium">
+                      -₹{calculatedDiscount.toLocaleString("en-IN")}
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex h-[34px] max-h-[34px] rounded-[6px] border border-slate-200 bg-white overflow-hidden focus-within:border-[#f16623] transition">
+                  <div className="flex bg-slate-100 p-0.5 border-r border-slate-200 shrink-0 gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setDiscountType("rupees")}
+                      title="Flat Rupee Discount (₹)"
+                      className={`w-7 h-[28px] text-xs font-medium rounded-[4px] flex items-center justify-center transition cursor-pointer ${
+                        discountType === "rupees"
+                          ? "bg-[#f16623] text-white shadow-xs"
+                          : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                      }`}
+                    >
+                      ₹
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDiscountType("percent")}
+                      title="Percentage Discount (%)"
+                      className={`w-7 h-[28px] text-xs font-medium rounded-[4px] flex items-center justify-center transition cursor-pointer ${
+                        discountType === "percent"
+                          ? "bg-[#f16623] text-white shadow-xs"
+                          : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                      }`}
+                    >
+                      %
+                    </button>
+                  </div>
+
                   <input
                     id="booking-discount"
                     type="number"
                     min="0"
+                    max={discountType === "percent" ? "100" : undefined}
                     placeholder="0"
-                    value={discount}
-                    onChange={(e) => setDiscount(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] pl-6 pr-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-normal transition"
+                    value={discountValue}
+                    onChange={(e) => setDiscountValue(e.target.value)}
+                    className="flex-1 px-2.5 text-xs bg-transparent text-slate-800 placeholder:text-slate-400 focus:outline-none font-normal"
                   />
+
+                  <div className="px-2 flex items-center text-[10px] text-slate-400 font-mono bg-slate-50 border-l border-slate-100 select-none shrink-0">
+                    {discountType === "rupees" ? "₹" : "%"}
+                  </div>
                 </div>
               </div>
+            </div>
 
-              {/* Received Amount */}
-              <div className="space-y-1">
-                <label
-                  htmlFor="booking-received"
-                  className="text-[10px] font-medium text-slate-600 uppercase tracking-wider"
+            {/* Row 2: Payment Mode Selection (UPI, Cash, Card, Split) */}
+            <div className="space-y-1.5 pt-1">
+              <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                Payment Mode <span className="text-[#f16623]">*</span>
+              </label>
+
+              <div className="grid grid-cols-4 gap-1.5">
+                {/* Cash */}
+                <button
+                  type="button"
+                  onClick={() => setPaymentMode("cash")}
+                  className={`h-[34px] max-h-[34px] rounded-[6px] border text-xs font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
+                    paymentMode === "cash"
+                      ? "bg-emerald-50 border-emerald-500 text-emerald-700 shadow-xs"
+                      : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                  }`}
                 >
-                  Received (₹)
-                </label>
+                  <Banknote className="w-3.5 h-3.5" />
+                  <span>Cash</span>
+                </button>
+
+                {/* UPI */}
+                <button
+                  type="button"
+                  onClick={() => setPaymentMode("upi")}
+                  className={`h-[34px] max-h-[34px] rounded-[6px] border text-xs font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
+                    paymentMode === "upi"
+                      ? "bg-blue-50 border-blue-500 text-blue-700 shadow-xs"
+                      : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  <QrCode className="w-3.5 h-3.5" />
+                  <span>UPI</span>
+                </button>
+
+                {/* Card */}
+                <button
+                  type="button"
+                  onClick={() => setPaymentMode("card")}
+                  className={`h-[34px] max-h-[34px] rounded-[6px] border text-xs font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
+                    paymentMode === "card"
+                      ? "bg-purple-50 border-purple-500 text-purple-700 shadow-xs"
+                      : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  <CreditCard className="w-3.5 h-3.5" />
+                  <span>Card</span>
+                </button>
+
+                {/* Split */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPaymentMode("split");
+                  }}
+                  className={`h-[34px] max-h-[34px] rounded-[6px] border text-xs font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
+                    paymentMode === "split"
+                      ? "bg-orange-50 border-[#f16623] text-[#f16623] shadow-xs"
+                      : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                  }`}
+                >
+                  <Coins className="w-3.5 h-3.5" />
+                  <span>Split</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Row 3: Received Amount Inputs (Single Mode vs Split Mode) */}
+            {paymentMode !== "split" ? (
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label
+                    htmlFor="booking-received"
+                    className="text-[10px] font-medium text-slate-600 uppercase tracking-wider"
+                  >
+                    Received Amount via {paymentMode.toUpperCase()} (₹)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setSingleReceived(String(netPayable))}
+                    className="text-[10px] text-[#f16623] hover:underline font-medium cursor-pointer"
+                  >
+                    Fill Full (₹{netPayable.toLocaleString("en-IN")})
+                  </button>
+                </div>
                 <div className="relative">
                   <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-mono">
                     ₹
@@ -1418,13 +1635,76 @@ export default function BookingsPage() {
                     type="number"
                     min="0"
                     placeholder="0"
-                    value={receivedAmount}
-                    onChange={(e) => setReceivedAmount(e.target.value)}
+                    value={singleReceived}
+                    onChange={(e) => setSingleReceived(e.target.value)}
                     className="w-full h-[34px] max-h-[34px] pl-6 pr-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-normal transition"
                   />
                 </div>
               </div>
-            </div>
+            ) : (
+              /* Split Breakdown Inputs: Cash, UPI, Card */
+              <div className="p-2 bg-white rounded-[6px] border border-orange-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-medium text-slate-800 uppercase tracking-wider flex items-center gap-1">
+                    <Coins className="w-3 h-3 text-[#f16623]" />
+                    Split Breakdown by Mode
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-medium">
+                    Total Split: ₹{effectiveReceived.toLocaleString("en-IN")}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                  {/* Split Cash */}
+                  <div className="space-y-0.5">
+                    <label className="text-[9px] font-medium text-slate-600 flex items-center gap-1">
+                      <Banknote className="w-2.5 h-2.5 text-emerald-600" />
+                      Cash Amount (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={splitCash}
+                      onChange={(e) => setSplitCash(e.target.value)}
+                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623]"
+                    />
+                  </div>
+
+                  {/* Split UPI */}
+                  <div className="space-y-0.5">
+                    <label className="text-[9px] font-medium text-slate-600 flex items-center gap-1">
+                      <QrCode className="w-2.5 h-2.5 text-blue-600" />
+                      UPI Amount (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={splitUpi}
+                      onChange={(e) => setSplitUpi(e.target.value)}
+                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623]"
+                    />
+                  </div>
+
+                  {/* Split Card */}
+                  <div className="space-y-0.5">
+                    <label className="text-[9px] font-medium text-slate-600 flex items-center gap-1">
+                      <CreditCard className="w-2.5 h-2.5 text-purple-600" />
+                      Card Amount (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={splitCard}
+                      onChange={(e) => setSplitCard(e.target.value)}
+                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623]"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Calculations Summary Card */}
             <div className="bg-white p-2.5 rounded-[6px] border border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
@@ -1438,10 +1718,10 @@ export default function BookingsPage() {
               </div>
               <div>
                 <span className="text-[10px] text-slate-400 block font-normal">
-                  Discount
+                  Discount ({discountType === "percent" ? `${rawDiscountInput}%` : "₹"})
                 </span>
                 <span className="font-mono font-medium text-emerald-600">
-                  -₹{parsedDiscount.toLocaleString("en-IN")}
+                  -₹{calculatedDiscount.toLocaleString("en-IN")}
                 </span>
               </div>
               <div>

@@ -35,7 +35,6 @@ interface PlanItem {
   amount: number;
   travelId: string;
   travelName: string;
-  packageType?: string;
   description?: string;
   createdAt?: Timestamp | null;
 }
@@ -46,16 +45,6 @@ interface TravelOption {
   mobileNumber?: string;
 }
 
-const PACKAGE_TYPES = [
-  "Round Trip",
-  "One-Way Drop",
-  "Local Hourly Rental",
-  "Outstation Package",
-  "Airport Transfer",
-  "Corporate Monthly",
-  "Custom Tariff",
-];
-
 export default function PlansPage() {
   const [isOffCanvasOpen, setIsOffCanvasOpen] = useState(false);
 
@@ -64,7 +53,6 @@ export default function PlansPage() {
   const [amount, setAmount] = useState("");
   const [selectedTravelId, setSelectedTravelId] = useState("");
   const [selectedTravelName, setSelectedTravelName] = useState("");
-  const [packageType, setPackageType] = useState("Round Trip");
   const [description, setDescription] = useState("");
 
   // Dynamic Travels list from Firestore
@@ -185,7 +173,6 @@ export default function PlansPage() {
         amount: numAmount,
         travelId: selectedTravelId,
         travelName: selectedTravelName,
-        packageType: packageType || null,
         description: description.trim() || null,
         createdAt: serverTimestamp(),
       });
@@ -195,7 +182,6 @@ export default function PlansPage() {
       setAmount("");
       setSelectedTravelId("");
       setSelectedTravelName("");
-      setPackageType("Round Trip");
       setDescription("");
 
       setIsOffCanvasOpen(false);
@@ -240,7 +226,6 @@ export default function PlansPage() {
     (p) =>
       p.planName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.travelName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.packageType?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       String(p.amount).includes(searchQuery)
   );
 
@@ -370,7 +355,6 @@ export default function PlansPage() {
                 <tr>
                   <th className="py-2 px-3 w-10 text-center font-medium">#</th>
                   <th className="py-2 px-3 font-medium">Plan Name</th>
-                  <th className="py-2 px-3 font-medium">Package Type</th>
                   <th className="py-2 px-3 font-medium">Assigned Travels</th>
                   <th className="py-2 px-3 font-medium">Plan Amount</th>
                   <th className="py-2 px-3 font-medium">Added Date</th>
@@ -411,16 +395,9 @@ export default function PlansPage() {
                         </div>
                       </td>
 
-                      {/* Package Type */}
-                      <td className="py-2 px-3">
-                        <span className="px-1.5 py-0.5 rounded-[3px] bg-slate-100 text-[10px] text-slate-600 font-normal">
-                          {p.packageType || "Standard Tariff"}
-                        </span>
-                      </td>
-
                       {/* Assigned Travels */}
                       <td className="py-2 px-3">
-                        <span className="px-2 py-0.5 rounded-[4px] bg-orange-50 text-[#f16623] border border-[#f16623]/20 font-medium text-[11px] inline-flex items-center gap-1 max-w-[150px] truncate">
+                        <span className="px-2 py-0.5 rounded-[4px] bg-orange-50 text-[#f16623] border border-[#f16623]/20 font-medium text-[11px] inline-flex items-center gap-1 max-w-[170px] truncate">
                           <Route className="w-3 h-3 shrink-0" />
                           <span className="truncate">{p.travelName}</span>
                         </span>
@@ -553,29 +530,7 @@ export default function PlansPage() {
             </div>
           </div>
 
-          {/* Field 4: Package Type (Optional) */}
-          <div className="space-y-1">
-            <label
-              htmlFor="plan-type"
-              className="text-[10px] font-medium text-slate-600 uppercase tracking-wider"
-            >
-              Package Type
-            </label>
-            <select
-              id="plan-type"
-              value={packageType}
-              onChange={(e) => setPackageType(e.target.value)}
-              className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal transition"
-            >
-              {PACKAGE_TYPES.map((pt) => (
-                <option key={pt} value={pt}>
-                  {pt}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Field 5: Description (Optional) */}
+          {/* Field 4: Description (Optional) */}
           <div className="space-y-1">
             <div className="flex items-center justify-between">
               <label
