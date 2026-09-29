@@ -27,7 +27,8 @@ export async function POST(req: NextRequest) {
       "fileName",
       file.name ? file.name.replace(/[^a-zA-Z0-9._-]/g, "_") : `vehicle_${Date.now()}.jpg`
     );
-    uploadPayload.append("folder", "/vehicles");
+    const folder = (formData.get("folder") as string) || "/uploads";
+    uploadPayload.append("folder", folder);
     uploadPayload.append("useUniqueFileName", "true");
 
     const authHeader = `Basic ${Buffer.from(`${privateKey}:`).toString("base64")}`;
