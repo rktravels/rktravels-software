@@ -144,14 +144,14 @@ export const NAV_ITEMS: PageModuleInfo[] = [
     ],
   },
   {
-    id: "plans",
-    name: "Plans",
-    href: "/plans",
+    id: "tariffs",
+    name: "Tariffs",
+    href: "/tariffs",
     category: "COMMERCIAL",
-    icon: Layers,
+    icon: Tags,
     description:
       "Tariff configuration, rental packages, per-kilometer rate slabs, and surge pricing model management.",
-    primaryAction: "Create Plan",
+    primaryAction: "Add Tariff",
     secondaryAction: "Tariff Matrix",
     plannedFeatures: [
       "Hourly, daily & outstation package pricing rules configuration",

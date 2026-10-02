@@ -201,42 +201,91 @@ export default function BookingsPage() {
     message: string;
   } | null>(null);
 
-  // 1. Subscribe to Plans
+  // 1. Subscribe to Tariffs & Legacy Plans
   useEffect(() => {
+    let unsubTariffs: (() => void) | null = null;
+    let unsubPlans: (() => void) | null = null;
+
     try {
-      const q = query(collection(db, "plans"), orderBy("createdAt", "desc"));
-      const unsub = onSnapshot(
-        q,
+      const itemsMap = new Map<string, PlanItem>();
+
+      const syncTariffs = () => {
+        setPlans(Array.from(itemsMap.values()));
+      };
+
+      // Listen to tariffs collection
+      const qTariffs = query(
+        collection(db, "tariffs"),
+        orderBy("createdAt", "desc")
+      );
+      unsubTariffs = onSnapshot(
+        qTariffs,
         (snap) => {
-          const items: PlanItem[] = snap.docs.map((docSnap) => ({
-            id: docSnap.id,
-            planName: docSnap.data().planName || "Unnamed Plan",
-            amount: Number(docSnap.data().amount) || 0,
-            travelId: docSnap.data().travelId,
-            travelName: docSnap.data().travelName,
-          }));
-          setPlans(items);
+          snap.docs.forEach((docSnap) => {
+            const data = docSnap.data();
+            itemsMap.set(docSnap.id, {
+              id: docSnap.id,
+              planName: data.tariffName || data.planName || "Unnamed Tariff",
+              amount: Number(data.amount) || 0,
+              travelId: data.travelId,
+              travelName: data.travelName,
+            });
+          });
+          syncTariffs();
         },
         (err) => {
-          console.error("Plans listener fallback:", err);
-          const fallback = query(collection(db, "plans"));
-          const unsubFallback = onSnapshot(fallback, (snap) => {
-            const items: PlanItem[] = snap.docs.map((docSnap) => ({
-              id: docSnap.id,
-              planName: docSnap.data().planName || "Unnamed Plan",
-              amount: Number(docSnap.data().amount) || 0,
-              travelId: docSnap.data().travelId,
-              travelName: docSnap.data().travelName,
-            }));
-            setPlans(items);
+          console.warn("Tariffs listener notice in bookings:", err);
+          const fallback = query(collection(db, "tariffs"));
+          unsubTariffs = onSnapshot(fallback, (snap) => {
+            snap.docs.forEach((docSnap) => {
+              const data = docSnap.data();
+              itemsMap.set(docSnap.id, {
+                id: docSnap.id,
+                planName: data.tariffName || data.planName || "Unnamed Tariff",
+                amount: Number(data.amount) || 0,
+                travelId: data.travelId,
+                travelName: data.travelName,
+              });
+            });
+            syncTariffs();
           });
-          return () => unsubFallback();
         }
       );
-      return () => unsub();
+
+      // Listen to legacy plans collection
+      const qPlans = query(
+        collection(db, "plans"),
+        orderBy("createdAt", "desc")
+      );
+      unsubPlans = onSnapshot(
+        qPlans,
+        (snap) => {
+          snap.docs.forEach((docSnap) => {
+            if (!itemsMap.has(docSnap.id)) {
+              const data = docSnap.data();
+              itemsMap.set(docSnap.id, {
+                id: docSnap.id,
+                planName: data.planName || data.tariffName || "Unnamed Plan",
+                amount: Number(data.amount) || 0,
+                travelId: data.travelId,
+                travelName: data.travelName,
+              });
+            }
+          });
+          syncTariffs();
+        },
+        (err) => {
+          console.warn("Plans legacy listener notice:", err);
+        }
+      );
     } catch (err) {
-      console.error("Failed to load plans:", err);
+      console.error("Failed to load tariffs in bookings:", err);
     }
+
+    return () => {
+      if (unsubTariffs) unsubTariffs();
+      if (unsubPlans) unsubPlans();
+    };
   }, []);
 
   // 2. Subscribe to Drivers
@@ -1272,11 +1321,11 @@ export default function BookingsPage() {
                 className="text-[10px] font-medium text-slate-600 uppercase tracking-wider flex items-center gap-1"
               >
                 <Layers className="w-3 h-3 text-[#f16623]" />
-                Select Travel Plan <span className="text-[#f16623]">*</span>
+                Select Tariff / Plan <span className="text-[#f16623]">*</span>
               </label>
               {plans.length > 0 && (
                 <span className="text-[10px] text-slate-400 font-normal">
-                  {plans.length} plan{plans.length === 1 ? "" : "s"} available
+                  {plans.length} tariff{plans.length === 1 ? "" : "s"} available
                 </span>
               )}
             </div>
@@ -1288,7 +1337,7 @@ export default function BookingsPage() {
               onChange={(e) => handleSelectPlan(e.target.value)}
               className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal transition"
             >
-              <option value="">-- Choose Tariff Plan --</option>
+              <option value="">-- Choose Tariff / Plan --</option>
               {plans.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.planName} — ₹{p.amount.toLocaleString("en-IN")}{" "}
