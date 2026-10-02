@@ -1517,7 +1517,7 @@ export default function VehiclesPage() {
           if (!isSubmitting) setIsOffCanvasOpen(false);
         }}
         size="2xl"
-        widthClassName="max-w-2xl sm:max-w-3xl"
+        widthClassName="max-w-3xl sm:max-w-4xl lg:max-w-5xl"
         title={editingVehicleId ? "Edit Fleet Vehicle" : "Add New Fleet Vehicle"}
         subtitle="Complete 5-stage setup: Profile, Compliance, Operations, Financial, and Status"
       >
@@ -1539,7 +1539,7 @@ export default function VehiclesPage() {
 
           {/* Stepper Tabs Bar (Total 5 Tabs) */}
           <div className="border-b border-slate-200 pb-2">
-            <div className="flex items-center justify-between gap-1 overflow-x-auto scrollbar-none py-1">
+            <div className="grid grid-cols-5 gap-1.5 w-full py-1">
               {[
                 { step: 1, title: "1. Profile" },
                 { step: 2, title: "2. Compliance" },
@@ -1560,7 +1560,7 @@ export default function VehiclesPage() {
                       }
                     }}
                     disabled={!isUnlocked}
-                    className={`h-[32px] px-3 rounded-[6px] text-xs font-medium inline-flex items-center gap-1.5 transition whitespace-nowrap ${
+                    className={`h-[32px] px-2 rounded-[6px] text-xs font-medium inline-flex items-center justify-center gap-1 transition text-center truncate ${
                       isCurrent
                         ? "bg-[#f16623] text-white shadow-xs shadow-[#f16623]/25"
                         : isUnlocked
@@ -1568,9 +1568,9 @@ export default function VehiclesPage() {
                         : "bg-slate-50 text-slate-400 cursor-not-allowed opacity-60"
                     }`}
                   >
-                    <span>{t.title}</span>
+                    <span className="truncate">{t.title}</span>
                     {unlockedTabs.includes(t.step + 1) && !isCurrent && (
-                      <Check className="w-3 h-3 text-emerald-600" />
+                      <Check className="w-3 h-3 text-emerald-600 shrink-0" />
                     )}
                   </button>
                 );

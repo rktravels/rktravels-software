@@ -313,46 +313,53 @@ export default function BookingsPage() {
     }
   }, []);
 
-  // 4. Subscribe to Business Owners
+  // 4. Subscribe to Companies / Corporate Clients
   useEffect(() => {
+    let compsList: BusinessOwnerOption[] = [];
+    let ownersList: BusinessOwnerOption[] = [];
+
+    const mergeCorporate = () => {
+      const map = new Map<string, BusinessOwnerOption>();
+      compsList.forEach((c) => map.set(c.id, c));
+      ownersList.forEach((o) => {
+        if (!map.has(o.id)) map.set(o.id, o);
+      });
+      setBusinessOwners(Array.from(map.values()));
+    };
+
     try {
-      const q = query(
-        collection(db, "business_owners"),
-        orderBy("createdAt", "desc")
-      );
-      const unsub = onSnapshot(
-        q,
-        (snap) => {
-          const items: BusinessOwnerOption[] = snap.docs.map((docSnap) => ({
-            id: docSnap.id,
-            name: docSnap.data().name || "",
-            mobile: docSnap.data().mobile || "",
-            email: docSnap.data().email || "",
-            companyName: docSnap.data().companyName || "",
-            gstNumber: docSnap.data().gstNumber || "",
-          }));
-          setBusinessOwners(items);
-        },
-        (err) => {
-          console.error("Business owners fallback listener:", err);
-          const fallback = query(collection(db, "business_owners"));
-          const unsubFallback = onSnapshot(fallback, (snap) => {
-            const items: BusinessOwnerOption[] = snap.docs.map((docSnap) => ({
-              id: docSnap.id,
-              name: docSnap.data().name || "",
-              mobile: docSnap.data().mobile || "",
-              email: docSnap.data().email || "",
-              companyName: docSnap.data().companyName || "",
-              gstNumber: docSnap.data().gstNumber || "",
-            }));
-            setBusinessOwners(items);
-          });
-          return () => unsubFallback();
-        }
-      );
-      return () => unsub();
+      const qComps = query(collection(db, "companies"), orderBy("createdAt", "desc"));
+      const unsubComps = onSnapshot(qComps, (snap) => {
+        compsList = snap.docs.map((docSnap) => ({
+          id: docSnap.id,
+          name: docSnap.data().contactPerson || docSnap.data().name || "",
+          mobile: docSnap.data().mobile || "",
+          email: docSnap.data().email || "",
+          companyName: docSnap.data().companyName || "",
+          gstNumber: docSnap.data().gstNumber || "",
+        }));
+        mergeCorporate();
+      });
+
+      const qOwners = query(collection(db, "business_owners"), orderBy("createdAt", "desc"));
+      const unsubOwners = onSnapshot(qOwners, (snap) => {
+        ownersList = snap.docs.map((docSnap) => ({
+          id: docSnap.id,
+          name: docSnap.data().name || "",
+          mobile: docSnap.data().mobile || "",
+          email: docSnap.data().email || "",
+          companyName: docSnap.data().companyName || "",
+          gstNumber: docSnap.data().gstNumber || "",
+        }));
+        mergeCorporate();
+      });
+
+      return () => {
+        unsubComps();
+        unsubOwners();
+      };
     } catch (err) {
-      console.error("Failed to load business owners:", err);
+      console.error("Failed to load corporate companies in bookings:", err);
     }
   }, []);
 

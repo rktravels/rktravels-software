@@ -64,11 +64,11 @@ export function OffCanvas({
           className={`w-screen ${
             widthClassName ||
             (size === "3xl"
-              ? "max-w-3xl"
+              ? "max-w-4xl sm:max-w-5xl"
               : size === "2xl"
-              ? "max-w-2xl"
+              ? "max-w-3xl sm:max-w-4xl lg:max-w-[56rem]"
               : size === "xl"
-              ? "max-w-xl"
+              ? "max-w-xl sm:max-w-2xl"
               : size === "lg"
               ? "max-w-lg"
               : "max-w-md")
