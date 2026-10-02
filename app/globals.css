@@ -102,3 +102,44 @@ select,
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background: #cbd5e1;
 }
+
+/* 5. Hide number input arrows/spinners globally */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+/* 6. Cursor pointer for all interactive elements (buttons, accordions, dropdowns, links, etc.) */
+button,
+[role="button"],
+select,
+summary,
+a,
+label[for],
+input[type="checkbox"],
+input[type="radio"],
+input[type="submit"],
+input[type="button"],
+input[type="reset"],
+input[type="file"]::file-selector-button,
+.btn,
+.dropdown-trigger,
+.accordion-header,
+[data-state],
+[tabindex="0"] {
+  cursor: pointer !important;
+}
+
+button:disabled,
+[role="button"][aria-disabled="true"],
+input:disabled,
+select:disabled,
+.disabled {
+  cursor: not-allowed !important;
+}
+

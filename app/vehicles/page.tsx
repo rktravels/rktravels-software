@@ -21,6 +21,7 @@ import {
   Camera,
   Eye,
   RefreshCw,
+  Tags,
 } from "lucide-react";
 import {
   collection,
@@ -366,6 +367,14 @@ export default function VehiclesPage() {
               className="w-full h-[34px] max-h-[34px] pl-8 pr-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal transition"
             />
           </div>
+
+          <Link
+            href="/vehicle-categories"
+            className="h-[34px] max-h-[34px] px-3 rounded-[6px] border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-normal transition flex items-center gap-1.5 shrink-0"
+          >
+            <Tags className="w-3.5 h-3.5 text-slate-500" />
+            <span>Categories</span>
+          </Link>
 
           <button
             type="button"

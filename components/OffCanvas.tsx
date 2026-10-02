@@ -9,6 +9,7 @@ interface OffCanvasProps {
   title: string;
   subtitle?: string;
   children: React.ReactNode;
+  contentClassName?: string;
 }
 
 export function OffCanvas({
@@ -17,6 +18,7 @@ export function OffCanvas({
   title,
   subtitle,
   children,
+  contentClassName,
 }: OffCanvasProps) {
   // Prevent body scroll when open
   useEffect(() => {
@@ -56,13 +58,13 @@ export function OffCanvas({
       <div className="fixed inset-y-0 right-0 max-w-full flex pl-10">
         <div className="w-screen max-w-md bg-white border-l border-slate-200 shadow-2xl flex flex-col transform transition-transform duration-200 ease-in-out">
           {/* Header */}
-          <div className="h-14 px-4 border-b border-slate-100 flex items-center justify-between shrink-0 bg-slate-50/70">
-            <div>
-              <h3 className="text-xs sm:text-sm font-medium text-slate-900 leading-none">
+          <div className="pt-6 pb-4 px-6 border-b border-slate-100 flex items-start justify-between shrink-0 bg-slate-50/70 gap-3">
+            <div className="flex-1 pr-2">
+              <h3 className="text-xs sm:text-sm font-medium text-slate-900 leading-snug">
                 {title}
               </h3>
               {subtitle && (
-                <p className="text-[11px] text-slate-400 font-normal mt-0.5">
+                <p className="text-[11px] text-slate-400 font-normal mt-1 leading-relaxed">
                   {subtitle}
                 </p>
               )}
@@ -71,7 +73,7 @@ export function OffCanvas({
             <button
               type="button"
               onClick={onClose}
-              className="h-[34px] max-h-[34px] w-[34px] flex items-center justify-center rounded-[6px] text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition"
+              className="h-[34px] max-h-[34px] w-[34px] shrink-0 flex items-center justify-center rounded-[6px] text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition cursor-pointer -mt-0.5"
               aria-label="Close panel"
             >
               <X className="w-4 h-4" />
@@ -79,7 +81,7 @@ export function OffCanvas({
           </div>
 
           {/* Body */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+          <div className={`flex-1 overflow-y-auto p-6 ${contentClassName || ""}`}>
             {children}
           </div>
         </div>

@@ -12,6 +12,7 @@ import {
   UserCog,
   ShieldCheck,
   Compass,
+  Tags,
   type LucideIcon,
 } from "lucide-react";
 
@@ -202,6 +203,22 @@ export const NAV_ITEMS: PageModuleInfo[] = [
       "Live GPS odometer, real-time speed alerts & geofence monitoring",
       "Pollution, insurance, fitness certificate & permit renewal calendar",
       "Scheduled preventive maintenance, tire replacement & service logs",
+    ],
+  },
+  {
+    id: "vehicle-categories",
+    name: "Vehicle Categories",
+    href: "/vehicle-categories",
+    category: "FLEET & CREW",
+    icon: Tags,
+    description:
+      "Vehicle category definitions, seating capacities with auto driver calculation, AC / Non-AC tiers, and invoice print names.",
+    primaryAction: "Add Category",
+    secondaryAction: "View Categories",
+    plannedFeatures: [
+      "Custom seating capacity configuration with automatic driver calculation",
+      "Print name customization for invoices, vouchers & trip tickets",
+      "Instant active/inactive status toggle and Firestore synchronization",
     ],
   },
   {

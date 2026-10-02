@@ -1,11 +1,28 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Block value changing on scroll/wheel when number inputs are focused
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      const active = document.activeElement as HTMLInputElement | null;
+      if (
+        active &&
+        active.tagName === "INPUT" &&
+        active.type === "number"
+      ) {
+        active.blur();
+      }
+    };
+
+    window.addEventListener("wheel", handleWheel, { passive: true });
+    return () => window.removeEventListener("wheel", handleWheel);
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-800 flex flex-col font-sans">
