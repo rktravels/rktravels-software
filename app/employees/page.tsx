@@ -95,38 +95,79 @@ export default function EmployeesPage() {
     message: string;
   } | null>(null);
 
-  // 1. Subscribe to Travels Collection for "Select Travels" dropdown
+  // 1. Subscribe to Entities / Travels Collections for "Select Travels" dropdown
   useEffect(() => {
+    let unsubs: Array<() => void> = [];
+    const entityMap = new Map<string, TravelOption>();
+
+    const updateCombined = () => {
+      setTravelsList(Array.from(entityMap.values()));
+    };
+
     try {
-      const q = query(collection(db, "travels"), orderBy("createdAt", "desc"));
-      const unsub = onSnapshot(
-        q,
+      // Primary: entities collection
+      const qEntities = query(collection(db, "entities"), orderBy("createdAt", "desc"));
+      const unsubEntities = onSnapshot(
+        qEntities,
         (snapshot) => {
-          const items: TravelOption[] = snapshot.docs.map((docSnap) => ({
-            id: docSnap.id,
-            travelName: docSnap.data().travelName || "Unnamed Travel",
-            mobileNumber: docSnap.data().mobileNumber || "",
-          }));
-          setTravelsList(items);
+          snapshot.docs.forEach((docSnap) => {
+            const data = docSnap.data();
+            entityMap.set(docSnap.id, {
+              id: docSnap.id,
+              travelName: data.entityName || data.travelName || "Unnamed Entity",
+              mobileNumber: data.mobileNumber || "",
+            });
+          });
+          updateCombined();
         },
         (err) => {
-          console.error("Travels listener error, falling back:", err);
-          const fallback = query(collection(db, "travels"));
+          console.warn("Entities query error, falling back:", err);
+          const fallback = query(collection(db, "entities"));
           const unsubFallback = onSnapshot(fallback, (snap) => {
-            const items: TravelOption[] = snap.docs.map((docSnap) => ({
-              id: docSnap.id,
-              travelName: docSnap.data().travelName || "Unnamed Travel",
-              mobileNumber: docSnap.data().mobileNumber || "",
-            }));
-            setTravelsList(items);
+            snap.docs.forEach((docSnap) => {
+              const data = docSnap.data();
+              entityMap.set(docSnap.id, {
+                id: docSnap.id,
+                travelName: data.entityName || data.travelName || "Unnamed Entity",
+                mobileNumber: data.mobileNumber || "",
+              });
+            });
+            updateCombined();
           });
-          return () => unsubFallback();
+          unsubs.push(unsubFallback);
         }
       );
-      return () => unsub();
+      unsubs.push(unsubEntities);
+
+      // Secondary: legacy travels collection
+      const qTravels = query(collection(db, "travels"), orderBy("createdAt", "desc"));
+      const unsubTravels = onSnapshot(
+        qTravels,
+        (snapshot) => {
+          snapshot.docs.forEach((docSnap) => {
+            if (!entityMap.has(docSnap.id)) {
+              const data = docSnap.data();
+              entityMap.set(docSnap.id, {
+                id: docSnap.id,
+                travelName: data.entityName || data.travelName || "Unnamed Entity",
+                mobileNumber: data.mobileNumber || "",
+              });
+            }
+          });
+          updateCombined();
+        },
+        (err) => {
+          console.warn("Travels listener error:", err);
+        }
+      );
+      unsubs.push(unsubTravels);
     } catch (err) {
-      console.error("Failed to load travels in employees:", err);
+      console.error("Failed to load entities in employees:", err);
     }
+
+    return () => {
+      unsubs.forEach((u) => u());
+    };
   }, []);
 
   // 2. Subscribe to real-time employees collection in Firestore
@@ -673,9 +714,9 @@ export default function EmployeesPage() {
             </select>
             {travelsList.length === 0 && (
               <p className="text-[10px] text-slate-400">
-                No travels registered yet. Add travels in the{" "}
-                <Link href="/travels" className="text-[#f16623] underline">
-                  Travels page
+                No entities registered yet. Add entities in the{" "}
+                <Link href="/entities" className="text-[#f16623] underline">
+                  Entities page
                 </Link>
                 .
               </p>
