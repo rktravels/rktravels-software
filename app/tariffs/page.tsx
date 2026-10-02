@@ -165,11 +165,12 @@ export default function TariffsPage() {
   const [isOffCanvasOpen, setIsOffCanvasOpen] = useState(false);
   const [editingTariffId, setEditingTariffId] = useState<string | null>(null);
 
-  // --- Tariff Form State (matching screenshot header) ---
-  const [customerName, setCustomerName] = useState("HIMEROS PHARMA");
-  const [validFrom, setValidFrom] = useState("2026-04-29");
-  const [validTo, setValidTo] = useState("2027-03-30");
+  // --- Tariff Form State (clean empty defaults) ---
+  const [customerName, setCustomerName] = useState("");
+  const [validFrom, setValidFrom] = useState(new Date().toISOString().split("T")[0]);
+  const [validTo, setValidTo] = useState("");
   const [tariffStatus, setTariffStatus] = useState<"Active" | "Inactive">("Active");
+  const [offerActivityLog, setOfferActivityLog] = useState(false);
 
   // Selected vehicle categories (each becomes a column)
   const [allAvailableCategories, setAllAvailableCategories] = useState<string[]>(
@@ -191,82 +192,51 @@ export default function TariffsPage() {
   >("Local");
 
   // --- 1. LOCAL DUTY STATE ---
-  const [offerLocal, setOfferLocal] = useState(true);
-  const [localPackages, setLocalPackages] = useState<TariffPackageBlock[]>([
-    {
-      id: "pkg-4h-40k",
-      packageName: "4 HOURS 40 KM",
-      rates: {
-        "SEDAN (A/C)": { baseFare: 1500, nightCharge: 0, driverBata: 100 },
-        "INNOVA (A/C)": { baseFare: 2000, nightCharge: 0, driverBata: 100 },
-        "CRYSTA (A/C)": { baseFare: 3000, nightCharge: 0, driverBata: 100 },
-        "HYCROSS (A/C)": { baseFare: 3500, nightCharge: 0, driverBata: 150 },
-      },
-    },
-    {
-      id: "pkg-8h-80k",
-      packageName: "8 HOURS 80 KM",
-      rates: {
-        "SEDAN (A/C)": { baseFare: 2500, nightCharge: 0, driverBata: 200 },
-        "INNOVA (A/C)": { baseFare: 3000, nightCharge: 0, driverBata: 200 },
-        "CRYSTA (A/C)": { baseFare: 4000, nightCharge: 0, driverBata: 200 },
-        "HYCROSS (A/C)": { baseFare: 4800, nightCharge: 0, driverBata: 250 },
-      },
-    },
-  ]);
+  const [offerLocal, setOfferLocal] = useState(false);
+  const [localPackages, setLocalPackages] = useState<TariffPackageBlock[]>([]);
   const [localExtraRates, setLocalExtraRates] = useState<ExtraRatesBlock>({
-    extraPerHour: {
-      "SEDAN (A/C)": 125,
-      "INNOVA (A/C)": 200,
-      "CRYSTA (A/C)": 250,
-      "HYCROSS (A/C)": 300,
-    },
-    extraPerKm: {
-      "SEDAN (A/C)": 13,
-      "INNOVA (A/C)": 18,
-      "CRYSTA (A/C)": 20,
-      "HYCROSS (A/C)": 24,
-    },
+    extraPerHour: {},
+    extraPerKm: {},
   });
   const [newPackageName, setNewPackageName] = useState("");
   const [isAddingPackage, setIsAddingPackage] = useState(false);
 
-  // --- 2. PICKUP & DROP STATE (Matching User's First Uploaded Image) ---
-  const [offerAirport, setOfferAirport] = useState(true);
-  const [offerRailway, setOfferRailway] = useState(true);
+  // --- 2. PICKUP & DROP STATE ---
+  const [offerAirport, setOfferAirport] = useState(false);
+  const [offerRailway, setOfferRailway] = useState(false);
   const [airportRates, setAirportRates] = useState<TransferParticulars>({
-    includedHours: { "SEDAN (A/C)": 2, "INNOVA (A/C)": 2, "CRYSTA (A/C)": 2, "HYCROSS (A/C)": 2 },
-    includedKm: { "SEDAN (A/C)": 40, "INNOVA (A/C)": 40, "CRYSTA (A/C)": 40, "HYCROSS (A/C)": 40 },
-    fare: { "SEDAN (A/C)": 1400, "INNOVA (A/C)": 2200, "CRYSTA (A/C)": 2800, "HYCROSS (A/C)": 3400 },
-    waitingPerHour: { "SEDAN (A/C)": 120, "INNOVA (A/C)": 180, "CRYSTA (A/C)": 220, "HYCROSS (A/C)": 260 },
-    extraPerKm: { "SEDAN (A/C)": 14, "INNOVA (A/C)": 19, "CRYSTA (A/C)": 22, "HYCROSS (A/C)": 26 },
+    includedHours: {},
+    includedKm: {},
+    fare: {},
+    waitingPerHour: {},
+    extraPerKm: {},
   });
   const [railwayRates, setRailwayRates] = useState<TransferParticulars>({
-    includedHours: { "SEDAN (A/C)": 2, "INNOVA (A/C)": 2, "CRYSTA (A/C)": 2, "HYCROSS (A/C)": 2 },
-    includedKm: { "SEDAN (A/C)": 30, "INNOVA (A/C)": 30, "CRYSTA (A/C)": 30, "HYCROSS (A/C)": 30 },
-    fare: { "SEDAN (A/C)": 900, "INNOVA (A/C)": 1400, "CRYSTA (A/C)": 1900, "HYCROSS (A/C)": 2400 },
-    waitingPerHour: { "SEDAN (A/C)": 120, "INNOVA (A/C)": 180, "CRYSTA (A/C)": 220, "HYCROSS (A/C)": 260 },
-    extraPerKm: { "SEDAN (A/C)": 14, "INNOVA (A/C)": 19, "CRYSTA (A/C)": 22, "HYCROSS (A/C)": 26 },
+    includedHours: {},
+    includedKm: {},
+    fare: {},
+    waitingPerHour: {},
+    extraPerKm: {},
   });
 
-  // --- 3. DAY RENT STATE (Matching User's Second Uploaded Image) ---
-  const [offerDayRent, setOfferDayRent] = useState(true);
+  // --- 3. DAY RENT STATE ---
+  const [offerDayRent, setOfferDayRent] = useState(false);
   const [dayRentRates, setDayRentRates] = useState<DayRentParticulars>({
-    dayRent12Hrs: { "SEDAN (A/C)": 3200, "INNOVA (A/C)": 4200, "CRYSTA (A/C)": 5200, "HYCROSS (A/C)": 6200 },
-    dayRent24Hrs: { "SEDAN (A/C)": 4500, "INNOVA (A/C)": 6000, "CRYSTA (A/C)": 7500, "HYCROSS (A/C)": 8800 },
-    fuelMileage: { "SEDAN (A/C)": 16, "INNOVA (A/C)": 12, "CRYSTA (A/C)": 11, "HYCROSS (A/C)": 14 },
-    driverBata12Hrs: { "SEDAN (A/C)": 300, "INNOVA (A/C)": 350, "CRYSTA (A/C)": 400, "HYCROSS (A/C)": 450 },
-    driverBata24Hrs: { "SEDAN (A/C)": 500, "INNOVA (A/C)": 600, "CRYSTA (A/C)": 700, "HYCROSS (A/C)": 800 },
-    nightHaltPerNight: { "SEDAN (A/C)": 300, "INNOVA (A/C)": 350, "CRYSTA (A/C)": 400, "HYCROSS (A/C)": 450 },
+    dayRent12Hrs: {},
+    dayRent24Hrs: {},
+    fuelMileage: {},
+    driverBata12Hrs: {},
+    driverBata24Hrs: {},
+    nightHaltPerNight: {},
   });
 
-  // --- 4. OUTSTATION STATE (Matching User's Third Uploaded Image) ---
-  const [offerOutstation, setOfferOutstation] = useState(true);
+  // --- 4. OUTSTATION STATE ---
+  const [offerOutstation, setOfferOutstation] = useState(false);
   const [outstationRates, setOutstationRates] = useState<OutstationParticulars>({
-    baseKmSlab: { "SEDAN (A/C)": 350, "INNOVA (A/C)": 450, "CRYSTA (A/C)": 450, "HYCROSS (A/C)": 450 },
-    perKmCharge: { "SEDAN (A/C)": 13, "INNOVA (A/C)": 18, "CRYSTA (A/C)": 20, "HYCROSS (A/C)": 24 },
-    driverBataPerDay: { "SEDAN (A/C)": 500, "INNOVA (A/C)": 700, "CRYSTA (A/C)": 700, "HYCROSS (A/C)": 800 },
-    nightHaltPerNight: { "SEDAN (A/C)": 250, "INNOVA (A/C)": 250, "CRYSTA (A/C)": 250, "HYCROSS (A/C)": 300 },
+    baseKmSlab: {},
+    perKmCharge: {},
+    driverBataPerDay: {},
+    nightHaltPerNight: {},
   });
 
   // Page List & Search
@@ -701,7 +671,7 @@ interface CompanyOptionItem {
       rates: {},
     };
     selectedCategories.forEach((cat) => {
-      newPkg.rates[cat] = { baseFare: 0, nightCharge: 0, driverBata: 0 };
+      newPkg.rates[cat] = { baseFare: "", nightCharge: "", driverBata: "" };
     });
     setLocalPackages([...localPackages, newPkg]);
     setNewPackageName("");
@@ -845,10 +815,24 @@ interface CompanyOptionItem {
   // --- Open Add New Tariff ---
   const handleOpenAddTariff = () => {
     setEditingTariffId(null);
-    setCustomerName("HIMEROS PHARMA");
+    setCustomerName("");
     setValidFrom(new Date().toISOString().split("T")[0]);
     setValidTo("");
     setTariffStatus("Active");
+    setActiveTab("Local");
+    setSelectedCategories(["SEDAN (A/C)", "INNOVA (A/C)", "CRYSTA (A/C)", "HYCROSS (A/C)"]);
+    setOfferLocal(false);
+    setLocalPackages([]);
+    setLocalExtraRates({ extraPerHour: {}, extraPerKm: {} });
+    setOfferAirport(false);
+    setOfferRailway(false);
+    setAirportRates({ includedHours: {}, includedKm: {}, fare: {}, waitingPerHour: {}, extraPerKm: {} });
+    setRailwayRates({ includedHours: {}, includedKm: {}, fare: {}, waitingPerHour: {}, extraPerKm: {} });
+    setOfferDayRent(false);
+    setDayRentRates({ dayRent12Hrs: {}, dayRent24Hrs: {}, fuelMileage: {}, driverBata12Hrs: {}, driverBata24Hrs: {}, nightHaltPerNight: {} });
+    setOfferOutstation(false);
+    setOutstationRates({ baseKmSlab: {}, perKmCharge: {}, driverBataPerDay: {}, nightHaltPerNight: {} });
+    setOfferActivityLog(false);
     setIsCustomCompany(false);
     setIsOffCanvasOpen(true);
   };
@@ -898,7 +882,7 @@ interface CompanyOptionItem {
         },
         // Compatibility fields for Bookings dropdown
         planName: `${trimmedCust} Tariff`,
-        amount: Number(localPackages[0]?.rates[selectedCategories[0]]?.baseFare) || 1500,
+        amount: Number(localPackages[0]?.rates[selectedCategories[0]]?.baseFare) || 0,
         updatedAt: serverTimestamp(),
       };
 
@@ -1603,36 +1587,72 @@ interface CompanyOptionItem {
             </div>
           </div>
 
-          {/* Tab Navigation for Duty Types */}
-          <div className="flex items-center gap-1 border-b border-slate-200 pt-1">
-            {(
-              [
-                "Local",
-                "Pickup & Drop",
-                "Day Rent",
-                "Outstation",
-                "Activity Log",
-              ] as const
-            ).map((tab) => {
+          {/* Tab Navigation for Duty Types with Section Checkboxes */}
+          <div className="flex items-center gap-1 border-b border-slate-200 pt-1 overflow-x-auto">
+            {[
+              {
+                id: "Local" as const,
+                label: "Local",
+                checked: offerLocal,
+                onToggle: (val: boolean) => setOfferLocal(val),
+              },
+              {
+                id: "Pickup & Drop" as const,
+                label: "Pickup & Drop",
+                checked: offerAirport || offerRailway,
+                onToggle: (val: boolean) => {
+                  setOfferAirport(val);
+                  setOfferRailway(val);
+                },
+              },
+              {
+                id: "Day Rent" as const,
+                label: "Day Rent",
+                checked: offerDayRent,
+                onToggle: (val: boolean) => setOfferDayRent(val),
+              },
+              {
+                id: "Outstation" as const,
+                label: "Outstation",
+                checked: offerOutstation,
+                onToggle: (val: boolean) => setOfferOutstation(val),
+              },
+              {
+                id: "Activity Log" as const,
+                label: "Activity Log",
+                checked: offerActivityLog,
+                onToggle: (val: boolean) => setOfferActivityLog(val),
+              },
+            ].map((tabItem) => {
+              const tab = tabItem.id;
               const isActive = activeTab === tab;
               return (
-                <button
+                <div
                   key={tab}
-                  type="button"
-                  onClick={() => setActiveTab(tab)}
-                  className={`relative px-4 py-2 text-xs font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition cursor-pointer border-b-2 select-none ${
                     isActive
-                      ? "text-[#f16623] border-b-2 border-[#f16623] -mb-[1px]"
-                      : "text-slate-500 hover:text-slate-800 font-normal"
+                      ? "text-[#f16623] border-[#f16623] -mb-[1px] bg-orange-50/40"
+                      : "text-slate-600 hover:text-slate-900 border-transparent hover:bg-slate-50 font-normal"
                   }`}
                 >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full ${
-                      isActive ? "bg-[#f16623]" : "bg-slate-300"
-                    }`}
+                  <input
+                    type="checkbox"
+                    checked={tabItem.checked}
+                    onChange={(e) => {
+                      tabItem.onToggle(e.target.checked);
+                      setActiveTab(tab);
+                    }}
+                    className="w-3.5 h-3.5 rounded text-[#f16623] focus:ring-[#f16623] accent-[#f16623] cursor-pointer"
+                    title={`Enable/disable ${tabItem.label}`}
                   />
-                  <span>{tab}</span>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab(tab)}
+                    className="flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>{tabItem.label}</span>
+                  </button>
+                </div>
               );
             })}
           </div>
@@ -1718,7 +1738,7 @@ interface CompanyOptionItem {
                 </div>
               </div>
 
-              {offerLocal && (
+              {offerLocal ? (
                 <div className="border border-slate-200 rounded-[6px] overflow-hidden bg-white shadow-xs">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs border-collapse">
@@ -1733,6 +1753,16 @@ interface CompanyOptionItem {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
+                        {localPackages.length === 0 && (
+                          <tr>
+                            <td
+                              colSpan={selectedCategories.length + 1}
+                              className="py-5 px-4 text-center text-xs text-slate-400 bg-slate-50/40 font-normal"
+                            >
+                              No local packages added yet. Click &quot;Add package&quot; above to configure packages (e.g. 4 HOURS 40 KM, 8 HOURS 80 KM).
+                            </td>
+                          </tr>
+                        )}
                         {localPackages.map((pkg) => (
                           <div key={pkg.id} className="contents">
                             {/* Package Header Row */}
@@ -1852,6 +1882,13 @@ interface CompanyOptionItem {
                       </tbody>
                     </table>
                   </div>
+                </div>
+              ) : (
+                <div className="py-8 text-center border border-dashed border-slate-200 rounded-[6px] bg-slate-50/50">
+                  <p className="text-xs text-slate-500 font-medium">Local duty is currently disabled</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Check &quot;We offer Local duty&quot; above or in the tab bar to configure local packages and extra rates.
+                  </p>
                 </div>
               )}
             </div>
@@ -2100,6 +2137,15 @@ interface CompanyOptionItem {
                   </div>
                 </div>
               )}
+
+              {!offerAirport && !offerRailway && (
+                <div className="py-8 text-center border border-dashed border-slate-200 rounded-[6px] bg-slate-50/50">
+                  <p className="text-xs text-slate-500 font-medium">Pickup &amp; Drop transfers are currently disabled</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Check &quot;Airport transfers&quot; or &quot;Railway transfers&quot; above to configure transfer rates.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -2118,7 +2164,7 @@ interface CompanyOptionItem {
                 <span>We offer Day Rent</span>
               </label>
 
-              {offerDayRent && (
+              {offerDayRent ? (
                 <div className="border border-slate-200 rounded-[6px] overflow-hidden bg-white shadow-xs">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs border-collapse">
@@ -2233,6 +2279,13 @@ interface CompanyOptionItem {
                     </table>
                   </div>
                 </div>
+              ) : (
+                <div className="py-8 text-center border border-dashed border-slate-200 rounded-[6px] bg-slate-50/50">
+                  <p className="text-xs text-slate-500 font-medium">Day Rent duty is currently disabled</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Check &quot;We offer Day Rent&quot; above or in the tab bar to configure 12h, 24h, fuel mileage, and driver bata.
+                  </p>
+                </div>
               )}
             </div>
           )}
@@ -2252,7 +2305,7 @@ interface CompanyOptionItem {
                 <span>We offer Outstation</span>
               </label>
 
-              {offerOutstation && (
+              {offerOutstation ? (
                 <div className="border border-slate-200 rounded-[6px] overflow-hidden bg-white shadow-xs">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs border-collapse">
@@ -2342,6 +2395,13 @@ interface CompanyOptionItem {
                     </table>
                   </div>
                 </div>
+              ) : (
+                <div className="py-8 text-center border border-dashed border-slate-200 rounded-[6px] bg-slate-50/50">
+                  <p className="text-xs text-slate-500 font-medium">Outstation duty is currently disabled</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Check &quot;We offer Outstation&quot; above or in the tab bar to configure base km, per km charge, and bata.
+                  </p>
+                </div>
               )}
             </div>
           )}
@@ -2351,23 +2411,50 @@ interface CompanyOptionItem {
           {/* ============================================================== */}
           {activeTab === "Activity Log" && (
             <div className="bg-white p-4 rounded-[6px] border border-slate-200/80 space-y-3">
-              <div className="flex items-center gap-2 text-xs font-medium text-slate-900 border-b border-slate-100 pb-2">
-                <History className="w-4 h-4 text-[#f16623]" />
-                <span>Tariff Audit Trail & Version History</span>
-              </div>
-              <div className="space-y-2 text-xs text-slate-600 font-normal">
-                <div className="flex items-start gap-2.5 p-2.5 rounded-[6px] bg-slate-50 border border-slate-200">
-                  <Clock className="w-4 h-4 text-slate-400 mt-0.5" />
-                  <div>
-                    <span className="font-medium text-slate-900">
-                      Version 1.0 - Active Tariff Matrix
-                    </span>
-                    <p className="text-[11px] text-slate-400 mt-0.5">
-                      Configured for {customerName} covering {selectedCategories.join(", ")}.
-                    </p>
-                  </div>
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <div className="flex items-center gap-2 text-xs font-medium text-slate-900">
+                  <History className="w-4 h-4 text-[#f16623]" />
+                  <span>Tariff Audit Trail & Version History</span>
                 </div>
+                <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={offerActivityLog}
+                    onChange={(e) => setOfferActivityLog(e.target.checked)}
+                    className="w-4 h-4 rounded text-[#f16623] focus:ring-[#f16623] accent-[#f16623] cursor-pointer"
+                  />
+                  <span>Track Activity Log</span>
+                </label>
               </div>
+
+              {offerActivityLog ? (
+                <div className="space-y-2 text-xs text-slate-600 font-normal">
+                  {editingTariffId ? (
+                    <div className="flex items-start gap-2.5 p-2.5 rounded-[6px] bg-slate-50 border border-slate-200">
+                      <Clock className="w-4 h-4 text-slate-400 mt-0.5" />
+                      <div>
+                        <span className="font-medium text-slate-900">
+                          Active Tariff Matrix
+                        </span>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Assigned to {customerName || "Customer"} covering {selectedCategories.join(", ")}.
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-400 py-6 text-center">
+                      No prior activity logs. An audit trail entry will be recorded when you save this tariff.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="py-8 text-center border border-dashed border-slate-200 rounded-[6px] bg-slate-50/50">
+                  <p className="text-xs text-slate-500 font-medium">Activity log tracking is currently disabled</p>
+                  <p className="text-[11px] text-slate-400 mt-0.5">
+                    Check &quot;Track Activity Log&quot; above to enable audit logging for this tariff.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
