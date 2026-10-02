@@ -14,6 +14,7 @@ import {
   Compass,
   Tags,
   Briefcase,
+  MapPin,
   type LucideIcon,
 } from "lucide-react";
 
@@ -236,6 +237,22 @@ export const NAV_ITEMS: PageModuleInfo[] = [
       "Dedicated vendor and leasing member registry with phone, email, and address",
       "Instant linkage to attached and leased fleet vehicles",
       "Real-time Firestore synchronization with 2-item pagination controls",
+    ],
+  },
+  {
+    id: "locations",
+    name: "Locations",
+    href: "/locations",
+    category: "MASTERS",
+    icon: MapPin,
+    description:
+      "All-India States and Cities directory master. Manage geographical coverage, operating hubs, state codes, and city transit locations.",
+    primaryAction: "Add Location",
+    secondaryAction: "Bulk Upload",
+    plannedFeatures: [
+      "All-India 28 States and 8 Union Territories with major commercial cities",
+      "Bulk CSV/Excel upload and instant 1-click seeding of states and cities",
+      "Real-time Firestore synchronization with 24-item pagination",
     ],
   },
   {
