@@ -10,6 +10,8 @@ interface OffCanvasProps {
   subtitle?: string;
   children: React.ReactNode;
   contentClassName?: string;
+  size?: "md" | "lg" | "xl" | "2xl" | "3xl";
+  widthClassName?: string;
 }
 
 export function OffCanvas({
@@ -19,6 +21,8 @@ export function OffCanvas({
   subtitle,
   children,
   contentClassName,
+  size = "md",
+  widthClassName,
 }: OffCanvasProps) {
   // Prevent body scroll when open
   useEffect(() => {
@@ -55,8 +59,21 @@ export function OffCanvas({
       />
 
       {/* Slide-over panel on the right side */}
-      <div className="fixed inset-y-0 right-0 max-w-full flex pl-10">
-        <div className="w-screen max-w-md bg-white border-l border-slate-200 shadow-2xl flex flex-col transform transition-transform duration-200 ease-in-out">
+      <div className="fixed inset-y-0 right-0 max-w-full flex pl-6 sm:pl-10">
+        <div
+          className={`w-screen ${
+            widthClassName ||
+            (size === "3xl"
+              ? "max-w-3xl"
+              : size === "2xl"
+              ? "max-w-2xl"
+              : size === "xl"
+              ? "max-w-xl"
+              : size === "lg"
+              ? "max-w-lg"
+              : "max-w-md")
+          } bg-white border-l border-slate-200 shadow-2xl flex flex-col transform transition-transform duration-200 ease-in-out`}
+        >
           {/* Header */}
           <div className="pt-6 pb-4 px-6 border-b border-slate-100 flex items-start justify-between shrink-0 bg-slate-50/70 gap-3">
             <div className="flex-1 pr-2">

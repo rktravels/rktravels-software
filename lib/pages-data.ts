@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Compass,
   Tags,
+  Briefcase,
   type LucideIcon,
 } from "lucide-react";
 
@@ -219,6 +220,22 @@ export const NAV_ITEMS: PageModuleInfo[] = [
       "Custom seating capacity configuration with automatic driver calculation",
       "Print name customization for invoices, vouchers & trip tickets",
       "Instant active/inactive status toggle and Firestore synchronization",
+    ],
+  },
+  {
+    id: "car-vendors",
+    name: "Car Vendors",
+    href: "/car-vendors",
+    category: "FLEET & CREW",
+    icon: Briefcase,
+    description:
+      "Registry for attached car vendors and leasing partners. Manage contact profiles, mobile numbers, city locations, and linked fleet vehicles.",
+    primaryAction: "Add Vendor",
+    secondaryAction: "Vendor Directory",
+    plannedFeatures: [
+      "Dedicated vendor and leasing member registry with phone, email, and address",
+      "Instant linkage to attached and leased fleet vehicles",
+      "Real-time Firestore synchronization with 2-item pagination controls",
     ],
   },
   {
