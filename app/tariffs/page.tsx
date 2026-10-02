@@ -1587,72 +1587,36 @@ interface CompanyOptionItem {
             </div>
           </div>
 
-          {/* Tab Navigation for Duty Types with Section Checkboxes */}
+          {/* Tab Navigation for Duty Types */}
           <div className="flex items-center gap-1 border-b border-slate-200 pt-1 overflow-x-auto">
-            {[
-              {
-                id: "Local" as const,
-                label: "Local",
-                checked: offerLocal,
-                onToggle: (val: boolean) => setOfferLocal(val),
-              },
-              {
-                id: "Pickup & Drop" as const,
-                label: "Pickup & Drop",
-                checked: offerAirport || offerRailway,
-                onToggle: (val: boolean) => {
-                  setOfferAirport(val);
-                  setOfferRailway(val);
-                },
-              },
-              {
-                id: "Day Rent" as const,
-                label: "Day Rent",
-                checked: offerDayRent,
-                onToggle: (val: boolean) => setOfferDayRent(val),
-              },
-              {
-                id: "Outstation" as const,
-                label: "Outstation",
-                checked: offerOutstation,
-                onToggle: (val: boolean) => setOfferOutstation(val),
-              },
-              {
-                id: "Activity Log" as const,
-                label: "Activity Log",
-                checked: offerActivityLog,
-                onToggle: (val: boolean) => setOfferActivityLog(val),
-              },
-            ].map((tabItem) => {
-              const tab = tabItem.id;
+            {(
+              [
+                "Local",
+                "Pickup & Drop",
+                "Day Rent",
+                "Outstation",
+                "Activity Log",
+              ] as const
+            ).map((tab) => {
               const isActive = activeTab === tab;
               return (
-                <div
+                <button
                   key={tab}
-                  className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition cursor-pointer border-b-2 select-none ${
+                  type="button"
+                  onClick={() => setActiveTab(tab)}
+                  className={`relative px-4 py-2 text-xs font-medium transition cursor-pointer flex items-center gap-1.5 select-none ${
                     isActive
-                      ? "text-[#f16623] border-[#f16623] -mb-[1px] bg-orange-50/40"
-                      : "text-slate-600 hover:text-slate-900 border-transparent hover:bg-slate-50 font-normal"
+                      ? "text-[#f16623] border-b-2 border-[#f16623] -mb-[1px] bg-orange-50/40"
+                      : "text-slate-600 hover:text-slate-900 border-b-2 border-transparent hover:bg-slate-50 font-normal"
                   }`}
                 >
-                  <input
-                    type="checkbox"
-                    checked={tabItem.checked}
-                    onChange={(e) => {
-                      tabItem.onToggle(e.target.checked);
-                      setActiveTab(tab);
-                    }}
-                    className="w-3.5 h-3.5 rounded text-[#f16623] focus:ring-[#f16623] accent-[#f16623] cursor-pointer"
-                    title={`Enable/disable ${tabItem.label}`}
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      isActive ? "bg-[#f16623]" : "bg-slate-300"
+                    }`}
                   />
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab(tab)}
-                    className="flex items-center gap-1 cursor-pointer"
-                  >
-                    <span>{tabItem.label}</span>
-                  </button>
-                </div>
+                  <span>{tab}</span>
+                </button>
               );
             })}
           </div>
