@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, Fragment } from "react";
 import Link from "next/link";
 import {
   CalendarCheck,
@@ -12,22 +12,31 @@ import {
   Building2,
   Layers,
   IndianRupee,
-  Percent,
-  Wallet,
   Loader2,
   Trash2,
   CheckCircle2,
   AlertCircle,
   PhoneCall,
-  UserPlus,
   X,
   Clock,
   Banknote,
   QrCode,
   CreditCard,
-  Coins,
   UserCheck,
   Calendar,
+  Car,
+  Navigation,
+  ChevronRight,
+  Eye,
+  AlertTriangle,
+  Check,
+  History,
+  Receipt,
+  FileText,
+  Info,
+  DollarSign,
+  Fuel,
+  TrendingUp,
 } from "lucide-react";
 import {
   collection,
@@ -39,810 +48,1171 @@ import {
   deleteDoc,
   doc,
   updateDoc,
+  where,
+  getDocs,
   type Timestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { OffCanvas } from "@/components/OffCanvas";
+import { ALL_INDIA_STATES_DATA } from "@/app/locations/page";
 
-interface PlanItem {
+// --- Types & Data Models ---
+
+export type BookingStatus =
+  | "New"
+  | "Trip In Progress"
+  | "Trip Completed"
+  | "Invoice Generated"
+  | "Invoice Sent";
+
+export type PaymentStatus = "Unpaid" | "Partial" | "Paid";
+
+export interface PaymentHistoryItem {
   id: string;
-  planName: string;
+  date: string;
+  time?: string;
   amount: number;
-  travelId?: string;
-  travelName?: string;
+  paymentMode: "Cash" | "Card" | "UPI" | "Advance";
+  referenceNumber?: string;
+  notes?: string;
+  recordedAt?: string;
 }
 
-interface CustomerOption {
-  id: string;
-  name: string;
-  mobile: string;
-  email?: string;
-}
-
-interface BusinessOwnerOption {
-  id: string;
-  name: string;
-  mobile: string;
-  email?: string;
-  companyName: string;
-  gstNumber?: string;
-}
-
-interface DriverOption {
-  id: string;
-  name: string;
-  mobile: string;
-  vehicleName?: string;
-  licenseNumber?: string;
-}
-
-interface PaymentSplits {
-  cash: number;
-  upi: number;
-  card: number;
-}
-
-interface BookingRecord {
+export interface BookingRecord {
   id: string;
   bookingNumber: string;
+
+  // Tab 1: Details
+  startDate: string;
+  startTime: string;
+  endDate: string;
+  endTime: string;
   fromLocation: string;
   toLocation: string;
-  planId: string;
-  planName: string;
-  clientType: "customer" | "business_owner";
-  clientId: string;
-  clientName: string;
-  clientMobile: string;
-  clientEmail?: string;
-  companyName?: string;
-  driverId?: string | null;
-  driverName?: string | null;
-  driverMobile?: string | null;
-  pickupDate?: string | null;
-  pickupTime?: string | null;
-  tripStatus?: "unassigned" | "assigned" | "in_progress" | "completed";
-  amount: number;
-  discountType?: "rupees" | "percent";
-  discountValue?: number;
-  discount: number;
+  entityId: string;
+  entityName: string;
+  customerId: string; // Company Id
+  customerName: string; // Company Name
+  vehicleCategory: string;
+  tariffType: "Local" | "Pickup & Drop" | "Day Rent" | "Outstation";
+  tariffPackageId?: string;
+  tariffPackageName?: string;
+  travelerName: string;
+  travelerMobile: string;
+
+  // Tab 2: Trip Assignment
+  durationText: string;
+  totalDays: number;
+  totalHours: number;
+  totalMinutes: number;
+  vehicleId?: string;
+  vehicleRegNumber?: string;
+  vehicleName?: string;
+  driverId?: string;
+  driverName?: string;
+  driverMobile?: string;
+  driverStatus?: string;
+  startingKm: number;
+  endingKm: number;
+  totalKm: number;
+  travelledPlaces: string[];
+  notes?: string;
+
+  // Tab 3: Charges (Pass-through + Advance)
+  tolls: number;
+  parking: number;
+  statePermit: number;
+  meals: number;
+  interstateEntryTax: number;
+  nightHalt: number;
+  totalPassThrough: number;
+  customerAdvance: number;
+
+  // Tab 4: Invoice / Price Breakdown
+  baseFare: number;
+  extraKmRate: number;
+  extraKmCost: number;
+  extraHoursRate: number;
+  extraHoursCost: number;
+  driverBataCost: number;
+  nightHaltCost: number;
+  grossAmount: number;
   netAmount: number;
-  paymentMode: "cash" | "upi" | "card" | "split";
-  paymentSplits?: PaymentSplits | null;
   receivedAmount: number;
   balanceAmount: number;
-  status: "confirmed" | "completed" | "cancelled";
-  createdAt?: Timestamp | null;
+
+  bookingStatus: BookingStatus;
+  paymentStatus: PaymentStatus;
+  paymentHistory: PaymentHistoryItem[];
+
+  createdAt?: any;
+  updatedAt?: any;
 }
+
+// Flat list of major cities for travelled places multi-select
+const ALL_CITIES_LIST: string[] = Array.from(
+  new Set(ALL_INDIA_STATES_DATA.flatMap((s) => s.cities))
+).sort();
 
 export default function BookingsPage() {
   const [isOffCanvasOpen, setIsOffCanvasOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<
+    "details" | "assignment" | "charges" | "invoice"
+  >("details");
 
-  // Form Fields - Booking route & plan
-  const [fromLocation, setFromLocation] = useState("");
-  const [toLocation, setToLocation] = useState("");
-  const [selectedPlanId, setSelectedPlanId] = useState("");
-  const [selectedPlanName, setSelectedPlanName] = useState("");
-  const [amount, setAmount] = useState<string>("");
-
-  // Driver Assignment & Timing
-  const [selectedDriverId, setSelectedDriverId] = useState("");
-  const [selectedDriverName, setSelectedDriverName] = useState("");
-  const [selectedDriverMobile, setSelectedDriverMobile] = useState("");
-  const [pickupDate, setPickupDate] = useState<string>(() => {
-    return new Date().toISOString().split("T")[0];
-  });
-  const [pickupTime, setPickupTime] = useState<string>(() => {
-    const now = new Date();
-    const hrs = String(now.getHours()).padStart(2, "0");
-    const mins = String(now.getMinutes()).padStart(2, "0");
-    return `${hrs}:${mins}`;
-  });
-
-  // Reassign Driver State from Table
-  const [assigningBooking, setAssigningBooking] = useState<BookingRecord | null>(
-    null
-  );
-  const [reassignDriverId, setReassignDriverId] = useState("");
-  const [isReassigning, setIsReassigning] = useState(false);
-
-  // Discount: Rupees or Percentage
-  const [discountType, setDiscountType] = useState<"rupees" | "percent">("rupees");
-  const [discountValue, setDiscountValue] = useState<string>("0");
-
-  // Payment Mode & Received Amount
-  const [paymentMode, setPaymentMode] = useState<"cash" | "upi" | "card" | "split">("cash");
-  const [singleReceived, setSingleReceived] = useState<string>("0");
-
-  // Split payment amounts
-  const [splitCash, setSplitCash] = useState<string>("");
-  const [splitUpi, setSplitUpi] = useState<string>("");
-  const [splitCard, setSplitCard] = useState<string>("");
-
-  // Client Selection
-  const [clientType, setClientType] = useState<"customer" | "business_owner">("customer");
-  const [clientSearchQuery, setClientSearchQuery] = useState("");
-  const [selectedClient, setSelectedClient] = useState<{
-    id: string;
-    name: string;
-    mobile: string;
-    email?: string;
-    companyName?: string;
-  } | null>(null);
-
-  // Inline "Add Customer" form state inside Drawer
-  const [showAddCustomerInline, setShowAddCustomerInline] = useState(false);
-  const [newCustName, setNewCustName] = useState("");
-  const [newCustMobile, setNewCustMobile] = useState("");
-  const [newCustEmail, setNewCustEmail] = useState("");
-  const [isSavingCustomer, setIsSavingCustomer] = useState(false);
-
-  // Inline "Add Business Owner" form state inside Drawer
-  const [showAddOwnerInline, setShowAddOwnerInline] = useState(false);
-  const [newOwnerName, setNewOwnerName] = useState("");
-  const [newOwnerMobile, setNewOwnerMobile] = useState("");
-  const [newOwnerEmail, setNewOwnerEmail] = useState("");
-  const [newOwnerCompany, setNewOwnerCompany] = useState("");
-  const [newOwnerGst, setNewOwnerGst] = useState("");
-  const [isSavingOwner, setIsSavingOwner] = useState(false);
-
-  // Firestore collections data
-  const [plans, setPlans] = useState<PlanItem[]>([]);
-  const [drivers, setDrivers] = useState<DriverOption[]>([]);
-  const [customers, setCustomers] = useState<CustomerOption[]>([]);
-  const [businessOwners, setBusinessOwners] = useState<BusinessOwnerOption[]>([]);
+  // Collections data
+  const [entities, setEntities] = useState<{ id: string; name: string }[]>([]);
+  const [companies, setCompanies] = useState<
+    { id: string; name: string; contactPerson?: string; mobile?: string }[]
+  >([]);
+  const [tariffs, setTariffs] = useState<any[]>([]);
+  const [vehicles, setVehicles] = useState<any[]>([]);
+  const [drivers, setDrivers] = useState<any[]>([]);
   const [bookings, setBookings] = useState<BookingRecord[]>([]);
 
-  // UI States
+  // UI state
   const [loading, setLoading] = useState(true);
-  const [tableSearchQuery, setTableSearchQuery] = useState("");
-  const [isSubmittingBooking, setIsSubmittingBooking] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [paymentFilter, setPaymentFilter] = useState<string>("all");
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
     message: string;
   } | null>(null);
 
-  // 1. Subscribe to Tariffs & Legacy Plans
+  // View Details Modal
+  const [viewingBooking, setViewingBooking] = useState<BookingRecord | null>(null);
+
+  // Collect Payment Modal
+  const [collectingBooking, setCollectingBooking] = useState<BookingRecord | null>(
+    null
+  );
+  const [collectAmount, setCollectAmount] = useState<string>("");
+  const [collectMode, setCollectMode] = useState<"Cash" | "Card" | "UPI">("Cash");
+  const [collectRefNumber, setCollectRefNumber] = useState<string>("");
+  const [collectNotes, setCollectNotes] = useState<string>("");
+  const [isCollectingPayment, setIsCollectingPayment] = useState(false);
+
+  // =========================================================================
+  // TAB 1: DETAILS STATE
+  // =========================================================================
+  const [startDate, setStartDate] = useState<string>(() =>
+    new Date().toISOString().split("T")[0]
+  );
+  const [startTime, setStartTime] = useState<string>("09:00");
+  const [endDate, setEndDate] = useState<string>(() =>
+    new Date().toISOString().split("T")[0]
+  );
+  const [endTime, setEndTime] = useState<string>("18:00");
+  const [fromLocation, setFromLocation] = useState("");
+  const [toLocation, setToLocation] = useState("");
+
+  const [selectedEntityId, setSelectedEntityId] = useState("");
+  const [selectedEntityName, setSelectedEntityName] = useState("");
+
+  const [selectedCustomerId, setSelectedCustomerId] = useState("");
+  const [selectedCustomerName, setSelectedCustomerName] = useState("");
+
+  const [selectedVehicleCategory, setSelectedVehicleCategory] = useState("");
+  const [selectedTariffType, setSelectedTariffType] = useState<
+    "Local" | "Pickup & Drop" | "Day Rent" | "Outstation"
+  >("Local");
+
+  const [selectedPackageId, setSelectedPackageId] = useState("");
+  const [selectedPackageName, setSelectedPackageName] = useState("");
+
+  const [travelerName, setTravelerName] = useState("");
+  const [travelerMobile, setTravelerMobile] = useState("");
+
+  // =========================================================================
+  // TAB 2: TRIP ASSIGNMENT STATE
+  // =========================================================================
+  const [selectedVehicleId, setSelectedVehicleId] = useState("");
+  const [selectedVehicleReg, setSelectedVehicleReg] = useState("");
+  const [selectedVehicleName, setSelectedVehicleName] = useState("");
+
+  const [selectedDriverId, setSelectedDriverId] = useState("");
+  const [selectedDriverName, setSelectedDriverName] = useState("");
+  const [selectedDriverMobile, setSelectedDriverMobile] = useState("");
+
+  const [startingKm, setStartingKm] = useState<string>("");
+  const [endingKm, setEndingKm] = useState<string>("");
+
+  const [travelledPlaces, setTravelledPlaces] = useState<string[]>([]);
+  const [citySearchQuery, setCitySearchQuery] = useState("");
+  const [showCityDropdown, setShowCityDropdown] = useState(false);
+  const [notes, setNotes] = useState("");
+
+  // =========================================================================
+  // TAB 3: CHARGES STATE (IMAGE REQUIREMENTS)
+  // =========================================================================
+  const [tolls, setTolls] = useState<string>("");
+  const [parking, setParking] = useState<string>("");
+  const [statePermit, setStatePermit] = useState<string>("");
+  const [meals, setMeals] = useState<string>("");
+  const [interstateEntryTax, setInterstateEntryTax] = useState<string>("");
+  const [nightHalt, setNightHalt] = useState<string>("");
+  const [customerAdvance, setCustomerAdvance] = useState<string>("");
+
+  // =========================================================================
+  // TAB 4: INVOICE / STATUS
+  // =========================================================================
+  const [bookingStatus, setBookingStatus] = useState<BookingStatus>("New");
+  const [overridePaymentStatus, setOverridePaymentStatus] = useState<
+    PaymentStatus | null
+  >(null);
+
+  // -------------------------------------------------------------------------
+  // 1. Subscribe to Entities / Travels
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    let unsubEntities: (() => void) | null = null;
+    let unsubTravels: (() => void) | null = null;
+    try {
+      const entMap = new Map<string, string>();
+      const syncEnts = () => {
+        setEntities(
+          Array.from(entMap.entries()).map(([id, name]) => ({ id, name }))
+        );
+      };
+
+      unsubEntities = onSnapshot(collection(db, "entities"), (snap) => {
+        snap.docs.forEach((d) => {
+          const data = d.data();
+          const name = data.tradeName || data.legalName || data.entityName || "RK Travels";
+          entMap.set(d.id, name);
+        });
+        syncEnts();
+      });
+
+      unsubTravels = onSnapshot(collection(db, "travels"), (snap) => {
+        snap.docs.forEach((d) => {
+          if (!entMap.has(d.id)) {
+            const data = d.data();
+            entMap.set(d.id, data.travelName || data.name || "RK Travels");
+          }
+        });
+        syncEnts();
+      });
+    } catch (err) {
+      console.warn("Entities listener notice:", err);
+    }
+    return () => {
+      if (unsubEntities) unsubEntities();
+      if (unsubTravels) unsubTravels();
+    };
+  }, []);
+
+  // -------------------------------------------------------------------------
+  // 2. Subscribe to Companies (Customers)
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    let unsubComps: (() => void) | null = null;
+    try {
+      const q = query(collection(db, "companies"), orderBy("createdAt", "desc"));
+      unsubComps = onSnapshot(
+        q,
+        (snap) => {
+          const list = snap.docs.map((d) => {
+            const data = d.data();
+            return {
+              id: d.id,
+              name: data.companyName || data.legalName || data.tradeName || "Unnamed Company",
+              contactPerson: data.officeContactName || data.contactPerson || "",
+              mobile: data.officeContactPhone || data.mobile || "",
+            };
+          });
+          setCompanies(list);
+        },
+        (err) => {
+          console.warn("Companies fallback:", err);
+          getDocs(collection(db, "companies")).then((snap) => {
+            const list = snap.docs.map((d) => ({
+              id: d.id,
+              name: d.data().companyName || d.data().legalName || "Unnamed Company",
+              contactPerson: d.data().officeContactName || "",
+              mobile: d.data().officeContactPhone || "",
+            }));
+            setCompanies(list);
+          });
+        }
+      );
+    } catch (err) {
+      console.warn("Companies error:", err);
+    }
+    return () => {
+      if (unsubComps) unsubComps();
+    };
+  }, []);
+
+  // -------------------------------------------------------------------------
+  // 3. Subscribe to Tariffs
+  // -------------------------------------------------------------------------
   useEffect(() => {
     let unsubTariffs: (() => void) | null = null;
-    let unsubPlans: (() => void) | null = null;
-
     try {
-      const itemsMap = new Map<string, PlanItem>();
-
-      const syncTariffs = () => {
-        setPlans(Array.from(itemsMap.values()));
-      };
-
-      // Listen to tariffs collection
-      const qTariffs = query(
-        collection(db, "tariffs"),
-        orderBy("createdAt", "desc")
-      );
-      unsubTariffs = onSnapshot(
-        qTariffs,
-        (snap) => {
-          snap.docs.forEach((docSnap) => {
-            const data = docSnap.data();
-            itemsMap.set(docSnap.id, {
-              id: docSnap.id,
-              planName: data.tariffName || data.planName || "Unnamed Tariff",
-              amount: Number(data.amount) || 0,
-              travelId: data.travelId,
-              travelName: data.travelName,
-            });
-          });
-          syncTariffs();
-        },
-        (err) => {
-          console.warn("Tariffs listener notice in bookings:", err);
-          const fallback = query(collection(db, "tariffs"));
-          unsubTariffs = onSnapshot(fallback, (snap) => {
-            snap.docs.forEach((docSnap) => {
-              const data = docSnap.data();
-              itemsMap.set(docSnap.id, {
-                id: docSnap.id,
-                planName: data.tariffName || data.planName || "Unnamed Tariff",
-                amount: Number(data.amount) || 0,
-                travelId: data.travelId,
-                travelName: data.travelName,
-              });
-            });
-            syncTariffs();
-          });
-        }
-      );
-
-      // Listen to legacy plans collection
-      const qPlans = query(
-        collection(db, "plans"),
-        orderBy("createdAt", "desc")
-      );
-      unsubPlans = onSnapshot(
-        qPlans,
-        (snap) => {
-          snap.docs.forEach((docSnap) => {
-            if (!itemsMap.has(docSnap.id)) {
-              const data = docSnap.data();
-              itemsMap.set(docSnap.id, {
-                id: docSnap.id,
-                planName: data.planName || data.tariffName || "Unnamed Plan",
-                amount: Number(data.amount) || 0,
-                travelId: data.travelId,
-                travelName: data.travelName,
-              });
-            }
-          });
-          syncTariffs();
-        },
-        (err) => {
-          console.warn("Plans legacy listener notice:", err);
-        }
-      );
+      const q = query(collection(db, "tariffs"), orderBy("createdAt", "desc"));
+      unsubTariffs = onSnapshot(q, (snap) => {
+        setTariffs(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      });
     } catch (err) {
-      console.error("Failed to load tariffs in bookings:", err);
+      console.warn("Tariffs notice:", err);
     }
-
     return () => {
       if (unsubTariffs) unsubTariffs();
-      if (unsubPlans) unsubPlans();
     };
   }, []);
 
-  // 2. Subscribe to Drivers
+  // -------------------------------------------------------------------------
+  // 4. Subscribe to Vehicles
+  // -------------------------------------------------------------------------
   useEffect(() => {
+    let unsubVehicles: (() => void) | null = null;
     try {
-      const q = query(collection(db, "drivers"), orderBy("name", "asc"));
-      const unsub = onSnapshot(
-        q,
-        (snap) => {
-          const items: DriverOption[] = snap.docs.map((docSnap) => ({
-            id: docSnap.id,
-            name: docSnap.data().name || "Unnamed Driver",
-            mobile: docSnap.data().mobile || "",
-            vehicleName: docSnap.data().vehicleName || "",
-            licenseNumber: docSnap.data().licenseNumber || "",
-          }));
-          setDrivers(items);
-        },
-        (err) => {
-          console.error("Drivers fallback listener:", err);
-          const fallback = query(collection(db, "drivers"));
-          const unsubFallback = onSnapshot(fallback, (snap) => {
-            const items: DriverOption[] = snap.docs.map((docSnap) => ({
-              id: docSnap.id,
-              name: docSnap.data().name || "Unnamed Driver",
-              mobile: docSnap.data().mobile || "",
-              vehicleName: docSnap.data().vehicleName || "",
-              licenseNumber: docSnap.data().licenseNumber || "",
-            }));
-            setDrivers(items);
-          });
-          return () => unsubFallback();
-        }
-      );
-      return () => unsub();
-    } catch (err) {
-      console.error("Failed to load drivers:", err);
-    }
-  }, []);
-
-  // 3. Subscribe to Customers
-  useEffect(() => {
-    try {
-      const q = query(collection(db, "customers"), orderBy("createdAt", "desc"));
-      const unsub = onSnapshot(
-        q,
-        (snap) => {
-          const items: CustomerOption[] = snap.docs.map((docSnap) => ({
-            id: docSnap.id,
-            name: docSnap.data().name || "",
-            mobile: docSnap.data().mobile || "",
-            email: docSnap.data().email || "",
-          }));
-          setCustomers(items);
-        },
-        (err) => {
-          console.error("Customers fallback listener:", err);
-          const fallback = query(collection(db, "customers"));
-          const unsubFallback = onSnapshot(fallback, (snap) => {
-            const items: CustomerOption[] = snap.docs.map((docSnap) => ({
-              id: docSnap.id,
-              name: docSnap.data().name || "",
-              mobile: docSnap.data().mobile || "",
-              email: docSnap.data().email || "",
-            }));
-            setCustomers(items);
-          });
-          return () => unsubFallback();
-        }
-      );
-      return () => unsub();
-    } catch (err) {
-      console.error("Failed to load customers:", err);
-    }
-  }, []);
-
-  // 4. Subscribe to Companies / Corporate Clients
-  useEffect(() => {
-    let compsList: BusinessOwnerOption[] = [];
-    let ownersList: BusinessOwnerOption[] = [];
-
-    const mergeCorporate = () => {
-      const map = new Map<string, BusinessOwnerOption>();
-      compsList.forEach((c) => map.set(c.id, c));
-      ownersList.forEach((o) => {
-        if (!map.has(o.id)) map.set(o.id, o);
+      const q = query(collection(db, "vehicles"), orderBy("createdAt", "desc"));
+      unsubVehicles = onSnapshot(q, (snap) => {
+        setVehicles(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
       });
-      setBusinessOwners(Array.from(map.values()));
+    } catch (err) {
+      console.warn("Vehicles notice:", err);
+    }
+    return () => {
+      if (unsubVehicles) unsubVehicles();
     };
-
-    try {
-      const qComps = query(collection(db, "companies"), orderBy("createdAt", "desc"));
-      const unsubComps = onSnapshot(qComps, (snap) => {
-        compsList = snap.docs.map((docSnap) => ({
-          id: docSnap.id,
-          name: docSnap.data().contactPerson || docSnap.data().name || "",
-          mobile: docSnap.data().mobile || "",
-          email: docSnap.data().email || "",
-          companyName: docSnap.data().companyName || "",
-          gstNumber: docSnap.data().gstNumber || "",
-        }));
-        mergeCorporate();
-      });
-
-      const qOwners = query(collection(db, "business_owners"), orderBy("createdAt", "desc"));
-      const unsubOwners = onSnapshot(qOwners, (snap) => {
-        ownersList = snap.docs.map((docSnap) => ({
-          id: docSnap.id,
-          name: docSnap.data().name || "",
-          mobile: docSnap.data().mobile || "",
-          email: docSnap.data().email || "",
-          companyName: docSnap.data().companyName || "",
-          gstNumber: docSnap.data().gstNumber || "",
-        }));
-        mergeCorporate();
-      });
-
-      return () => {
-        unsubComps();
-        unsubOwners();
-      };
-    } catch (err) {
-      console.error("Failed to load corporate companies in bookings:", err);
-    }
   }, []);
 
-  // 5. Subscribe to Bookings
+  // -------------------------------------------------------------------------
+  // 5. Subscribe to Drivers
+  // -------------------------------------------------------------------------
   useEffect(() => {
+    let unsubDrivers: (() => void) | null = null;
+    try {
+      const q = query(collection(db, "drivers"), orderBy("createdAt", "desc"));
+      unsubDrivers = onSnapshot(q, (snap) => {
+        setDrivers(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      });
+    } catch (err) {
+      console.warn("Drivers notice:", err);
+    }
+    return () => {
+      if (unsubDrivers) unsubDrivers();
+    };
+  }, []);
+
+  // -------------------------------------------------------------------------
+  // 6. Subscribe to Bookings
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    let unsubBookings: (() => void) | null = null;
     try {
       const q = query(collection(db, "bookings"), orderBy("createdAt", "desc"));
-      const unsub = onSnapshot(
+      unsubBookings = onSnapshot(
         q,
         (snap) => {
-          const items: BookingRecord[] = snap.docs.map((docSnap) => ({
-            id: docSnap.id,
-            ...(docSnap.data() as Omit<BookingRecord, "id">),
+          const list: BookingRecord[] = snap.docs.map((d) => ({
+            id: d.id,
+            ...(d.data() as Omit<BookingRecord, "id">),
           }));
-          setBookings(items);
+          setBookings(list);
           setLoading(false);
         },
         (err) => {
-          console.error("Bookings fallback listener:", err);
-          const fallback = query(collection(db, "bookings"));
-          const unsubFallback = onSnapshot(fallback, (snap) => {
-            const items: BookingRecord[] = snap.docs.map((docSnap) => ({
-              id: docSnap.id,
-              ...(docSnap.data() as Omit<BookingRecord, "id">),
+          console.warn("Bookings listener fallback:", err);
+          getDocs(collection(db, "bookings")).then((snap) => {
+            const list: BookingRecord[] = snap.docs.map((d) => ({
+              id: d.id,
+              ...(d.data() as Omit<BookingRecord, "id">),
             }));
-            setBookings(items);
+            setBookings(list);
             setLoading(false);
           });
-          return () => unsubFallback();
         }
       );
-      return () => unsub();
     } catch (err) {
-      console.error("Failed to initialize bookings listener:", err);
+      console.warn("Bookings notice:", err);
       setLoading(false);
     }
+    return () => {
+      if (unsubBookings) unsubBookings();
+    };
   }, []);
 
-  // Filtered client options based on search query
-  const filteredCustomers = useMemo(() => {
-    const q = clientSearchQuery.trim().toLowerCase();
-    if (!q) return customers.slice(0, 8);
-    return customers
-      .filter(
-        (c) =>
-          c.name.toLowerCase().includes(q) ||
-          c.mobile.toLowerCase().includes(q) ||
-          (c.email && c.email.toLowerCase().includes(q))
-      )
-      .slice(0, 10);
-  }, [customers, clientSearchQuery]);
+  // -------------------------------------------------------------------------
+  // Auto-fill First Entity if None Selected
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    if (!selectedEntityId && entities.length > 0) {
+      setSelectedEntityId(entities[0].id);
+      setSelectedEntityName(entities[0].name);
+    }
+  }, [entities, selectedEntityId]);
 
-  const filteredOwners = useMemo(() => {
-    const q = clientSearchQuery.trim().toLowerCase();
-    if (!q) return businessOwners.slice(0, 8);
-    return businessOwners
-      .filter(
-        (o) =>
-          o.name.toLowerCase().includes(q) ||
-          o.mobile.toLowerCase().includes(q) ||
-          o.companyName.toLowerCase().includes(q)
-      )
-      .slice(0, 10);
-  }, [businessOwners, clientSearchQuery]);
+  // -------------------------------------------------------------------------
+  // Find Active Tariff for Selected Company
+  // -------------------------------------------------------------------------
+  const activeCompanyTariff = useMemo(() => {
+    if (!selectedCustomerName) return null;
+    // 1. Look for specific company tariff
+    const matched = tariffs.find(
+      (t) =>
+        t.customerName?.toLowerCase() === selectedCustomerName.toLowerCase() &&
+        t.status === "Active"
+    );
+    if (matched) return matched;
 
-  // Handle Plan selection -> Auto-populate amount
-  const handleSelectPlan = (planId: string) => {
-    setSelectedPlanId(planId);
-    const plan = plans.find((p) => p.id === planId);
-    if (plan) {
-      setSelectedPlanName(plan.planName);
-      setAmount(String(plan.amount));
+    // 2. Fallback to "Standard" active tariff
+    const standard = tariffs.find(
+      (t) =>
+        t.customerName?.toLowerCase() === "standard" && t.status === "Active"
+    );
+    return standard || null;
+  }, [selectedCustomerName, tariffs]);
+
+  // Vehicle Categories enabled in that Tariff
+  const availableTariffCategories = useMemo(() => {
+    if (!activeCompanyTariff) return [];
+    if (Array.isArray(activeCompanyTariff.selectedCategories)) {
+      return activeCompanyTariff.selectedCategories;
+    }
+    return [];
+  }, [activeCompanyTariff]);
+
+  // When Company changes, select first available vehicle category
+  useEffect(() => {
+    if (availableTariffCategories.length > 0) {
+      if (
+        !selectedVehicleCategory ||
+        !availableTariffCategories.includes(selectedVehicleCategory)
+      ) {
+        setSelectedVehicleCategory(availableTariffCategories[0]);
+      }
     } else {
-      setSelectedPlanName("");
+      setSelectedVehicleCategory("");
     }
+  }, [availableTariffCategories, selectedVehicleCategory]);
+
+  // Available Tariff Types (Duty Types) enabled for this customer
+  const availableTariffTypes = useMemo(() => {
+    if (!activeCompanyTariff) return [];
+    const types: ("Local" | "Pickup & Drop" | "Day Rent" | "Outstation")[] = [];
+
+    if (activeCompanyTariff.localDuty?.enabled) types.push("Local");
+    if (
+      activeCompanyTariff.pickupDropDuty?.offerAirport ||
+      activeCompanyTariff.pickupDropDuty?.offerRailway
+    ) {
+      types.push("Pickup & Drop");
+    }
+    if (activeCompanyTariff.dayRentDuty?.enabled) types.push("Day Rent");
+    if (activeCompanyTariff.outstationDuty?.enabled) types.push("Outstation");
+
+    return types;
+  }, [activeCompanyTariff]);
+
+  // When availableTariffTypes change, reset selectedTariffType if needed
+  useEffect(() => {
+    if (availableTariffTypes.length > 0) {
+      if (!availableTariffTypes.includes(selectedTariffType)) {
+        setSelectedTariffType(availableTariffTypes[0]);
+      }
+    }
+  }, [availableTariffTypes, selectedTariffType]);
+
+  // Packages list based on selectedTariffType
+  const availablePackages = useMemo(() => {
+    if (!activeCompanyTariff) return [];
+
+    if (selectedTariffType === "Local") {
+      const pkgs = activeCompanyTariff.localDuty?.packages || [];
+      return pkgs.map((p: any) => ({
+        id: p.id,
+        name: p.packageName,
+        rates: p.rates || {},
+      }));
+    }
+
+    if (selectedTariffType === "Pickup & Drop") {
+      const res: { id: string; name: string; rates: any }[] = [];
+      if (activeCompanyTariff.pickupDropDuty?.offerAirport) {
+        res.push({
+          id: "airport-transfer",
+          name: "Airport Transfer",
+          rates: activeCompanyTariff.pickupDropDuty.airportRates || {},
+        });
+      }
+      if (activeCompanyTariff.pickupDropDuty?.offerRailway) {
+        res.push({
+          id: "railway-transfer",
+          name: "Railway Transfer",
+          rates: activeCompanyTariff.pickupDropDuty.railwayRates || {},
+        });
+      }
+      return res;
+    }
+
+    if (selectedTariffType === "Day Rent") {
+      return [
+        {
+          id: "day-rent-12hrs",
+          name: "12 Hours Day Rent",
+          rates: activeCompanyTariff.dayRentDuty?.rates || {},
+        },
+        {
+          id: "day-rent-24hrs",
+          name: "24 Hours Day Rent",
+          rates: activeCompanyTariff.dayRentDuty?.rates || {},
+        },
+      ];
+    }
+
+    if (selectedTariffType === "Outstation") {
+      return [
+        {
+          id: "outstation-trip",
+          name: "Outstation Trip",
+          rates: activeCompanyTariff.outstationDuty?.rates || {},
+        },
+      ];
+    }
+
+    return [];
+  }, [activeCompanyTariff, selectedTariffType]);
+
+  // Automatically select first package when availablePackages change
+  useEffect(() => {
+    if (availablePackages.length > 0) {
+      if (
+        !selectedPackageId ||
+        !availablePackages.some((p: any) => p.id === selectedPackageId)
+      ) {
+        setSelectedPackageId(availablePackages[0].id);
+        setSelectedPackageName(availablePackages[0].name);
+      }
+    } else {
+      setSelectedPackageId("");
+      setSelectedPackageName("");
+    }
+  }, [availablePackages, selectedPackageId]);
+
+  // -------------------------------------------------------------------------
+  // Duration Calculation: Days, Hours, Minutes
+  // -------------------------------------------------------------------------
+  const calculatedDuration = useMemo(() => {
+    if (!startDate || !startTime || !endDate || !endTime) {
+      return { totalDays: 0, totalHours: 0, totalMinutes: 0, text: "0 Mins" };
+    }
+    const start = new Date(`${startDate}T${startTime}`);
+    const end = new Date(`${endDate}T${endTime}`);
+    const diffMs = Math.max(0, end.getTime() - start.getTime());
+    const totalMinutes = Math.floor(diffMs / (1000 * 60));
+
+    const totalDays = Math.floor(totalMinutes / (24 * 60));
+    const totalHours = Math.floor((totalMinutes % (24 * 60)) / 60);
+    const mins = totalMinutes % 60;
+
+    const parts: string[] = [];
+    if (totalDays > 0) parts.push(`${totalDays} Day${totalDays > 1 ? "s" : ""}`);
+    if (totalHours > 0) parts.push(`${totalHours} Hr${totalHours > 1 ? "s" : ""}`);
+    if (mins > 0 || parts.length === 0) parts.push(`${mins} Min${mins > 1 ? "s" : ""}`);
+
+    return {
+      totalDays,
+      totalHours,
+      totalMinutes,
+      text: parts.join(", "),
+    };
+  }, [startDate, startTime, endDate, endTime]);
+
+  // -------------------------------------------------------------------------
+  // Total KM Calculation
+  // -------------------------------------------------------------------------
+  const startKmNum = Math.max(0, Number(startingKm) || 0);
+  const endKmNum = Math.max(0, Number(endingKm) || 0);
+  const calculatedTotalKm = useMemo(() => {
+    if (endKmNum > 0 && endKmNum >= startKmNum) {
+      return endKmNum - startKmNum;
+    }
+    return 0;
+  }, [startKmNum, endKmNum]);
+
+  // -------------------------------------------------------------------------
+  // Vehicle & Driver Overlap / Occupancy Check
+  // -------------------------------------------------------------------------
+  const isTimeOverlapping = (
+    bookingStart: string,
+    bookingEnd: string,
+    newStart: string,
+    newEnd: string
+  ) => {
+    const bStart = new Date(bookingStart).getTime();
+    const bEnd = new Date(bookingEnd).getTime();
+    const nStart = new Date(newStart).getTime();
+    const nEnd = new Date(newEnd).getTime();
+    return nStart < bEnd && nEnd > bStart;
   };
 
-  // Financial calculations
-  const parsedAmount = Math.max(0, Number(amount) || 0);
+  const newTripStartIso = `${startDate}T${startTime}:00`;
+  const newTripEndIso = `${endDate}T${endTime}:00`;
 
-  // Discount calculation based on type
-  const rawDiscountInput = Math.max(0, Number(discountValue) || 0);
-  const calculatedDiscount = useMemo(() => {
-    if (discountType === "percent") {
-      const pct = Math.min(100, rawDiscountInput);
-      return Math.round((parsedAmount * pct) / 100);
+  // Occupied Vehicles & Drivers for this window
+  const occupiedVehicleIds = useMemo(() => {
+    const set = new Set<string>();
+    bookings.forEach((b) => {
+      if (b.bookingStatus === "Trip Completed") return;
+      if (b.vehicleId && b.startDate && b.endDate) {
+        const bStart = `${b.startDate}T${b.startTime || "00:00"}:00`;
+        const bEnd = `${b.endDate}T${b.endTime || "23:59"}:00`;
+        if (isTimeOverlapping(bStart, bEnd, newTripStartIso, newTripEndIso)) {
+          set.add(b.vehicleId);
+        }
+      }
+    });
+    return set;
+  }, [bookings, newTripStartIso, newTripEndIso]);
+
+  const occupiedDriverIds = useMemo(() => {
+    const set = new Set<string>();
+    bookings.forEach((b) => {
+      if (b.bookingStatus === "Trip Completed") return;
+      if (b.driverId && b.startDate && b.endDate) {
+        const bStart = `${b.startDate}T${b.startTime || "00:00"}:00`;
+        const bEnd = `${b.endDate}T${b.endTime || "23:59"}:00`;
+        if (isTimeOverlapping(bStart, bEnd, newTripStartIso, newTripEndIso)) {
+          set.add(b.driverId);
+        }
+      }
+    });
+    return set;
+  }, [bookings, newTripStartIso, newTripEndIso]);
+
+  // Available vehicles in the selected vehicle category
+  const filteredVehicles = useMemo(() => {
+    if (!selectedVehicleCategory) return [];
+    const catLower = selectedVehicleCategory.toLowerCase();
+    return vehicles.filter((v) => {
+      const vCat = String(v.category || "").toLowerCase();
+      // Match category name ignoring whitespace & (A/C) suffix differences
+      const match =
+        catLower.includes(vCat) ||
+        vCat.includes(catLower) ||
+        vCat.replace(/\s+/g, "").includes(catLower.replace(/\s+/g, ""));
+      return match;
+    });
+  }, [vehicles, selectedVehicleCategory]);
+
+  // -------------------------------------------------------------------------
+  // Pricing Calculation from Tariff
+  // -------------------------------------------------------------------------
+  const pricingBreakdown = useMemo(() => {
+    let baseFare = 0;
+    let includedHours = 0;
+    let includedKm = 0;
+    let extraKmRate = 0;
+    let extraHoursRate = 0;
+    let driverBataCost = 0;
+    let nightHaltCost = 0;
+
+    const cat = selectedVehicleCategory;
+
+    if (activeCompanyTariff && cat) {
+      if (selectedTariffType === "Local") {
+        const pkg = activeCompanyTariff.localDuty?.packages?.find(
+          (p: any) => p.id === selectedPackageId
+        );
+        if (pkg?.rates?.[cat]) {
+          baseFare = Number(pkg.rates[cat].baseFare) || 0;
+          driverBataCost = Number(pkg.rates[cat].driverBata) || 0;
+        }
+        // Parse included hours and km from package title (e.g. "4 HOURS 40 KM")
+        if (selectedPackageName) {
+          const hrMatch = selectedPackageName.match(/(\d+)\s*H/i);
+          const kmMatch = selectedPackageName.match(/(\d+)\s*K/i);
+          if (hrMatch) includedHours = parseInt(hrMatch[1], 10);
+          if (kmMatch) includedKm = parseInt(kmMatch[1], 10);
+        }
+        extraKmRate =
+          Number(activeCompanyTariff.localDuty?.extraRates?.extraPerKm?.[cat]) || 0;
+        extraHoursRate =
+          Number(activeCompanyTariff.localDuty?.extraRates?.extraPerHour?.[cat]) || 0;
+      } else if (selectedTariffType === "Pickup & Drop") {
+        const rateBlock =
+          selectedPackageId === "airport-transfer"
+            ? activeCompanyTariff.pickupDropDuty?.airportRates
+            : activeCompanyTariff.pickupDropDuty?.railwayRates;
+        if (rateBlock) {
+          baseFare = Number(rateBlock.fare?.[cat]) || 0;
+          includedHours = Number(rateBlock.includedHours?.[cat]) || 2;
+          includedKm = Number(rateBlock.includedKm?.[cat]) || 30;
+          extraKmRate = Number(rateBlock.extraPerKm?.[cat]) || 0;
+          extraHoursRate = Number(rateBlock.waitingPerHour?.[cat]) || 0;
+        }
+      } else if (selectedTariffType === "Day Rent") {
+        const drRates = activeCompanyTariff.dayRentDuty?.rates;
+        if (drRates) {
+          baseFare =
+            selectedPackageId === "day-rent-24hrs"
+              ? Number(drRates.dayRent24Hrs?.[cat]) || 0
+              : Number(drRates.dayRent12Hrs?.[cat]) || 0;
+          driverBataCost =
+            selectedPackageId === "day-rent-24hrs"
+              ? Number(drRates.driverBata24Hrs?.[cat]) || 0
+              : Number(drRates.driverBata12Hrs?.[cat]) || 0;
+          nightHaltCost = Number(drRates.nightHaltPerNight?.[cat]) || 0;
+        }
+      } else if (selectedTariffType === "Outstation") {
+        const osRates = activeCompanyTariff.outstationDuty?.rates;
+        if (osRates) {
+          const slabKm = Number(osRates.baseKmSlab?.[cat]) || 300;
+          const perKm = Number(osRates.perKmCharge?.[cat]) || 0;
+          baseFare = slabKm * perKm;
+          includedKm = slabKm;
+          extraKmRate = perKm;
+          driverBataCost = Number(osRates.driverBataPerDay?.[cat]) || 0;
+          nightHaltCost = Number(osRates.nightHaltPerNight?.[cat]) || 0;
+        }
+      }
     }
-    return Math.min(parsedAmount, rawDiscountInput);
-  }, [discountType, rawDiscountInput, parsedAmount]);
 
-  const netPayable = Math.max(0, parsedAmount - calculatedDiscount);
+    // Extra KM
+    const extraKm = Math.max(0, calculatedTotalKm - includedKm);
+    const extraKmCost = extraKm * extraKmRate;
 
-  // Received amount calculation based on mode
-  const effectiveReceived = useMemo(() => {
-    if (paymentMode === "split") {
-      const c = Math.max(0, Number(splitCash) || 0);
-      const u = Math.max(0, Number(splitUpi) || 0);
-      const cd = Math.max(0, Number(splitCard) || 0);
-      return c + u + cd;
+    // Extra Hours
+    const actualHours = calculatedDuration.totalDays * 24 + calculatedDuration.totalHours;
+    const extraHours = Math.max(0, actualHours - includedHours);
+    const extraHoursCost = extraHours * extraHoursRate;
+
+    // Pass-through Charges (Matching user's Image)
+    const tollVal = Math.max(0, Number(tolls) || 0);
+    const parkVal = Math.max(0, Number(parking) || 0);
+    const statePermitVal = Math.max(0, Number(statePermit) || 0);
+    const mealsVal = Math.max(0, Number(meals) || 0);
+    const interstateTaxVal = Math.max(0, Number(interstateEntryTax) || 0);
+    const nightHaltVal = Math.max(0, Number(nightHalt) || 0);
+    const totalPassThrough =
+      tollVal + parkVal + statePermitVal + mealsVal + interstateTaxVal + nightHaltVal;
+
+    // Customer Advance
+    const advanceVal = Math.max(0, Number(customerAdvance) || 0);
+
+    const grossAmount =
+      baseFare +
+      extraKmCost +
+      extraHoursCost +
+      driverBataCost +
+      nightHaltCost +
+      totalPassThrough;
+
+    const netAmount = Math.max(0, grossAmount - advanceVal);
+
+    return {
+      baseFare,
+      includedHours,
+      includedKm,
+      extraKmRate,
+      extraKm,
+      extraKmCost,
+      extraHoursRate,
+      extraHours,
+      extraHoursCost,
+      driverBataCost,
+      nightHaltCost,
+      totalPassThrough,
+      grossAmount,
+      customerAdvance: advanceVal,
+      netAmount,
+    };
+  }, [
+    activeCompanyTariff,
+    selectedVehicleCategory,
+    selectedTariffType,
+    selectedPackageId,
+    selectedPackageName,
+    calculatedTotalKm,
+    calculatedDuration,
+    tolls,
+    parking,
+    statePermit,
+    meals,
+    interstateEntryTax,
+    nightHalt,
+    customerAdvance,
+  ]);
+
+  // Derived Payment Status
+  const autoPaymentStatus: PaymentStatus = useMemo(() => {
+    if (overridePaymentStatus) return overridePaymentStatus;
+    const advance = pricingBreakdown.customerAdvance;
+    const gross = pricingBreakdown.grossAmount;
+    if (gross === 0 && advance === 0) return "Unpaid";
+    if (advance === 0) return "Unpaid";
+    if (advance >= gross && gross > 0) return "Paid";
+    return "Partial";
+  }, [overridePaymentStatus, pricingBreakdown.customerAdvance, pricingBreakdown.grossAmount]);
+
+  // -------------------------------------------------------------------------
+  // Handle Open Add Booking OffCanvas
+  // -------------------------------------------------------------------------
+  const handleOpenAddBooking = () => {
+    setActiveTab("details");
+    const today = new Date().toISOString().split("T")[0];
+    setStartDate(today);
+    setStartTime("09:00");
+    setEndDate(today);
+    setEndTime("18:00");
+    setFromLocation("");
+    setToLocation("");
+    if (companies.length > 0) {
+      setSelectedCustomerId(companies[0].id);
+      setSelectedCustomerName(companies[0].name);
+      setTravelerName(companies[0].contactPerson || "");
+      setTravelerMobile(companies[0].mobile || "");
+    } else {
+      setSelectedCustomerId("");
+      setSelectedCustomerName("");
+      setTravelerName("");
+      setTravelerMobile("");
     }
-    return Math.max(0, Number(singleReceived) || 0);
-  }, [paymentMode, splitCash, splitUpi, splitCard, singleReceived]);
+    setSelectedVehicleId("");
+    setSelectedVehicleReg("");
+    setSelectedVehicleName("");
+    setSelectedDriverId("");
+    setSelectedDriverName("");
+    setSelectedDriverMobile("");
+    setStartingKm("");
+    setEndingKm("");
+    setTravelledPlaces([]);
+    setNotes("");
+    setTolls("");
+    setParking("");
+    setStatePermit("");
+    setMeals("");
+    setInterstateEntryTax("");
+    setNightHalt("");
+    setCustomerAdvance("");
+    setBookingStatus("New");
+    setOverridePaymentStatus(null);
+    setIsOffCanvasOpen(true);
+  };
 
-  const balanceDue = Math.max(0, netPayable - effectiveReceived);
-
-  // Save new Customer inline
-  const handleSaveCustomerInline = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const tName = newCustName.trim();
-    const tMobile = newCustMobile.trim();
-    const tEmail = newCustEmail.trim();
-
-    if (!tName || !tMobile) {
-      alert("Please provide customer name and mobile number.");
+  // -------------------------------------------------------------------------
+  // Save Booking Submission
+  // -------------------------------------------------------------------------
+  const handleSaveBookingSubmit = async () => {
+    if (!startDate || !endDate) {
+      alert("Please enter trip start and end dates.");
+      return;
+    }
+    if (!selectedCustomerName) {
+      alert("Please select a customer company.");
+      return;
+    }
+    if (!fromLocation.trim() || !toLocation.trim()) {
+      alert("Please enter From and To locations.");
       return;
     }
 
-    setIsSavingCustomer(true);
-    try {
-      const docRef = await addDoc(collection(db, "customers"), {
-        name: tName,
-        mobile: tMobile,
-        email: tEmail || null,
-        createdAt: serverTimestamp(),
-      });
-
-      setSelectedClient({
-        id: docRef.id,
-        name: tName,
-        mobile: tMobile,
-        email: tEmail || undefined,
-      });
-
-      setNewCustName("");
-      setNewCustMobile("");
-      setNewCustEmail("");
-      setShowAddCustomerInline(false);
-      setClientSearchQuery("");
-    } catch (err) {
-      console.error("Error saving customer inline:", err);
-      alert("Failed to save customer. Please try again.");
-    } finally {
-      setIsSavingCustomer(false);
-    }
-  };
-
-  // Save new Business Owner inline
-  const handleSaveOwnerInline = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const tName = newOwnerName.trim();
-    const tMobile = newOwnerMobile.trim();
-    const tCompany = newOwnerCompany.trim();
-    const tEmail = newOwnerEmail.trim();
-    const tGst = newOwnerGst.trim().toUpperCase();
-
-    if (!tName || !tMobile || !tCompany) {
-      alert("Please provide owner name, mobile number, and company name.");
-      return;
-    }
-
-    setIsSavingOwner(true);
-    try {
-      const docRef = await addDoc(collection(db, "business_owners"), {
-        name: tName,
-        mobile: tMobile,
-        companyName: tCompany,
-        email: tEmail || null,
-        gstNumber: tGst || null,
-        createdAt: serverTimestamp(),
-      });
-
-      setSelectedClient({
-        id: docRef.id,
-        name: tName,
-        mobile: tMobile,
-        email: tEmail || undefined,
-        companyName: tCompany,
-      });
-
-      setNewOwnerName("");
-      setNewOwnerMobile("");
-      setNewOwnerCompany("");
-      setNewOwnerEmail("");
-      setNewOwnerGst("");
-      setShowAddOwnerInline(false);
-      setClientSearchQuery("");
-    } catch (err) {
-      console.error("Error saving business owner inline:", err);
-      alert("Failed to save business owner. Please try again.");
-    } finally {
-      setIsSavingOwner(false);
-    }
-  };
-
-  // Submit Main Booking Form with Driver Assignment & Payments Log
-  const handleCreateBooking = async (e: React.FormEvent) => {
-    e.preventDefault();
+    setIsSubmitting(true);
     setFeedback(null);
 
-    const fromTrimmed = fromLocation.trim();
-    const toTrimmed = toLocation.trim();
-
-    if (!fromTrimmed) {
-      setFeedback({ type: "error", message: "Please specify From location." });
-      return;
-    }
-    if (!toTrimmed) {
-      setFeedback({ type: "error", message: "Please specify To location." });
-      return;
-    }
-    if (!selectedPlanId) {
-      setFeedback({ type: "error", message: "Please select a Travel Plan." });
-      return;
-    }
-    if (!selectedClient) {
-      setFeedback({
-        type: "error",
-        message: `Please select or add a ${
-          clientType === "customer" ? "Customer" : "Business Owner"
-        }.`,
-      });
-      return;
-    }
-    if (parsedAmount <= 0) {
-      setFeedback({
-        type: "error",
-        message: "Please enter a valid fare amount greater than 0.",
-      });
-      return;
-    }
-
-    setIsSubmittingBooking(true);
-
     try {
-      const bookingNo = `RKB-${Date.now().toString().slice(-6)}`;
+      const now = new Date();
+      const bookingNumber = `BK-${now.getFullYear()}${String(
+        now.getMonth() + 1
+      ).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}-${Math.floor(
+        1000 + Math.random() * 9000
+      )}`;
 
-      const splitsData: PaymentSplits | null =
-        paymentMode === "split"
-          ? {
-              cash: Math.max(0, Number(splitCash) || 0),
-              upi: Math.max(0, Number(splitUpi) || 0),
-              card: Math.max(0, Number(splitCard) || 0),
-            }
-          : null;
-
-      // 1. Save Booking Document in Firestore
-      const bookingDocRef = await addDoc(collection(db, "bookings"), {
-        bookingNumber: bookingNo,
-        fromLocation: fromTrimmed,
-        toLocation: toTrimmed,
-        planId: selectedPlanId,
-        planName: selectedPlanName,
-        clientType: clientType,
-        clientId: selectedClient.id,
-        clientName: selectedClient.name,
-        clientMobile: selectedClient.mobile,
-        clientEmail: selectedClient.email || null,
-        companyName: selectedClient.companyName || null,
-        driverId: selectedDriverId || null,
-        driverName: selectedDriverName || null,
-        driverMobile: selectedDriverMobile || null,
-        pickupDate: pickupDate || new Date().toISOString().split("T")[0],
-        pickupTime: pickupTime || "09:00",
-        tripStatus: selectedDriverId ? "assigned" : "unassigned",
-        amount: parsedAmount,
-        discountType: discountType,
-        discountValue: rawDiscountInput,
-        discount: calculatedDiscount,
-        netAmount: netPayable,
-        paymentMode: paymentMode,
-        paymentSplits: splitsData,
-        receivedAmount: effectiveReceived,
-        balanceAmount: balanceDue,
-        status: balanceDue === 0 ? "completed" : "confirmed",
-        createdAt: serverTimestamp(),
-      });
-
-      // 2. If receivedAmount > 0, log to payments collection for the Payments page
-      if (effectiveReceived > 0) {
-        await addDoc(collection(db, "payments"), {
-          bookingId: bookingDocRef.id,
-          bookingNumber: bookingNo,
-          clientType: clientType,
-          clientId: selectedClient.id,
-          clientName: selectedClient.name,
-          clientMobile: selectedClient.mobile,
-          companyName: selectedClient.companyName || null,
-          fromLocation: fromTrimmed,
-          toLocation: toTrimmed,
-          amountCollected: effectiveReceived,
-          paymentMode: paymentMode,
-          splits: splitsData,
-          note: "Advance received on booking creation",
-          createdAt: serverTimestamp(),
+      const initialPaymentHistory: PaymentHistoryItem[] = [];
+      const advanceNum = pricingBreakdown.customerAdvance;
+      if (advanceNum > 0) {
+        initialPaymentHistory.push({
+          id: `pay-${Date.now()}`,
+          date: startDate,
+          time: startTime,
+          amount: advanceNum,
+          paymentMode: "Advance",
+          referenceNumber: "Customer Advance on Booking",
+          notes: "Collected at time of booking creation",
+          recordedAt: new Date().toISOString(),
         });
       }
 
-      // Reset form states
-      setFromLocation("");
-      setToLocation("");
-      setSelectedPlanId("");
-      setSelectedPlanName("");
-      setAmount("");
-      setSelectedDriverId("");
-      setSelectedDriverName("");
-      setSelectedDriverMobile("");
-      setDiscountType("rupees");
-      setDiscountValue("0");
-      setPaymentMode("cash");
-      setSingleReceived("0");
-      setSplitCash("");
-      setSplitUpi("");
-      setSplitCard("");
-      setSelectedClient(null);
-      setClientSearchQuery("");
-      setShowAddCustomerInline(false);
-      setShowAddOwnerInline(false);
+      const bookingPayload: Omit<BookingRecord, "id"> = {
+        bookingNumber,
+        startDate,
+        startTime,
+        endDate,
+        endTime,
+        fromLocation: fromLocation.trim(),
+        toLocation: toLocation.trim(),
+        entityId: selectedEntityId,
+        entityName: selectedEntityName,
+        customerId: selectedCustomerId,
+        customerName: selectedCustomerName,
+        vehicleCategory: selectedVehicleCategory,
+        tariffType: selectedTariffType,
+        tariffPackageId: selectedPackageId,
+        tariffPackageName: selectedPackageName,
+        travelerName: travelerName.trim() || selectedCustomerName,
+        travelerMobile: travelerMobile.trim(),
 
-      setIsOffCanvasOpen(false);
+        durationText: calculatedDuration.text,
+        totalDays: calculatedDuration.totalDays,
+        totalHours: calculatedDuration.totalHours,
+        totalMinutes: calculatedDuration.totalMinutes,
+        vehicleId: selectedVehicleId || undefined,
+        vehicleRegNumber: selectedVehicleReg || undefined,
+        vehicleName: selectedVehicleName || undefined,
+        driverId: selectedDriverId || undefined,
+        driverName: selectedDriverName || undefined,
+        driverMobile: selectedDriverMobile || undefined,
+        driverStatus: selectedDriverId ? "Occupied for Trip" : undefined,
+        startingKm: startKmNum,
+        endingKm: endKmNum,
+        totalKm: calculatedTotalKm,
+        travelledPlaces,
+        notes: notes.trim(),
+
+        tolls: Math.max(0, Number(tolls) || 0),
+        parking: Math.max(0, Number(parking) || 0),
+        statePermit: Math.max(0, Number(statePermit) || 0),
+        meals: Math.max(0, Number(meals) || 0),
+        interstateEntryTax: Math.max(0, Number(interstateEntryTax) || 0),
+        nightHalt: Math.max(0, Number(nightHalt) || 0),
+        totalPassThrough: pricingBreakdown.totalPassThrough,
+        customerAdvance: advanceNum,
+
+        baseFare: pricingBreakdown.baseFare,
+        extraKmRate: pricingBreakdown.extraKmRate,
+        extraKmCost: pricingBreakdown.extraKmCost,
+        extraHoursRate: pricingBreakdown.extraHoursRate,
+        extraHoursCost: pricingBreakdown.extraHoursCost,
+        driverBataCost: pricingBreakdown.driverBataCost,
+        nightHaltCost: pricingBreakdown.nightHaltCost,
+        grossAmount: pricingBreakdown.grossAmount,
+        netAmount: pricingBreakdown.netAmount,
+        receivedAmount: advanceNum,
+        balanceAmount: pricingBreakdown.netAmount,
+
+        bookingStatus: bookingStatus,
+        paymentStatus: autoPaymentStatus,
+        paymentHistory: initialPaymentHistory,
+
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      // 1. Add to bookings collection
+      const docRef = await addDoc(collection(db, "bookings"), bookingPayload);
+
+      // 2. If advance > 0, also log in payments collection for ledger
+      if (advanceNum > 0) {
+        try {
+          await addDoc(collection(db, "payments"), {
+            bookingId: docRef.id,
+            bookingNumber,
+            clientType: "customer",
+            clientName: selectedCustomerName,
+            clientMobile: travelerMobile.trim(),
+            companyName: selectedCustomerName,
+            fromLocation: fromLocation.trim(),
+            toLocation: toLocation.trim(),
+            amountCollected: advanceNum,
+            amount: advanceNum,
+            paymentMode: "cash",
+            note: `Advance collected for ${bookingNumber}`,
+            createdAt: serverTimestamp(),
+          });
+        } catch (err) {
+          console.warn("Notice: payment record creation:", err);
+        }
+      }
+
       setFeedback({
         type: "success",
-        message: `Booking #${bookingNo} created! ${
-          selectedDriverName
-            ? `Assigned to driver ${selectedDriverName}.`
-            : "Driver can be assigned anytime."
-        }`,
+        message: `Booking ${bookingNumber} created successfully! Vehicle and driver assigned.`,
       });
-
+      setIsOffCanvasOpen(false);
       setTimeout(() => setFeedback(null), 4000);
-    } catch (err: unknown) {
+    } catch (err: any) {
       console.error("Error creating booking:", err);
-      const errMsg =
-        err instanceof Error ? err.message : "Failed to create booking.";
-      setFeedback({ type: "error", message: errMsg });
+      setFeedback({
+        type: "error",
+        message: `Failed to create booking: ${err.message || "Unknown error"}`,
+      });
     } finally {
-      setIsSubmittingBooking(false);
+      setIsSubmitting(false);
     }
   };
 
-  // Reassign Driver to an existing booking
-  const handleSaveReassignDriver = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!assigningBooking) return;
-
-    setIsReassigning(true);
+  // -------------------------------------------------------------------------
+  // Quick Status Transition
+  // -------------------------------------------------------------------------
+  const handleUpdateBookingStatus = async (
+    bookingId: string,
+    newStatus: BookingStatus
+  ) => {
     try {
-      const found = drivers.find((d) => d.id === reassignDriverId);
-      const bookingRef = doc(db, "bookings", assigningBooking.id);
+      await updateDoc(doc(db, "bookings", bookingId), {
+        bookingStatus: newStatus,
+        updatedAt: serverTimestamp(),
+      });
+      if (viewingBooking && viewingBooking.id === bookingId) {
+        setViewingBooking((prev) =>
+          prev ? { ...prev, bookingStatus: newStatus } : null
+        );
+      }
+      setFeedback({
+        type: "success",
+        message: `Booking status updated to ${newStatus}.`,
+      });
+      setTimeout(() => setFeedback(null), 3000);
+    } catch (err) {
+      console.error("Error updating status:", err);
+    }
+  };
 
-      await updateDoc(bookingRef, {
-        driverId: found ? found.id : null,
-        driverName: found ? found.name : null,
-        driverMobile: found ? found.mobile : null,
-        tripStatus: found ? "assigned" : "unassigned",
+  // -------------------------------------------------------------------------
+  // Record Payment / Collect Amount Submission
+  // -------------------------------------------------------------------------
+  const handleOpenCollectPayment = (b: BookingRecord) => {
+    setCollectingBooking(b);
+    setCollectAmount(String(b.balanceAmount || b.netAmount));
+    setCollectMode("Cash");
+    setCollectRefNumber("");
+    setCollectNotes("");
+  };
+
+  const handleRecordPaymentSubmit = async () => {
+    if (!collectingBooking) return;
+    const amountNum = Number(collectAmount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      alert("Please enter a valid payment amount.");
+      return;
+    }
+    if (collectMode === "UPI" && !collectRefNumber.trim()) {
+      alert("Please enter the UPI Reference Number (UTR / Ref #).");
+      return;
+    }
+
+    setIsCollectingPayment(true);
+    try {
+      const now = new Date();
+      const currentReceived = Number(collectingBooking.receivedAmount) || 0;
+      const newReceived = currentReceived + amountNum;
+      const totalPayable =
+        Number(collectingBooking.grossAmount) || Number(collectingBooking.netAmount) || 0;
+      const newBalance = Math.max(0, totalPayable - newReceived);
+
+      let newPayStatus: PaymentStatus = "Partial";
+      if (newBalance <= 0) newPayStatus = "Paid";
+      else if (newReceived <= 0) newPayStatus = "Unpaid";
+
+      const newHistoryItem: PaymentHistoryItem = {
+        id: `pay-${Date.now()}`,
+        date: now.toISOString().split("T")[0],
+        time: `${String(now.getHours()).padStart(2, "0")}:${String(
+          now.getMinutes()
+        ).padStart(2, "0")}`,
+        amount: amountNum,
+        paymentMode: collectMode,
+        referenceNumber: collectRefNumber.trim() || undefined,
+        notes: collectNotes.trim() || undefined,
+        recordedAt: now.toISOString(),
+      };
+
+      const updatedHistory = [
+        ...(collectingBooking.paymentHistory || []),
+        newHistoryItem,
+      ];
+
+      // Update Booking
+      await updateDoc(doc(db, "bookings", collectingBooking.id), {
+        receivedAmount: newReceived,
+        balanceAmount: newBalance,
+        paymentStatus: newPayStatus,
+        paymentHistory: updatedHistory,
         updatedAt: serverTimestamp(),
       });
 
-      setFeedback({
-        type: "success",
-        message: found
-          ? `Driver "${found.name}" assigned to Booking #${assigningBooking.bookingNumber}!`
-          : `Booking #${assigningBooking.bookingNumber} marked as unassigned.`,
+      // Also log in payments collection
+      await addDoc(collection(db, "payments"), {
+        bookingId: collectingBooking.id,
+        bookingNumber: collectingBooking.bookingNumber,
+        clientType: "customer",
+        clientName: collectingBooking.customerName,
+        clientMobile: collectingBooking.travelerMobile || "",
+        companyName: collectingBooking.customerName,
+        fromLocation: collectingBooking.fromLocation,
+        toLocation: collectingBooking.toLocation,
+        amountCollected: amountNum,
+        amount: amountNum,
+        paymentMode: collectMode.toLowerCase(),
+        referenceNumber: collectRefNumber.trim() || null,
+        note: collectNotes.trim() || `Collected for ${collectingBooking.bookingNumber}`,
+        createdAt: serverTimestamp(),
       });
 
-      setAssigningBooking(null);
+      setFeedback({
+        type: "success",
+        message: `Payment of ₹${amountNum.toLocaleString(
+          "en-IN"
+        )} recorded via ${collectMode}!`,
+      });
+      setCollectingBooking(null);
       setTimeout(() => setFeedback(null), 3000);
-    } catch (err) {
-      console.error("Error reassigning driver:", err);
-      alert("Failed to update driver assignment.");
+    } catch (err: any) {
+      console.error("Error recording payment:", err);
+      alert("Failed to record payment.");
     } finally {
-      setIsReassigning(false);
+      setIsCollectingPayment(false);
     }
   };
 
-  // Delete booking handler
-  const handleDeleteBooking = async (id: string, bookingNo: string) => {
-    if (!confirm(`Are you sure you want to delete Booking #${bookingNo}?`))
-      return;
-    try {
-      await deleteDoc(doc(db, "bookings", id));
-      setFeedback({
-        type: "success",
-        message: `Booking #${bookingNo} has been deleted.`,
-      });
-      setTimeout(() => setFeedback(null), 3000);
-    } catch (err) {
-      console.error("Error deleting booking:", err);
-      setFeedback({ type: "error", message: "Failed to delete booking." });
-    }
-  };
-
-  // Filtered Bookings for the main data table
+  // -------------------------------------------------------------------------
+  // Filtered Bookings Table
+  // -------------------------------------------------------------------------
   const filteredBookings = useMemo(() => {
-    const q = tableSearchQuery.trim().toLowerCase();
-    if (!q) return bookings;
-    return bookings.filter(
-      (b) =>
+    return bookings.filter((b) => {
+      // Search
+      const q = searchQuery.toLowerCase().trim();
+      const matchSearch =
+        !q ||
         b.bookingNumber?.toLowerCase().includes(q) ||
-        b.clientName?.toLowerCase().includes(q) ||
-        b.clientMobile?.toLowerCase().includes(q) ||
+        b.customerName?.toLowerCase().includes(q) ||
+        b.travelerName?.toLowerCase().includes(q) ||
         b.fromLocation?.toLowerCase().includes(q) ||
         b.toLocation?.toLowerCase().includes(q) ||
-        b.planName?.toLowerCase().includes(q) ||
-        b.driverName?.toLowerCase().includes(q) ||
-        (b.companyName && b.companyName.toLowerCase().includes(q))
-    );
-  }, [bookings, tableSearchQuery]);
+        b.vehicleRegNumber?.toLowerCase().includes(q) ||
+        b.driverName?.toLowerCase().includes(q);
 
-  // Aggregate stats
-  const totalRevenue = bookings.reduce((sum, b) => sum + (b.netAmount || 0), 0);
-  const totalReceived = bookings.reduce(
-    (sum, b) => sum + (b.receivedAmount || 0),
-    0
-  );
-  const totalBalance = bookings.reduce(
-    (sum, b) => sum + (b.balanceAmount || 0),
-    0
-  );
+      // Status
+      const matchStatus =
+        statusFilter === "all" || b.bookingStatus === statusFilter;
+
+      // Payment
+      const matchPayment =
+        paymentFilter === "all" || b.paymentStatus === paymentFilter;
+
+      return matchSearch && matchStatus && matchPayment;
+    });
+  }, [bookings, searchQuery, statusFilter, paymentFilter]);
 
   return (
-    <div className="w-full space-y-3">
-      {/* Breadcrumbs Navigation */}
+    <div className="space-y-4 max-w-[1400px] mx-auto pb-16 font-sans">
+      {/* Breadcrumb Navigation */}
       <nav className="flex items-center gap-1.5 text-xs text-slate-500 font-normal">
-        <Link href="/dashboard" className="hover:text-slate-800 transition">
-          Home
+        <Link href="/" className="hover:text-slate-800 transition">
+          Dashboard
         </Link>
-        <span className="text-slate-300">/</span>
-        <span className="text-slate-500">OPERATIONS</span>
-        <span className="text-slate-300">/</span>
+        <span>/</span>
         <span className="text-[#f16623] font-medium">Bookings</span>
       </nav>
 
       {/* Top Header Card */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-white p-3 rounded-[6px] border border-slate-200/80 shadow-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3.5 rounded-[6px] border border-slate-200/80 shadow-xs">
         <div className="flex items-center gap-2.5">
           <div className="w-[34px] h-[34px] max-h-[34px] rounded-[6px] bg-orange-50 border border-[#f16623]/25 flex items-center justify-center text-[#f16623]">
             <CalendarCheck className="w-4 h-4" />
@@ -850,34 +1220,39 @@ export default function BookingsPage() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-sm sm:text-base font-medium text-slate-900 leading-tight">
-                Trip Bookings & Dispatch
+                Trips &amp; Bookings Manager
               </h1>
               <span className="px-2 py-0.5 rounded-[6px] text-[10px] font-medium bg-orange-50 text-[#f16623] border border-[#f16623]/20">
-                {bookings.length} Bookings
+                {bookings.length} Total Trips
               </span>
             </div>
             <p className="text-[11px] text-slate-400 font-normal">
-              Manage routes, tariffs, customer/owner assignments & instant driver dispatch
+              Corporate contracts, trip assignment, pass-through charges &amp; live invoice tracking
             </p>
           </div>
         </div>
 
-        {/* Right side controls: Search & Add Booking Button */}
+        {/* Right Header Buttons */}
         <div className="flex items-center gap-2">
-          <div className="relative sm:w-60">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search booking, driver, client..."
-              value={tableSearchQuery}
-              onChange={(e) => setTableSearchQuery(e.target.value)}
-              className="w-full h-[34px] max-h-[34px] pl-8 pr-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal transition"
-            />
-          </div>
+          <Link
+            href="/credit"
+            className="h-[34px] max-h-[34px] px-3 rounded-[6px] border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-normal transition flex items-center gap-1.5 shadow-2xs"
+          >
+            <Banknote className="w-3.5 h-3.5 text-slate-500" />
+            <span>Credit Outstandings</span>
+          </Link>
+
+          <Link
+            href="/payments"
+            className="h-[34px] max-h-[34px] px-3 rounded-[6px] border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-normal transition flex items-center gap-1.5 shadow-2xs"
+          >
+            <Receipt className="w-3.5 h-3.5 text-slate-500" />
+            <span>Payments Ledger</span>
+          </Link>
 
           <button
             type="button"
-            onClick={() => setIsOffCanvasOpen(true)}
+            onClick={handleOpenAddBooking}
             className="h-[34px] max-h-[34px] px-3.5 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] text-white text-xs font-medium shadow-xs shadow-[#f16623]/25 transition flex items-center gap-1.5 active:scale-[0.98] shrink-0 cursor-pointer"
           >
             <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
@@ -886,1198 +1261,1632 @@ export default function BookingsPage() {
         </div>
       </div>
 
-      {/* Quick Metrics Bar */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        <div className="bg-white p-2.5 rounded-[6px] border border-slate-200/80 shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
-              Total Bookings
-            </span>
-            <span className="text-sm font-medium text-slate-900 font-mono">
-              {bookings.length}
-            </span>
-          </div>
-          <div className="w-[30px] h-[30px] rounded-[6px] bg-slate-50 text-slate-600 flex items-center justify-center">
-            <CalendarCheck className="w-3.5 h-3.5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-2.5 rounded-[6px] border border-slate-200/80 shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
-              Total Net Value
-            </span>
-            <span className="text-sm font-medium text-slate-900 font-mono">
-              ₹{totalRevenue.toLocaleString("en-IN")}
-            </span>
-          </div>
-          <div className="w-[30px] h-[30px] rounded-[6px] bg-emerald-50 text-emerald-600 flex items-center justify-center">
-            <IndianRupee className="w-3.5 h-3.5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-2.5 rounded-[6px] border border-slate-200/80 shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
-              Amount Received
-            </span>
-            <span className="text-sm font-medium text-emerald-600 font-mono">
-              ₹{totalReceived.toLocaleString("en-IN")}
-            </span>
-          </div>
-          <div className="w-[30px] h-[30px] rounded-[6px] bg-emerald-50 text-emerald-600 flex items-center justify-center">
-            <Wallet className="w-3.5 h-3.5" />
-          </div>
-        </div>
-
-        <div className="bg-white p-2.5 rounded-[6px] border border-slate-200/80 shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
-              Pending Balance
-            </span>
-            <span
-              className={`text-sm font-medium font-mono ${
-                totalBalance > 0 ? "text-amber-600" : "text-slate-900"
-              }`}
-            >
-              ₹{totalBalance.toLocaleString("en-IN")}
-            </span>
-          </div>
-          <div className="w-[30px] h-[30px] rounded-[6px] bg-amber-50 text-amber-600 flex items-center justify-center">
-            <Clock className="w-3.5 h-3.5" />
-          </div>
-        </div>
-      </div>
-
       {/* Feedback Banner */}
       {feedback && (
         <div
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-[6px] text-xs font-normal border ${
+          className={`flex items-center gap-2 px-3 py-2 rounded-[6px] text-xs font-normal border ${
             feedback.type === "success"
               ? "bg-emerald-50 text-emerald-800 border-emerald-200"
               : "bg-rose-50 text-rose-800 border-rose-200"
           }`}
         >
           {feedback.type === "success" ? (
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
           ) : (
-            <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
           )}
           <span>{feedback.message}</span>
         </div>
       )}
 
-      {/* Bookings Data Table Card */}
-      <div className="bg-white rounded-[6px] border border-slate-200/80 shadow-xs overflow-hidden">
-        <div className="px-3.5 py-2.5 border-b border-slate-100 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-[2px] bg-[#f16623]"></span>
-            <h3 className="text-xs font-medium text-slate-900">
-              Trip Dispatch & Booking Manifest
-            </h3>
-          </div>
-          <span className="text-[11px] text-slate-400 font-normal">
-            {filteredBookings.length} booking{filteredBookings.length === 1 ? "" : "s"}
-          </span>
+      {/* Filter and Search Bar */}
+      <div className="bg-white p-3 rounded-[6px] border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-2.5">
+        <div className="relative flex-1 max-w-md">
+          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder="Search booking #, company, traveler, driver, vehicle..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full h-[34px] max-h-[34px] pl-8 pr-3 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal transition"
+          />
         </div>
 
-        {loading ? (
-          <div className="py-8 flex flex-col items-center justify-center text-slate-400 gap-1.5">
-            <Loader2 className="w-5 h-5 animate-spin text-[#f16623]" />
-            <span className="text-xs font-normal">
-              Loading bookings from Firestore...
-            </span>
+        <div className="flex flex-wrap items-center gap-2">
+          {/* Status Filter */}
+          <div className="flex items-center gap-1 text-xs">
+            <span className="text-[11px] text-slate-400 font-normal">Status:</span>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-700 focus:outline-none focus:border-[#f16623] font-normal cursor-pointer"
+            >
+              <option value="all">All Trip Statuses</option>
+              <option value="New">New</option>
+              <option value="Trip In Progress">Trip In Progress</option>
+              <option value="Trip Completed">Trip Completed</option>
+              <option value="Invoice Generated">Invoice Generated</option>
+              <option value="Invoice Sent">Invoice Sent</option>
+            </select>
           </div>
-        ) : filteredBookings.length === 0 ? (
-          <div className="py-10 px-4 text-center">
-            <div className="w-10 h-10 rounded-[6px] bg-orange-50 border border-[#f16623]/20 flex items-center justify-center mx-auto text-[#f16623] mb-2">
-              <CalendarCheck className="w-5 h-5" />
-            </div>
-            <h4 className="text-xs font-medium text-slate-800">
-              {tableSearchQuery ? "No matching bookings found" : "No bookings created yet"}
-            </h4>
-            <p className="text-[11px] text-slate-400 max-w-sm mx-auto mt-0.5 font-normal">
-              Click on &apos;Add Booking&apos; to schedule trips, assign drivers, and manage tariffs.
-            </p>
-            {!tableSearchQuery && (
-              <button
-                type="button"
-                onClick={() => setIsOffCanvasOpen(true)}
-                className="mt-3 h-[34px] max-h-[34px] px-3 rounded-[6px] bg-[#f16623] text-white text-xs font-medium inline-flex items-center gap-1.5 transition hover:bg-[#d95318]"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Booking</span>
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-600">
-              <thead className="bg-slate-50/80 text-[10px] uppercase tracking-wider text-slate-500 font-medium border-b border-slate-200">
-                <tr>
-                  <th className="py-2 px-3 font-medium">Booking #</th>
-                  <th className="py-2 px-3 font-medium">Pickup Timing</th>
-                  <th className="py-2 px-3 font-medium">Route (From ➔ To)</th>
-                  <th className="py-2 px-3 font-medium">Client</th>
-                  <th className="py-2 px-3 font-medium">Assigned Driver</th>
-                  <th className="py-2 px-3 font-medium">Net Amount</th>
-                  <th className="py-2 px-3 font-medium">Received / Balance</th>
-                  <th className="py-2 px-3 text-right font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredBookings.map((b) => {
-                  const isCust = b.clientType === "customer";
 
+          {/* Payment Status Filter */}
+          <div className="flex items-center gap-1 text-xs">
+            <span className="text-[11px] text-slate-400 font-normal">Payment:</span>
+            <select
+              value={paymentFilter}
+              onChange={(e) => setPaymentFilter(e.target.value)}
+              className="h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-700 focus:outline-none focus:border-[#f16623] font-normal cursor-pointer"
+            >
+              <option value="all">All Payments</option>
+              <option value="Unpaid">Unpaid</option>
+              <option value="Partial">Partial</option>
+              <option value="Paid">Paid</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      {/* Bookings Table Directory */}
+      <div className="bg-white rounded-[6px] border border-slate-200/80 shadow-xs overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-medium text-slate-600">
+                <th className="py-2.5 px-3">Booking #</th>
+                <th className="py-2.5 px-3">Company &amp; Traveler</th>
+                <th className="py-2.5 px-3">Trip Dates &amp; Duration</th>
+                <th className="py-2.5 px-3">Vehicle &amp; Category</th>
+                <th className="py-2.5 px-3">Driver</th>
+                <th className="py-2.5 px-3 text-right">Gross Amount</th>
+                <th className="py-2.5 px-3 text-center">Status</th>
+                <th className="py-2.5 px-3 text-center">Payment</th>
+                <th className="py-2.5 px-3 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {loading ? (
+                <tr>
+                  <td colSpan={9} className="py-12 text-center text-slate-400">
+                    <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2 text-[#f16623]" />
+                    <span className="font-normal text-xs">Loading trips...</span>
+                  </td>
+                </tr>
+              ) : filteredBookings.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="py-12 text-center text-slate-400">
+                    <CalendarCheck className="w-8 h-8 mx-auto mb-2 text-slate-300 stroke-1" />
+                    <p className="text-xs font-medium text-slate-600">No bookings found</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Click &quot;+ Add Booking&quot; above to create your first trip.
+                    </p>
+                  </td>
+                </tr>
+              ) : (
+                filteredBookings.map((b) => {
                   return (
                     <tr
                       key={b.id}
-                      className="hover:bg-orange-50/30 transition-colors group"
+                      className="hover:bg-slate-50/60 transition-colors group"
                     >
-                      {/* Booking ID */}
-                      <td className="py-2 px-3 font-mono font-medium text-slate-900 text-[11px]">
-                        <span className="px-1.5 py-0.5 rounded-[4px] bg-slate-100 border border-slate-200">
+                      {/* Booking # & Route */}
+                      <td className="py-2.5 px-3">
+                        <div className="font-medium text-slate-900 font-mono text-[11px]">
                           {b.bookingNumber}
-                        </span>
-                      </td>
-
-                      {/* Pickup Timing */}
-                      <td className="py-2 px-3">
-                        <div className="flex flex-col">
-                          <span className="font-mono text-xs font-medium text-slate-900 flex items-center gap-1">
-                            <Clock className="w-3 h-3 text-[#f16623]" />
-                            {b.pickupTime || "09:00"}
-                          </span>
-                          <span className="text-[10px] text-slate-400 font-normal">
-                            {b.pickupDate || "Today"}
-                          </span>
                         </div>
-                      </td>
-
-                      {/* Route */}
-                      <td className="py-2 px-3">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-medium text-slate-900">
-                            {b.fromLocation}
-                          </span>
-                          <ArrowRight className="w-3 h-3 text-[#f16623] shrink-0" />
-                          <span className="font-medium text-slate-900">
-                            {b.toLocation}
-                          </span>
+                        <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                          <span>{b.fromLocation}</span>
+                          <ArrowRight className="w-2.5 h-2.5 text-slate-300" />
+                          <span>{b.toLocation}</span>
                         </div>
-                        <span className="text-[10px] text-slate-400 block font-normal">
-                          {b.planName}
-                        </span>
-                      </td>
-
-                      {/* Client */}
-                      <td className="py-2 px-3">
-                        <div className="flex flex-col">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-medium text-slate-900">
-                              {b.clientName}
-                            </span>
-                            <span
-                              className={`px-1.5 py-0.2 rounded-[3px] text-[9px] font-medium border ${
-                                isCust
-                                  ? "bg-blue-50 text-blue-700 border-blue-200"
-                                  : "bg-purple-50 text-purple-700 border-purple-200"
-                              }`}
-                            >
-                              {isCust ? "Customer" : "Owner"}
-                            </span>
-                          </div>
-                          <span className="text-[10px] text-slate-400 font-normal flex items-center gap-0.5">
-                            <PhoneCall className="w-2.5 h-2.5" />
-                            {b.clientMobile}
+                        {b.totalKm > 0 && (
+                          <span className="inline-block mt-0.5 text-[9px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 font-mono">
+                            {b.totalKm} KM
                           </span>
-                        </div>
-                      </td>
-
-                      {/* REQUIREMENT 2: ASSIGNED DRIVER */}
-                      <td className="py-2 px-3">
-                        {b.driverName ? (
-                          <div className="flex items-center justify-between gap-1.5">
-                            <div className="flex flex-col">
-                              <span className="font-medium text-slate-900 text-xs flex items-center gap-1">
-                                <UserCheck className="w-3 h-3 text-emerald-600" />
-                                {b.driverName}
-                              </span>
-                              {b.driverMobile && (
-                                <span className="text-[10px] text-slate-400 font-normal">
-                                  {b.driverMobile}
-                                </span>
-                              )}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setAssigningBooking(b);
-                                setReassignDriverId(b.driverId || "");
-                              }}
-                              className="text-[10px] text-slate-400 hover:text-[#f16623] underline"
-                            >
-                              Change
-                            </button>
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setAssigningBooking(b);
-                              setReassignDriverId("");
-                            }}
-                            className="h-[26px] max-h-[34px] px-2 rounded-[4px] bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 text-[10px] font-medium inline-flex items-center gap-1 transition cursor-pointer"
-                          >
-                            <UserCheck className="w-3 h-3 text-amber-600" />
-                            <span>Assign Driver</span>
-                          </button>
                         )}
                       </td>
 
-                      {/* Net Amount */}
-                      <td className="py-2 px-3">
-                        <div className="flex flex-col">
-                          <span className="font-mono font-medium text-slate-900 text-xs">
-                            ₹{Number(b.netAmount).toLocaleString("en-IN")}
+                      {/* Company & Traveler */}
+                      <td className="py-2.5 px-3">
+                        <div className="font-medium text-slate-900 flex items-center gap-1">
+                          <Building2 className="w-3 h-3 text-[#f16623] shrink-0" />
+                          <span className="truncate max-w-[140px]">
+                            {b.customerName}
                           </span>
-                          {b.discount > 0 && (
-                            <span className="text-[10px] text-emerald-600 font-normal">
-                              (-₹{b.discount})
+                        </div>
+                        <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
+                          <User className="w-2.5 h-2.5 text-slate-400" />
+                          <span>{b.travelerName}</span>
+                          {b.travelerMobile && (
+                            <span className="text-[10px] text-slate-400">
+                              ({b.travelerMobile})
                             </span>
                           )}
                         </div>
                       </td>
 
-                      {/* Received & Balance */}
-                      <td className="py-2 px-3">
-                        <div className="flex flex-col">
-                          <span className="text-[11px] font-mono text-emerald-600 font-medium">
-                            Rec: ₹{Number(b.receivedAmount).toLocaleString("en-IN")}
-                          </span>
-                          <span
-                            className={`text-[10px] font-mono ${
-                              b.balanceAmount > 0
-                                ? "text-amber-600 font-medium"
-                                : "text-slate-400"
-                            }`}
-                          >
-                            Bal: ₹{Number(b.balanceAmount).toLocaleString("en-IN")}
-                          </span>
+                      {/* Dates & Duration */}
+                      <td className="py-2.5 px-3">
+                        <div className="text-slate-800 text-[11px] font-normal flex items-center gap-1">
+                          <Calendar className="w-3 h-3 text-slate-400 shrink-0" />
+                          <span>{b.startDate}</span>
+                          <span className="text-slate-400">to</span>
+                          <span>{b.endDate}</span>
                         </div>
+                        <div className="text-[10px] text-[#f16623] font-medium mt-0.5 flex items-center gap-1">
+                          <Clock className="w-2.5 h-2.5" />
+                          <span>{b.durationText || "1 Day"}</span>
+                        </div>
+                      </td>
+
+                      {/* Vehicle & Category */}
+                      <td className="py-2.5 px-3">
+                        <div className="font-medium text-slate-900 flex items-center gap-1">
+                          <Car className="w-3 h-3 text-slate-500" />
+                          <span>{b.vehicleCategory || "Sedan"}</span>
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-0.5 font-mono">
+                          {b.vehicleRegNumber ? (
+                            <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
+                              {b.vehicleRegNumber}
+                            </span>
+                          ) : (
+                            <span className="text-amber-600">Unassigned</span>
+                          )}
+                        </div>
+                      </td>
+
+                      {/* Driver */}
+                      <td className="py-2.5 px-3">
+                        {b.driverName ? (
+                          <div>
+                            <div className="font-medium text-slate-900">
+                              {b.driverName}
+                            </div>
+                            <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
+                              <PhoneCall className="w-2.5 h-2.5" />
+                              <span>{b.driverMobile || "—"}</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-slate-400">
+                            No driver
+                          </span>
+                        )}
+                      </td>
+
+                      {/* Gross Amount */}
+                      <td className="py-2.5 px-3 text-right">
+                        <div className="font-medium text-slate-900 font-mono">
+                          ₹{(b.grossAmount || 0).toLocaleString("en-IN")}
+                        </div>
+                        {b.customerAdvance > 0 && (
+                          <div className="text-[10px] text-emerald-600 font-mono">
+                            Adv: ₹{b.customerAdvance.toLocaleString("en-IN")}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Status */}
+                      <td className="py-2.5 px-3 text-center">
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium border ${
+                            b.bookingStatus === "New"
+                              ? "bg-sky-50 text-sky-700 border-sky-200"
+                              : b.bookingStatus === "Trip In Progress"
+                              ? "bg-amber-50 text-amber-700 border-amber-200"
+                              : b.bookingStatus === "Trip Completed"
+                              ? "bg-purple-50 text-purple-700 border-purple-200"
+                              : b.bookingStatus === "Invoice Generated"
+                              ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                              : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          }`}
+                        >
+                          {b.bookingStatus}
+                        </span>
+                      </td>
+
+                      {/* Payment Status */}
+                      <td className="py-2.5 px-3 text-center">
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium border ${
+                            b.paymentStatus === "Paid"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : b.paymentStatus === "Partial"
+                              ? "bg-amber-50 text-amber-700 border-amber-200"
+                              : "bg-rose-50 text-rose-700 border-rose-200"
+                          }`}
+                        >
+                          {b.paymentStatus}
+                        </span>
                       </td>
 
                       {/* Actions */}
-                      <td className="py-2 px-3 text-right">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleDeleteBooking(b.id, b.bookingNumber)
-                          }
-                          className="h-[28px] max-h-[34px] w-[28px] rounded-[6px] text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 inline-flex items-center justify-center transition cursor-pointer"
-                          title="Delete booking"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
+                      <td className="py-2.5 px-3 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => setViewingBooking(b)}
+                            className="p-1 rounded text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition cursor-pointer"
+                            title="View details & charges"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleOpenCollectPayment(b)}
+                            className="h-[26px] max-h-[34px] px-2 rounded-[4px] border border-slate-200 bg-white hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 text-slate-600 text-[10px] font-normal transition flex items-center gap-1 shadow-2xs cursor-pointer"
+                            title="Collect / Record Payment"
+                          >
+                            <Banknote className="w-3 h-3 text-emerald-600" />
+                            <span>Collect</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {/* Right Side Off-Canvas Drawer for Creating New Booking */}
+      {/* ===================================================================== */}
+      {/* 4-TAB ADD BOOKING OFFCANVAS DRAWER */}
+      {/* ===================================================================== */}
       <OffCanvas
         isOpen={isOffCanvasOpen}
-        onClose={() => {
-          if (!isSubmittingBooking) setIsOffCanvasOpen(false);
-        }}
-        title="Create New Booking"
-        subtitle="Route dispatch, driver assignment, customer/business owner billing"
+        onClose={() => setIsOffCanvasOpen(false)}
+        title="Add Booking"
+        subtitle="Step-by-step trip configuration, vehicle & driver assignment, pass-through charges, and pricing"
+        size="3xl"
+        widthClassName="max-w-3xl"
       >
-        <form onSubmit={handleCreateBooking} className="space-y-3.5">
-          {/* Section: Route Coordinates */}
-          <div className="bg-slate-50/70 p-2.5 rounded-[6px] border border-slate-200/80 space-y-2.5">
-            <span className="text-[10px] font-medium text-slate-700 uppercase tracking-wider flex items-center gap-1">
-              <MapPin className="w-3 h-3 text-[#f16623]" />
-              Trip Route Coordinates
-            </span>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <label
-                  htmlFor="from-location"
-                  className="text-[10px] font-medium text-slate-600 uppercase tracking-wider"
-                >
-                  From Location <span className="text-[#f16623]">*</span>
-                </label>
-                <input
-                  id="from-location"
-                  type="text"
-                  required
-                  placeholder="e.g. Hyderabad Airport / Gachibowli"
-                  value={fromLocation}
-                  onChange={(e) => setFromLocation(e.target.value)}
-                  className="w-full h-[34px] max-h-[34px] px-3 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-normal transition"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label
-                  htmlFor="to-location"
-                  className="text-[10px] font-medium text-slate-600 uppercase tracking-wider"
-                >
-                  To Location <span className="text-[#f16623]">*</span>
-                </label>
-                <input
-                  id="to-location"
-                  type="text"
-                  required
-                  placeholder="e.g. Srisailam / Vijayawada"
-                  value={toLocation}
-                  onChange={(e) => setToLocation(e.target.value)}
-                  className="w-full h-[34px] max-h-[34px] px-3 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-normal transition"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Section: REQUIREMENT 2 - Pickup Timing & Driver Assignment */}
-          <div className="bg-slate-50/70 p-2.5 rounded-[6px] border border-slate-200/80 space-y-2.5">
-            <span className="text-[10px] font-medium text-slate-700 uppercase tracking-wider flex items-center gap-1">
-              <UserCheck className="w-3 h-3 text-[#f16623]" />
-              Pickup Schedule & Driver Assignment
-            </span>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider flex items-center gap-1">
-                  <Calendar className="w-3 h-3 text-slate-400" />
-                  Pickup Date <span className="text-[#f16623]">*</span>
-                </label>
-                <input
-                  type="date"
-                  required
-                  value={pickupDate}
-                  onChange={(e) => setPickupDate(e.target.value)}
-                  className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] font-normal"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider flex items-center gap-1">
-                  <Clock className="w-3 h-3 text-slate-400" />
-                  Pickup Time <span className="text-[#f16623]">*</span>
-                </label>
-                <input
-                  type="time"
-                  required
-                  value={pickupTime}
-                  onChange={(e) => setPickupTime(e.target.value)}
-                  className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] font-normal"
-                />
-              </div>
-            </div>
-
-            {/* Driver Dropdown */}
-            <div className="space-y-1 pt-1">
-              <label
-                htmlFor="driver-select"
-                className="text-[10px] font-medium text-slate-600 uppercase tracking-wider flex items-center gap-1"
-              >
-                <UserCheck className="w-3 h-3 text-[#f16623]" />
-                Assign Driver (Optional)
-              </label>
-              <select
-                id="driver-select"
-                value={selectedDriverId}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setSelectedDriverId(val);
-                  const found = drivers.find((d) => d.id === val);
-                  setSelectedDriverName(found ? found.name : "");
-                  setSelectedDriverMobile(found ? found.mobile : "");
-                }}
-                className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] font-normal"
-              >
-                <option value="">-- Assign Later / Unassigned --</option>
-                {drivers.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name} {d.mobile ? `(${d.mobile})` : ""} {d.vehicleName ? `• ${d.vehicleName}` : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Section: Select Plan */}
-          <div className="space-y-1">
-            <div className="flex items-center justify-between">
-              <label
-                htmlFor="plan-select"
-                className="text-[10px] font-medium text-slate-600 uppercase tracking-wider flex items-center gap-1"
-              >
-                <Layers className="w-3 h-3 text-[#f16623]" />
-                Select Tariff / Plan <span className="text-[#f16623]">*</span>
-              </label>
-              {plans.length > 0 && (
-                <span className="text-[10px] text-slate-400 font-normal">
-                  {plans.length} tariff{plans.length === 1 ? "" : "s"} available
-                </span>
-              )}
-            </div>
-
-            <select
-              id="plan-select"
-              required
-              value={selectedPlanId}
-              onChange={(e) => handleSelectPlan(e.target.value)}
-              className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal transition"
-            >
-              <option value="">-- Choose Tariff / Plan --</option>
-              {plans.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.planName} — ₹{p.amount.toLocaleString("en-IN")}{" "}
-                  {p.travelName ? `(${p.travelName})` : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Section: Client Selection (Customer vs Business Owner) */}
-          <div className="bg-slate-50/70 p-2.5 rounded-[6px] border border-slate-200/80 space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-medium text-slate-700 uppercase tracking-wider flex items-center gap-1">
-                <User className="w-3 h-3 text-[#f16623]" />
-                Client / Account Type <span className="text-[#f16623]">*</span>
-              </span>
-
-              <div className="flex rounded-[6px] bg-slate-200/80 p-0.5 text-xs">
+        <div className="space-y-4">
+          {/* Tab Navigation Headers */}
+          <div className="flex items-center border-b border-slate-200 gap-1 overflow-x-auto">
+            {[
+              { id: "details", label: "1. Details" },
+              { id: "assignment", label: "2. Trip Assignment" },
+              { id: "charges", label: "3. Charges" },
+              { id: "invoice", label: "4. Invoice Preview" },
+            ].map((tab) => {
+              const isActive = activeTab === tab.id;
+              return (
                 <button
+                  key={tab.id}
                   type="button"
-                  onClick={() => {
-                    setClientType("customer");
-                    setSelectedClient(null);
-                    setClientSearchQuery("");
-                    setShowAddCustomerInline(false);
-                    setShowAddOwnerInline(false);
-                  }}
-                  className={`h-[26px] max-h-[34px] px-2.5 rounded-[4px] text-[11px] font-medium transition cursor-pointer ${
-                    clientType === "customer"
-                      ? "bg-white text-[#f16623] shadow-xs"
-                      : "text-slate-600 hover:text-slate-900"
+                  onClick={() => setActiveTab(tab.id as any)}
+                  className={`px-3 py-2 text-xs font-medium transition cursor-pointer border-b-2 select-none shrink-0 ${
+                    isActive
+                      ? "text-[#f16623] border-[#f16623] bg-orange-50/40 -mb-[1px]"
+                      : "text-slate-500 hover:text-slate-800 border-transparent hover:bg-slate-50 font-normal"
                   }`}
                 >
-                  Customer
+                  {tab.label}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setClientType("business_owner");
-                    setSelectedClient(null);
-                    setClientSearchQuery("");
-                    setShowAddCustomerInline(false);
-                    setShowAddOwnerInline(false);
-                  }}
-                  className={`h-[26px] max-h-[34px] px-2.5 rounded-[4px] text-[11px] font-medium transition cursor-pointer ${
-                    clientType === "business_owner"
-                      ? "bg-white text-[#f16623] shadow-xs"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  Business Owner
-                </button>
-              </div>
-            </div>
+              );
+            })}
+          </div>
 
-            {selectedClient ? (
-              <div className="bg-white p-2 rounded-[6px] border border-[#f16623]/30 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="w-[30px] h-[30px] rounded-[6px] bg-orange-50 text-[#f16623] flex items-center justify-center">
-                    {clientType === "customer" ? (
-                      <User className="w-3.5 h-3.5" />
-                    ) : (
-                      <Building2 className="w-3.5 h-3.5" />
-                    )}
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-medium text-slate-900">
-                        {selectedClient.name}
-                      </span>
-                      {selectedClient.companyName && (
-                        <span className="text-[10px] text-slate-500 font-normal">
-                          ({selectedClient.companyName})
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-[10px] text-slate-400 font-normal">
-                      {selectedClient.mobile}
-                    </span>
-                  </div>
+          {/* ================================================================= */}
+          {/* TAB 1: DETAILS */}
+          {/* ================================================================= */}
+          {activeTab === "details" && (
+            <div className="space-y-3.5">
+              {/* Trip Dates & Times */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                    START DATE *
+                  </label>
+                  <input
+                    type="date"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal"
+                  />
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => setSelectedClient(null)}
-                  className="h-[26px] max-h-[34px] px-2 rounded-[4px] text-slate-400 hover:text-rose-600 hover:bg-rose-50 text-[10px] font-medium transition cursor-pointer"
-                >
-                  Change
-                </button>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                    START TIME *
+                  </label>
+                  <input
+                    type="time"
+                    value={startTime}
+                    onChange={(e) => setStartTime(e.target.value)}
+                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                    END DATE *
+                  </label>
+                  <input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                    END TIME *
+                  </label>
+                  <input
+                    type="time"
+                    value={endTime}
+                    onChange={(e) => setEndTime(e.target.value)}
+                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal"
+                  />
+                </div>
               </div>
-            ) : (
-              <div className="space-y-2">
-                <div className="flex items-center gap-1.5">
-                  <div className="relative flex-1">
-                    <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+
+              {/* From & To Location */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                    FROM LOCATION *
+                  </label>
+                  <div className="relative">
+                    <MapPin className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
                     <input
                       type="text"
-                      placeholder={`Search ${
-                        clientType === "customer"
-                          ? "customer by name or mobile..."
-                          : "business owner by name, mobile, company..."
-                      }`}
-                      value={clientSearchQuery}
-                      onChange={(e) => setClientSearchQuery(e.target.value)}
-                      className="w-full h-[34px] max-h-[34px] pl-7 pr-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-normal transition"
+                      placeholder="e.g. Hyderabad / Airport / Office"
+                      value={fromLocation}
+                      onChange={(e) => setFromLocation(e.target.value)}
+                      className="w-full h-[34px] max-h-[34px] pl-8 pr-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-normal"
                     />
                   </div>
+                </div>
 
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (clientType === "customer") {
-                        setShowAddCustomerInline(!showAddCustomerInline);
-                        setShowAddOwnerInline(false);
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                    TO LOCATION *
+                  </label>
+                  <div className="relative">
+                    <Navigation className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="e.g. Warangal / Shamshabad / City Center"
+                      value={toLocation}
+                      onChange={(e) => setToLocation(e.target.value)}
+                      className="w-full h-[34px] max-h-[34px] pl-8 pr-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-normal"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Entity & Customer (Company) Selection */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                    OPERATING ENTITY *
+                  </label>
+                  <select
+                    value={selectedEntityId}
+                    onChange={(e) => {
+                      setSelectedEntityId(e.target.value);
+                      const ent = entities.find((item) => item.id === e.target.value);
+                      setSelectedEntityName(ent?.name || "");
+                    }}
+                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal cursor-pointer"
+                  >
+                    {entities.map((ent) => (
+                      <option key={ent.id} value={ent.id}>
+                        {ent.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                    CUSTOMER (COMPANIES LIST) *
+                  </label>
+                  <select
+                    value={selectedCustomerId}
+                    onChange={(e) => {
+                      const cId = e.target.value;
+                      setSelectedCustomerId(cId);
+                      const comp = companies.find((c) => c.id === cId);
+                      if (comp) {
+                        setSelectedCustomerName(comp.name);
+                        setTravelerName(comp.contactPerson || comp.name);
+                        setTravelerMobile(comp.mobile || "");
                       } else {
-                        setShowAddOwnerInline(!showAddOwnerInline);
-                        setShowAddCustomerInline(false);
+                        setSelectedCustomerName("");
                       }
                     }}
-                    className="h-[34px] max-h-[34px] px-2.5 rounded-[6px] bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium flex items-center gap-1 transition shrink-0 cursor-pointer"
+                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal cursor-pointer"
                   >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>
-                      Add {clientType === "customer" ? "Customer" : "Owner"}
-                    </span>
-                  </button>
-                </div>
-
-                {/* Inline Add Customer */}
-                {showAddCustomerInline && clientType === "customer" && (
-                  <div className="bg-white p-2.5 rounded-[6px] border border-orange-200/80 shadow-xs space-y-2">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
-                      <span className="text-[10px] font-medium text-slate-900 flex items-center gap-1">
-                        <UserPlus className="w-3 h-3 text-[#f16623]" />
-                        Quick Add New Customer
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setShowAddCustomerInline(false)}
-                        className="text-slate-400 hover:text-slate-600"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
-                      <input
-                        type="text"
-                        placeholder="Customer Name *"
-                        value={newCustName}
-                        onChange={(e) => setNewCustName(e.target.value)}
-                        className="h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
-                      />
-                      <input
-                        type="tel"
-                        placeholder="Mobile Number *"
-                        value={newCustMobile}
-                        onChange={(e) => setNewCustMobile(e.target.value)}
-                        className="h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
-                      />
-                      <input
-                        type="email"
-                        placeholder="Email (Optional)"
-                        value={newCustEmail}
-                        onChange={(e) => setNewCustEmail(e.target.value)}
-                        className="h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
-                      />
-                    </div>
-
-                    <div className="flex justify-end pt-1">
-                      <button
-                        type="button"
-                        disabled={isSavingCustomer}
-                        onClick={handleSaveCustomerInline}
-                        className="h-[30px] max-h-[34px] px-3 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] text-white text-xs font-medium flex items-center gap-1 transition cursor-pointer"
-                      >
-                        {isSavingCustomer ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : (
-                          <CheckCircle2 className="w-3 h-3" />
-                        )}
-                        <span>Save & Select Customer</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Inline Add Business Owner */}
-                {showAddOwnerInline && clientType === "business_owner" && (
-                  <div className="bg-white p-2.5 rounded-[6px] border border-orange-200/80 shadow-xs space-y-2">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
-                      <span className="text-[10px] font-medium text-slate-900 flex items-center gap-1">
-                        <Building2 className="w-3 h-3 text-[#f16623]" />
-                        Quick Add New Business Owner
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setShowAddOwnerInline(false)}
-                        className="text-slate-400 hover:text-slate-600"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                      <input
-                        type="text"
-                        placeholder="Owner Name *"
-                        value={newOwnerName}
-                        onChange={(e) => setNewOwnerName(e.target.value)}
-                        className="h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
-                      />
-                      <input
-                        type="tel"
-                        placeholder="Mobile Number *"
-                        value={newOwnerMobile}
-                        onChange={(e) => setNewOwnerMobile(e.target.value)}
-                        className="h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Company Name *"
-                        value={newOwnerCompany}
-                        onChange={(e) => setNewOwnerCompany(e.target.value)}
-                        className="h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
-                      />
-                      <input
-                        type="text"
-                        placeholder="GST Number (Optional)"
-                        value={newOwnerGst}
-                        onChange={(e) => setNewOwnerGst(e.target.value)}
-                        className="h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
-                      />
-                    </div>
-
-                    <div className="flex justify-end pt-1">
-                      <button
-                        type="button"
-                        disabled={isSavingOwner}
-                        onClick={handleSaveOwnerInline}
-                        className="h-[30px] max-h-[34px] px-3 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] text-white text-xs font-medium flex items-center gap-1 transition cursor-pointer"
-                      >
-                        {isSavingOwner ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : (
-                          <CheckCircle2 className="w-3 h-3" />
-                        )}
-                        <span>Save & Select Business Owner</span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Candidate Selection List */}
-                <div className="max-h-36 overflow-y-auto divide-y divide-slate-100 bg-white rounded-[6px] border border-slate-200">
-                  {clientType === "customer" ? (
-                    filteredCustomers.length === 0 ? (
-                      <div className="py-2.5 px-3 text-center text-[11px] text-slate-400">
-                        No customer found. Click &quot;Add Customer&quot; above to create one.
-                      </div>
-                    ) : (
-                      filteredCustomers.map((c) => (
-                        <div
-                          key={c.id}
-                          onClick={() => {
-                            setSelectedClient({
-                              id: c.id,
-                              name: c.name,
-                              mobile: c.mobile,
-                              email: c.email,
-                            });
-                            setClientSearchQuery("");
-                          }}
-                          className="py-1.5 px-2.5 hover:bg-orange-50/60 cursor-pointer flex items-center justify-between transition text-xs"
-                        >
-                          <div>
-                            <span className="font-medium text-slate-800">
-                              {c.name}
-                            </span>
-                            <span className="text-[10px] text-slate-400 block font-normal">
-                              {c.mobile}
-                            </span>
-                          </div>
-                          <span className="text-[10px] text-[#f16623] font-medium">
-                            Select
-                          </span>
-                        </div>
-                      ))
-                    )
-                  ) : filteredOwners.length === 0 ? (
-                    <div className="py-2.5 px-3 text-center text-[11px] text-slate-400">
-                      No business owner found. Click &quot;Add Owner&quot; above to create one.
-                    </div>
-                  ) : (
-                    filteredOwners.map((o) => (
-                      <div
-                        key={o.id}
-                        onClick={() => {
-                          setSelectedClient({
-                            id: o.id,
-                            name: o.name,
-                            mobile: o.mobile,
-                            email: o.email,
-                            companyName: o.companyName,
-                          });
-                          setClientSearchQuery("");
-                        }}
-                        className="py-1.5 px-2.5 hover:bg-orange-50/60 cursor-pointer flex items-center justify-between transition text-xs"
-                      >
-                        <div>
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-medium text-slate-800">
-                              {o.name}
-                            </span>
-                            <span className="text-[10px] text-slate-500 font-normal">
-                              ({o.companyName})
-                            </span>
-                          </div>
-                          <span className="text-[10px] text-slate-400 block font-normal">
-                            {o.mobile}
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-[#f16623] font-medium">
-                          Select
-                        </span>
-                      </div>
-                    ))
-                  )}
+                    <option value="">Select Company...</option>
+                    {companies.map((comp) => (
+                      <option key={comp.id} value={comp.id}>
+                        {comp.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
-            )}
-          </div>
 
-          {/* Section: Financials (Amount, Attached Discount & Payment Modes) */}
-          <div className="bg-slate-50/70 p-2.5 rounded-[6px] border border-slate-200/80 space-y-2.5">
-            <span className="text-[10px] font-medium text-slate-700 uppercase tracking-wider flex items-center gap-1">
-              <IndianRupee className="w-3 h-3 text-[#f16623]" />
-              Tariff, Discount & Payment Modes
-            </span>
-
-            {/* Row 1: Amount & Attached Discount Segment */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <label
-                  htmlFor="booking-amount"
-                  className="text-[10px] font-medium text-slate-600 uppercase tracking-wider flex items-center gap-1"
-                >
-                  <IndianRupee className="w-3 h-3 text-[#f16623]" />
-                  Amount (₹) <span className="text-[#f16623]">*</span>
-                </label>
-                <div className="relative">
-                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-mono">
-                    ₹
+              {/* Tariff Match Info Banner */}
+              {selectedCustomerName && (
+                <div className="flex items-center gap-2 p-2 rounded-[6px] bg-slate-50 border border-slate-200 text-slate-700 text-xs font-normal">
+                  <Info className="w-3.5 h-3.5 text-[#f16623] shrink-0" />
+                  <span>
+                    Contract Rate Plan:{" "}
+                    <strong className="font-medium text-slate-900">
+                      {activeCompanyTariff
+                        ? activeCompanyTariff.tariffName || activeCompanyTariff.customerName
+                        : "No active tariff found (using standard fallback)"}
+                    </strong>
                   </span>
+                </div>
+              )}
+
+              {/* Vehicle Category & Tariff Type Dropdowns */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                {/* Vehicle Category */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                    VEHICLE CATEGORY *
+                  </label>
+                  <select
+                    value={selectedVehicleCategory}
+                    onChange={(e) => setSelectedVehicleCategory(e.target.value)}
+                    disabled={availableTariffCategories.length === 0}
+                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal cursor-pointer disabled:bg-slate-50 disabled:text-slate-400"
+                  >
+                    {availableTariffCategories.length === 0 ? (
+                      <option value="">No categories enabled in tariff</option>
+                    ) : (
+                      availableTariffCategories.map((cat: string) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+
+                {/* Tariff Type */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                    TARIFF DUTY TYPE *
+                  </label>
+                  <select
+                    value={selectedTariffType}
+                    onChange={(e) =>
+                      setSelectedTariffType(e.target.value as any)
+                    }
+                    disabled={availableTariffTypes.length === 0}
+                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal cursor-pointer"
+                  >
+                    {availableTariffTypes.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Package / Slab */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                    PACKAGE / SLAB *
+                  </label>
+                  <select
+                    value={selectedPackageId}
+                    onChange={(e) => {
+                      setSelectedPackageId(e.target.value);
+                      const pkg = availablePackages.find(
+                        (p: any) => p.id === e.target.value
+                      );
+                      setSelectedPackageName(pkg?.name || "");
+                    }}
+                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal cursor-pointer"
+                  >
+                    {availablePackages.map((pkg: any) => (
+                      <option key={pkg.id} value={pkg.id}>
+                        {pkg.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Traveler Details */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                    TRAVELER / PASSENGER NAME *
+                  </label>
                   <input
-                    id="booking-amount"
-                    type="number"
-                    min="1"
-                    required
-                    placeholder="e.g. 5000"
-                    value={amount}
-                    onChange={(e) => setAmount(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] pl-6 pr-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-normal transition"
+                    type="text"
+                    placeholder="e.g. Ramesh Kumar (Director)"
+                    value={travelerName}
+                    onChange={(e) => setTravelerName(e.target.value)}
+                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-normal"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                    TRAVELER MOBILE NUMBER
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. 9876543210"
+                    value={travelerMobile}
+                    onChange={(e) => setTravelerMobile(e.target.value)}
+                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-normal"
                   />
                 </div>
               </div>
 
-              {/* Discount with Attached Segmented Toggle */}
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <label
-                    htmlFor="booking-discount"
-                    className="text-[10px] font-medium text-slate-600 uppercase tracking-wider flex items-center gap-1"
-                  >
-                    <Percent className="w-3 h-3 text-[#f16623]" />
-                    Discount
-                  </label>
-                  {discountType === "percent" && rawDiscountInput > 0 && (
-                    <span className="text-[10px] text-emerald-600 font-mono font-medium">
-                      -₹{calculatedDiscount.toLocaleString("en-IN")}
+              {/* Next Step Action */}
+              <div className="pt-3 border-t border-slate-100 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("assignment")}
+                  className="h-[34px] max-h-[34px] px-4 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] text-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                >
+                  <span>Next: Trip Assignment</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ================================================================= */}
+          {/* TAB 2: TRIP ASSIGNMENT */}
+          {/* ================================================================= */}
+          {activeTab === "assignment" && (
+            <div className="space-y-3.5">
+              {/* Calculated Duration Display Banner */}
+              <div className="p-3 rounded-[6px] bg-orange-50/50 border border-orange-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-[#f16623]" />
+                  <div>
+                    <span className="text-xs font-medium text-slate-900">
+                      Calculated Trip Duration
                     </span>
-                  )}
+                    <p className="text-[11px] text-slate-500">
+                      {startDate} {startTime} to {endDate} {endTime}
+                    </p>
+                  </div>
+                </div>
+                <div className="text-right">
+                  <span className="text-sm font-semibold text-[#f16623] font-mono">
+                    {calculatedDuration.text}
+                  </span>
+                  <p className="text-[10px] text-slate-400">
+                    ({calculatedDuration.totalDays} Days, {calculatedDuration.totalHours} Hrs, {calculatedDuration.totalMinutes % 60} Mins)
+                  </p>
+                </div>
+              </div>
+
+              {/* Vehicle & Driver Section */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* Vehicle Selection */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                    ASSIGN VEHICLE ({selectedVehicleCategory || "All"})
+                  </label>
+                  <select
+                    value={selectedVehicleId}
+                    onChange={(e) => {
+                      const vId = e.target.value;
+                      setSelectedVehicleId(vId);
+                      const veh = vehicles.find((v) => v.id === vId);
+                      setSelectedVehicleReg(veh?.regNumber || "");
+                      setSelectedVehicleName(veh?.vehicleName || "");
+                    }}
+                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal cursor-pointer"
+                  >
+                    <option value="">Select vehicle...</option>
+                    {filteredVehicles.map((v) => {
+                      const isOccupied = occupiedVehicleIds.has(v.id);
+                      return (
+                        <option key={v.id} value={v.id}>
+                          {v.regNumber} — {v.vehicleName} ({v.category}){" "}
+                          {isOccupied ? "● In Trip" : "● Available"}
+                        </option>
+                      );
+                    })}
+                  </select>
                 </div>
 
-                <div className="flex h-[34px] max-h-[34px] rounded-[6px] border border-slate-200 bg-white overflow-hidden focus-within:border-[#f16623] transition">
-                  <div className="flex bg-slate-100 p-0.5 border-r border-slate-200 shrink-0 gap-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setDiscountType("rupees")}
-                      title="Flat Rupee Discount (₹)"
-                      className={`w-7 h-[28px] text-xs font-medium rounded-[4px] flex items-center justify-center transition cursor-pointer ${
-                        discountType === "rupees"
-                          ? "bg-[#f16623] text-white shadow-xs"
-                          : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
-                      }`}
-                    >
-                      ₹
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDiscountType("percent")}
-                      title="Percentage Discount (%)"
-                      className={`w-7 h-[28px] text-xs font-medium rounded-[4px] flex items-center justify-center transition cursor-pointer ${
-                        discountType === "percent"
-                          ? "bg-[#f16623] text-white shadow-xs"
-                          : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
-                      }`}
-                    >
-                      %
-                    </button>
-                  </div>
+                {/* Driver Selection */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                    ASSIGN DRIVER
+                  </label>
+                  <select
+                    value={selectedDriverId}
+                    onChange={(e) => {
+                      const dId = e.target.value;
+                      setSelectedDriverId(dId);
+                      const d = drivers.find((item) => item.id === dId);
+                      setSelectedDriverName(d?.fullName || d?.name || "");
+                      setSelectedDriverMobile(d?.mobileNumber || d?.mobile || "");
+                    }}
+                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal cursor-pointer"
+                  >
+                    <option value="">Select driver...</option>
+                    {drivers.map((d) => {
+                      const isOccupied = occupiedDriverIds.has(d.id);
+                      const onLeave = d.availabilityStatus === "On Leave";
+                      const statusLabel = onLeave
+                        ? "On Leave"
+                        : isOccupied
+                        ? "In Trip"
+                        : "Available";
+                      return (
+                        <option key={d.id} value={d.id}>
+                          {d.fullName || d.name} — ({statusLabel})
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              </div>
 
+              {/* Driver Phone Number Display Box */}
+              {selectedDriverName && (
+                <div className="p-2.5 rounded-[6px] bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    <UserCheck className="w-4 h-4 text-[#f16623]" />
+                    <div>
+                      <span className="font-medium text-slate-900">
+                        {selectedDriverName}
+                      </span>
+                      <span className="text-[11px] text-slate-400 block">
+                        Assigned driver
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-slate-700 font-mono text-xs">
+                    <PhoneCall className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>{selectedDriverMobile || "No mobile listed"}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Meter Starting KM, Ending KM & Total KM */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                    STARTING METER KM
+                  </label>
                   <input
-                    id="booking-discount"
                     type="number"
                     min="0"
-                    max={discountType === "percent" ? "100" : undefined}
-                    placeholder="0"
-                    value={discountValue}
-                    onChange={(e) => setDiscountValue(e.target.value)}
-                    className="flex-1 px-2.5 text-xs bg-transparent text-slate-800 placeholder:text-slate-400 focus:outline-none font-normal"
+                    placeholder="e.g. 12500"
+                    value={startingKm}
+                    onChange={(e) => setStartingKm(e.target.value)}
+                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-mono"
                   />
+                </div>
 
-                  <div className="px-2 flex items-center text-[10px] text-slate-400 font-mono bg-slate-50 border-l border-slate-100 select-none shrink-0">
-                    {discountType === "rupees" ? "₹" : "%"}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                    ENDING METER KM
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="e.g. 12850"
+                    value={endingKm}
+                    onChange={(e) => setEndingKm(e.target.value)}
+                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                    TOTAL KILOMETER
+                  </label>
+                  <div className="w-full h-[34px] max-h-[34px] px-3 bg-slate-100/80 border border-slate-200 rounded-[6px] text-slate-900 font-mono text-xs flex items-center justify-between">
+                    <span>{calculatedTotalKm} KM</span>
+                    <span className="text-[10px] text-slate-400">
+                      (End − Start)
+                    </span>
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Row 2: Payment Mode Selection (UPI, Cash, Card, Split) */}
-            <div className="space-y-1.5 pt-1">
-              <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
-                Payment Mode <span className="text-[#f16623]">*</span>
-              </label>
+              {/* Travelled Places Multi-select with Search */}
+              <div className="space-y-1 pt-1">
+                <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                  TRAVELLED PLACES / CITIES (MULTI-SELECT)
+                </label>
 
-              <div className="grid grid-cols-4 gap-1.5">
+                {/* Selected City Badges */}
+                <div className="flex flex-wrap gap-1 mb-1.5">
+                  {travelledPlaces.map((city) => (
+                    <span
+                      key={city}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] bg-orange-50 text-[#f16623] border border-[#f16623]/30 font-medium"
+                    >
+                      <span>{city}</span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setTravelledPlaces(
+                            travelledPlaces.filter((c) => c !== city)
+                          )
+                        }
+                        className="hover:text-rose-600 cursor-pointer"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+
+                {/* Searchable Input to Add Cities */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Search city to add (e.g. Hyderabad, Warangal, Vijayawada)..."
+                    value={citySearchQuery}
+                    onFocus={() => setShowCityDropdown(true)}
+                    onChange={(e) => {
+                      setCitySearchQuery(e.target.value);
+                      setShowCityDropdown(true);
+                    }}
+                    className="w-full h-[34px] max-h-[34px] pl-8 pr-3 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-normal"
+                  />
+
+                  {/* Dropdown Options */}
+                  {showCityDropdown && (
+                    <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-[6px] shadow-lg max-h-48 overflow-y-auto z-50">
+                      {ALL_CITIES_LIST.filter(
+                        (c) =>
+                          c.toLowerCase().includes(citySearchQuery.toLowerCase()) &&
+                          !travelledPlaces.includes(c)
+                      )
+                        .slice(0, 15)
+                        .map((city) => (
+                          <button
+                            key={city}
+                            type="button"
+                            onClick={() => {
+                              setTravelledPlaces([...travelledPlaces, city]);
+                              setCitySearchQuery("");
+                              setShowCityDropdown(false);
+                            }}
+                            className="w-full text-left px-3 py-1.5 text-xs text-slate-700 hover:bg-orange-50 hover:text-[#f16623] transition flex items-center justify-between cursor-pointer"
+                          >
+                            <span>{city}</span>
+                            <Plus className="w-3 h-3 text-slate-400" />
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Trip Notes */}
+              <div className="space-y-1 pt-1">
+                <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                  TRIP NOTES / SPECIAL INSTRUCTIONS
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="e.g. Flight arrival terminal 2, VIP guest, child seat requested..."
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  className="w-full p-2 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-normal"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
                 <button
                   type="button"
-                  onClick={() => setPaymentMode("cash")}
-                  className={`h-[34px] max-h-[34px] rounded-[6px] border text-xs font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
-                    paymentMode === "cash"
-                      ? "bg-emerald-50 border-emerald-500 text-emerald-700 shadow-xs"
-                      : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-                  }`}
+                  onClick={() => setActiveTab("details")}
+                  className="h-[34px] max-h-[34px] px-3 rounded-[6px] border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-normal transition cursor-pointer"
                 >
-                  <Banknote className="w-3.5 h-3.5" />
-                  <span>Cash</span>
+                  Back
                 </button>
-
                 <button
                   type="button"
-                  onClick={() => setPaymentMode("upi")}
-                  className={`h-[34px] max-h-[34px] rounded-[6px] border text-xs font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
-                    paymentMode === "upi"
-                      ? "bg-blue-50 border-blue-500 text-blue-700 shadow-xs"
-                      : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-                  }`}
+                  onClick={() => setActiveTab("charges")}
+                  className="h-[34px] max-h-[34px] px-4 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] text-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
                 >
-                  <QrCode className="w-3.5 h-3.5" />
-                  <span>UPI</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPaymentMode("card")}
-                  className={`h-[34px] max-h-[34px] rounded-[6px] border text-xs font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
-                    paymentMode === "card"
-                      ? "bg-purple-50 border-purple-500 text-purple-700 shadow-xs"
-                      : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  <CreditCard className="w-3.5 h-3.5" />
-                  <span>Card</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPaymentMode("split")}
-                  className={`h-[34px] max-h-[34px] rounded-[6px] border text-xs font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
-                    paymentMode === "split"
-                      ? "bg-orange-50 border-[#f16623] text-[#f16623] shadow-xs"
-                      : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  <Coins className="w-3.5 h-3.5" />
-                  <span>Split</span>
+                  <span>Next: Charges</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
+          )}
 
-            {/* Row 3: Received Amount Inputs */}
-            {paymentMode !== "split" ? (
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <label
-                    htmlFor="booking-received"
-                    className="text-[10px] font-medium text-slate-600 uppercase tracking-wider"
-                  >
-                    Received Amount via {paymentMode.toUpperCase()} (₹)
+          {/* ================================================================= */}
+          {/* TAB 3: CHARGES (MATCHING EXACT USER IMAGE) */}
+          {/* ================================================================= */}
+          {activeTab === "charges" && (
+            <div className="space-y-4">
+              {/* Card 1: Pass-through Charges (₹) */}
+              <div className="bg-white p-3.5 rounded-[6px] border border-slate-200/80 shadow-2xs space-y-3">
+                <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
+                  <div className="w-5 h-5 rounded-[4px] bg-orange-50 text-[#f16623] flex items-center justify-center">
+                    <Receipt className="w-3.5 h-3.5" />
+                  </div>
+                  <h3 className="text-xs font-semibold text-slate-900">
+                    Pass-through Charges (₹)
+                  </h3>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                      TOLLS
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="0.00"
+                      value={tolls}
+                      onChange={(e) => setTolls(e.target.value)}
+                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50/50 border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                      PARKING
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="0.00"
+                      value={parking}
+                      onChange={(e) => setParking(e.target.value)}
+                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50/50 border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                      STATE PERMIT
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="0.00"
+                      value={statePermit}
+                      onChange={(e) => setStatePermit(e.target.value)}
+                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50/50 border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                      MEALS
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="0.00"
+                      value={meals}
+                      onChange={(e) => setMeals(e.target.value)}
+                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50/50 border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                      INTERSTATE ENTRY TAX
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="0.00"
+                      value={interstateEntryTax}
+                      onChange={(e) => setInterstateEntryTax(e.target.value)}
+                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50/50 border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white font-mono"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                      NIGHT HALT
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="0.00"
+                      value={nightHalt}
+                      onChange={(e) => setNightHalt(e.target.value)}
+                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50/50 border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white font-mono"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 2: Customer Advance (Image Requirement) */}
+              <div className="bg-white p-3.5 rounded-[6px] border border-slate-200/80 shadow-2xs space-y-3">
+                <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
+                  <div className="w-5 h-5 rounded-[4px] bg-orange-50 text-[#f16623] flex items-center justify-center">
+                    <DollarSign className="w-3.5 h-3.5" />
+                  </div>
+                  <h3 className="text-xs font-semibold text-slate-900">
+                    Customer Advance
+                  </h3>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                      CUSTOMER ADVANCE (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="0.00"
+                      value={customerAdvance}
+                      onChange={(e) => setCustomerAdvance(e.target.value)}
+                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50/50 border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white font-mono"
+                    />
+                    <p className="text-[11px] text-slate-400 font-normal">
+                      Money collected from the customer toward the bill.
+                    </p>
+                  </div>
+
+                  {/* Advance Warning Box */}
+                  <div className="p-3 rounded-[6px] bg-amber-50/70 border border-amber-200 text-amber-800 text-xs font-normal flex items-start gap-2 mt-0.5">
+                    <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <span>
+                      Office &amp; driver advances are tracked in{" "}
+                      <strong className="font-medium">Expenses</strong> — not on the booking.
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("assignment")}
+                  className="h-[34px] max-h-[34px] px-3 rounded-[6px] border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-normal transition cursor-pointer"
+                >
+                  Back
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("invoice")}
+                  className="h-[34px] max-h-[34px] px-4 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] text-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                >
+                  <span>Next: Invoice Preview</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ================================================================= */}
+          {/* TAB 4: INVOICE / PRICE PREVIEW */}
+          {/* ================================================================= */}
+          {activeTab === "invoice" && (
+            <div className="space-y-4">
+              {/* Detailed Itemized Charges Breakdown Table */}
+              <div className="border border-slate-200 rounded-[6px] bg-white overflow-hidden shadow-xs">
+                <div className="bg-slate-50/80 px-3.5 py-2.5 border-b border-slate-200 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Receipt className="w-4 h-4 text-[#f16623]" />
+                    <span className="text-xs font-semibold text-slate-900">
+                      Trip Cost &amp; Price Breakdown
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-mono text-slate-500">
+                    Category: {selectedVehicleCategory}
+                  </span>
+                </div>
+
+                <div className="p-3.5 divide-y divide-slate-100 text-xs font-normal space-y-2">
+                  {/* Base Package Rate */}
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-slate-600">
+                      Base Fare ({selectedTariffType} — {selectedPackageName || "Plan"})
+                    </span>
+                    <span className="font-mono text-slate-900 font-medium">
+                      ₹{pricingBreakdown.baseFare.toLocaleString("en-IN")}
+                    </span>
+                  </div>
+
+                  {/* Extra KM */}
+                  {pricingBreakdown.extraKm > 0 && (
+                    <div className="flex items-center justify-between pt-2">
+                      <span className="text-slate-600">
+                        Extra Distance ({pricingBreakdown.extraKm} KM @ ₹
+                        {pricingBreakdown.extraKmRate}/KM)
+                      </span>
+                      <span className="font-mono text-slate-900">
+                        + ₹{pricingBreakdown.extraKmCost.toLocaleString("en-IN")}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Extra Hours */}
+                  {pricingBreakdown.extraHours > 0 && (
+                    <div className="flex items-center justify-between pt-2">
+                      <span className="text-slate-600">
+                        Extra Hours ({pricingBreakdown.extraHours} Hrs @ ₹
+                        {pricingBreakdown.extraHoursRate}/hr)
+                      </span>
+                      <span className="font-mono text-slate-900">
+                        + ₹{pricingBreakdown.extraHoursCost.toLocaleString("en-IN")}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Driver Bata */}
+                  {pricingBreakdown.driverBataCost > 0 && (
+                    <div className="flex items-center justify-between pt-2">
+                      <span className="text-slate-600">Driver Bata</span>
+                      <span className="font-mono text-slate-900">
+                        + ₹{pricingBreakdown.driverBataCost.toLocaleString("en-IN")}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Pass-through Charges */}
+                  {pricingBreakdown.totalPassThrough > 0 && (
+                    <div className="flex items-center justify-between pt-2">
+                      <span className="text-slate-600">
+                        Pass-through Charges (Tolls, Parking, Permits, Meals, Tax)
+                      </span>
+                      <span className="font-mono text-slate-900">
+                        + ₹
+                        {pricingBreakdown.totalPassThrough.toLocaleString("en-IN")}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Gross Total */}
+                  <div className="flex items-center justify-between pt-2.5 border-t border-slate-200 font-medium">
+                    <span className="text-slate-800">Gross Total Amount</span>
+                    <span className="font-mono text-slate-900 text-sm">
+                      ₹{pricingBreakdown.grossAmount.toLocaleString("en-IN")}
+                    </span>
+                  </div>
+
+                  {/* Customer Advance */}
+                  {pricingBreakdown.customerAdvance > 0 && (
+                    <div className="flex items-center justify-between pt-2 text-emerald-700">
+                      <span>Less: Customer Advance Paid</span>
+                      <span className="font-mono font-medium">
+                        − ₹
+                        {pricingBreakdown.customerAdvance.toLocaleString("en-IN")}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Final Net Payable */}
+                  <div className="flex items-center justify-between pt-2.5 border-t-2 border-slate-300 font-semibold text-sm">
+                    <span className="text-slate-900">Net Balance Payable</span>
+                    <span className="font-mono text-[#f16623]">
+                      ₹{pricingBreakdown.netAmount.toLocaleString("en-IN")}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Selectors */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3 rounded-[6px] border border-slate-200">
+                {/* Booking Status Pipeline */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                    BOOKING STATUS
                   </label>
+                  <select
+                    value={bookingStatus}
+                    onChange={(e) => setBookingStatus(e.target.value as any)}
+                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal cursor-pointer"
+                  >
+                    <option value="New">New</option>
+                    <option value="Trip In Progress">Trip In Progress</option>
+                    <option value="Trip Completed">Trip Completed</option>
+                    <option value="Invoice Generated">Invoice Generated</option>
+                    <option value="Invoice Sent">Invoice Sent</option>
+                  </select>
+                </div>
+
+                {/* Payment Status */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                    PAYMENT STATUS (AUTO / OVERRIDE)
+                  </label>
+                  <select
+                    value={autoPaymentStatus}
+                    onChange={(e) =>
+                      setOverridePaymentStatus(e.target.value as PaymentStatus)
+                    }
+                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal cursor-pointer"
+                  >
+                    <option value="Unpaid">Unpaid</option>
+                    <option value="Partial">Partial</option>
+                    <option value="Paid">Paid</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Bottom Actions */}
+              <div className="pt-3 border-t border-slate-200 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab("charges")}
+                  className="h-[34px] max-h-[34px] px-3 rounded-[6px] border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-normal transition cursor-pointer"
+                >
+                  Back
+                </button>
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setSingleReceived(String(netPayable))}
-                    className="text-[10px] text-[#f16623] hover:underline font-medium cursor-pointer"
+                    onClick={() => setIsOffCanvasOpen(false)}
+                    className="h-[34px] max-h-[34px] px-3.5 rounded-[6px] border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-normal transition cursor-pointer"
                   >
-                    Fill Full (₹{netPayable.toLocaleString("en-IN")})
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={handleSaveBookingSubmit}
+                    className="h-[34px] max-h-[34px] px-5 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] text-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shadow-xs shadow-[#f16623]/25 disabled:opacity-50"
+                  >
+                    {isSubmitting ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Saving Booking...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                        <span>Save Booking</span>
+                      </>
+                    )}
                   </button>
                 </div>
-                <div className="relative">
-                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-mono">
-                    ₹
+              </div>
+            </div>
+          )}
+        </div>
+      </OffCanvas>
+
+      {/* ===================================================================== */}
+      {/* VIEW TRIP DETAILS & PAYMENT HISTORY MODAL */}
+      {/* ===================================================================== */}
+      <OffCanvas
+        isOpen={!!viewingBooking}
+        onClose={() => setViewingBooking(null)}
+        title={`Trip: ${viewingBooking?.bookingNumber || ""}`}
+        subtitle="Complete itinerary specs, driver assignment, pass-through charges & payment trail"
+        size="2xl"
+        widthClassName="max-w-2xl"
+      >
+        {viewingBooking && (
+          <div className="space-y-4 text-xs font-normal text-slate-700">
+            {/* Top Status & Advance Pipeline */}
+            <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-[6px] bg-slate-50 border border-slate-200">
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase font-medium block">
+                  TRIP STATUS
+                </span>
+                <span className="font-semibold text-slate-900 text-xs">
+                  {viewingBooking.bookingStatus}
+                </span>
+              </div>
+              <div className="text-right">
+                <span className="text-[10px] text-slate-400 uppercase font-medium block">
+                  PAYMENT STATUS
+                </span>
+                <span
+                  className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium border ${
+                    viewingBooking.paymentStatus === "Paid"
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                      : viewingBooking.paymentStatus === "Partial"
+                      ? "bg-amber-50 text-amber-700 border-amber-200"
+                      : "bg-rose-50 text-rose-700 border-rose-200"
+                  }`}
+                >
+                  {viewingBooking.paymentStatus}
+                </span>
+              </div>
+            </div>
+
+            {/* Quick Status Advance Button Bar */}
+            <div className="space-y-1">
+              <span className="text-[10px] text-slate-400 uppercase font-medium block">
+                UPDATE TRIP PROGRESS
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {(
+                  [
+                    "New",
+                    "Trip In Progress",
+                    "Trip Completed",
+                    "Invoice Generated",
+                    "Invoice Sent",
+                  ] as BookingStatus[]
+                ).map((st) => (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() =>
+                      handleUpdateBookingStatus(viewingBooking.id, st)
+                    }
+                    className={`h-[28px] max-h-[34px] px-2.5 rounded-[4px] text-[11px] transition cursor-pointer border ${
+                      viewingBooking.bookingStatus === st
+                        ? "bg-[#f16623] text-white border-[#f16623] font-medium"
+                        : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50 font-normal"
+                    }`}
+                  >
+                    {st}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Itinerary Details */}
+            <div className="grid grid-cols-2 gap-3 p-3 rounded-[6px] border border-slate-200 bg-white">
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase font-medium block">
+                  CUSTOMER COMPANY
+                </span>
+                <span className="font-medium text-slate-900 block">
+                  {viewingBooking.customerName}
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  Traveler: {viewingBooking.travelerName} (
+                  {viewingBooking.travelerMobile})
+                </span>
+              </div>
+
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase font-medium block">
+                  OPERATING ENTITY
+                </span>
+                <span className="font-medium text-slate-900 block">
+                  {viewingBooking.entityName || "RK Travels"}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase font-medium block">
+                  ROUTE
+                </span>
+                <span className="font-medium text-slate-900">
+                  {viewingBooking.fromLocation} → {viewingBooking.toLocation}
+                </span>
+                {viewingBooking.totalKm > 0 && (
+                  <span className="text-[11px] text-slate-400 block font-mono">
+                    Total: {viewingBooking.totalKm} KM
                   </span>
-                  <input
-                    id="booking-received"
-                    type="number"
-                    min="0"
-                    placeholder="0"
-                    value={singleReceived}
-                    onChange={(e) => setSingleReceived(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] pl-6 pr-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-normal transition"
-                  />
+                )}
+              </div>
+
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase font-medium block">
+                  DATES &amp; DURATION
+                </span>
+                <span className="font-medium text-slate-900">
+                  {viewingBooking.startDate} to {viewingBooking.endDate}
+                </span>
+                <span className="text-[11px] text-[#f16623] block">
+                  {viewingBooking.durationText}
+                </span>
+              </div>
+            </div>
+
+            {/* Vehicle & Driver */}
+            <div className="grid grid-cols-2 gap-3 p-3 rounded-[6px] border border-slate-200 bg-white">
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase font-medium block">
+                  ASSIGNED VEHICLE
+                </span>
+                <span className="font-medium text-slate-900 block">
+                  {viewingBooking.vehicleRegNumber || "Not assigned"}
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  {viewingBooking.vehicleCategory}
+                </span>
+              </div>
+
+              <div>
+                <span className="text-[10px] text-slate-400 uppercase font-medium block">
+                  ASSIGNED DRIVER
+                </span>
+                <span className="font-medium text-slate-900 block">
+                  {viewingBooking.driverName || "Not assigned"}
+                </span>
+                <span className="text-[11px] text-slate-500 font-mono">
+                  {viewingBooking.driverMobile || ""}
+                </span>
+              </div>
+            </div>
+
+            {/* Pass-through Charges Breakdown */}
+            <div className="border border-slate-200 rounded-[6px] p-3 bg-white space-y-2">
+              <span className="text-[10px] text-slate-400 uppercase font-medium block border-b border-slate-100 pb-1">
+                PASS-THROUGH CHARGES SUMMARY
+              </span>
+              <div className="grid grid-cols-3 gap-2 text-xs">
+                <div>
+                  <span className="text-slate-400 text-[10px] block">TOLLS</span>
+                  <span className="font-mono">₹{viewingBooking.tolls || 0}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block">PARKING</span>
+                  <span className="font-mono">₹{viewingBooking.parking || 0}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block">
+                    STATE PERMIT
+                  </span>
+                  <span className="font-mono">
+                    ₹{viewingBooking.statePermit || 0}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block">MEALS</span>
+                  <span className="font-mono">₹{viewingBooking.meals || 0}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block">
+                    INTERSTATE TAX
+                  </span>
+                  <span className="font-mono">
+                    ₹{viewingBooking.interstateEntryTax || 0}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-[10px] block">
+                    NIGHT HALT
+                  </span>
+                  <span className="font-mono">
+                    ₹{viewingBooking.nightHalt || 0}
+                  </span>
                 </div>
               </div>
-            ) : (
-              <div className="p-2 bg-white rounded-[6px] border border-orange-200 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-medium text-slate-800 uppercase tracking-wider flex items-center gap-1">
-                    <Coins className="w-3 h-3 text-[#f16623]" />
-                    Split Breakdown by Mode
-                  </span>
-                  <span className="text-[10px] text-slate-500 font-medium">
-                    Total Split: ₹{effectiveReceived.toLocaleString("en-IN")}
+            </div>
+
+            {/* Payment History Section */}
+            <div className="border border-slate-200 rounded-[6px] p-3 bg-white space-y-2.5">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                <div className="flex items-center gap-1.5">
+                  <History className="w-3.5 h-3.5 text-[#f16623]" />
+                  <span className="font-semibold text-slate-900 text-xs">
+                    Payment History
                   </span>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleOpenCollectPayment(viewingBooking);
+                  }}
+                  className="h-[24px] max-h-[34px] px-2 rounded-[4px] bg-[#f16623] hover:bg-[#d95318] text-white text-[10px] font-medium cursor-pointer"
+                >
+                  + Add Payment
+                </button>
+              </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
-                  <div className="space-y-0.5">
-                    <label className="text-[9px] font-medium text-slate-600 flex items-center gap-1">
-                      <Banknote className="w-2.5 h-2.5 text-emerald-600" />
-                      Cash Amount (₹)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="0"
-                      value={splitCash}
-                      onChange={(e) => setSplitCash(e.target.value)}
-                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
-                    />
-                  </div>
-
-                  <div className="space-y-0.5">
-                    <label className="text-[9px] font-medium text-slate-600 flex items-center gap-1">
-                      <QrCode className="w-2.5 h-2.5 text-blue-600" />
-                      UPI Amount (₹)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="0"
-                      value={splitUpi}
-                      onChange={(e) => setSplitUpi(e.target.value)}
-                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
-                    />
-                  </div>
-
-                  <div className="space-y-0.5">
-                    <label className="text-[9px] font-medium text-slate-600 flex items-center gap-1">
-                      <CreditCard className="w-2.5 h-2.5 text-purple-600" />
-                      Card Amount (₹)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="0"
-                      value={splitCard}
-                      onChange={(e) => setSplitCard(e.target.value)}
-                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
-                    />
-                  </div>
+              {!viewingBooking.paymentHistory ||
+              viewingBooking.paymentHistory.length === 0 ? (
+                <p className="text-[11px] text-slate-400 py-3 text-center">
+                  No payment entries recorded yet.
+                </p>
+              ) : (
+                <div className="space-y-1.5 divide-y divide-slate-100">
+                  {viewingBooking.paymentHistory.map((item, idx) => (
+                    <div
+                      key={item.id || idx}
+                      className="pt-1.5 flex items-center justify-between text-xs"
+                    >
+                      <div>
+                        <div className="font-medium text-slate-900 flex items-center gap-1.5">
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-700">
+                            {item.paymentMode}
+                          </span>
+                          <span>{item.date} {item.time ? `@ ${item.time}` : ""}</span>
+                        </div>
+                        {item.referenceNumber && (
+                          <span className="text-[10px] text-slate-400 font-mono block">
+                            Ref / UTR: {item.referenceNumber}
+                          </span>
+                        )}
+                        {item.notes && (
+                          <span className="text-[10px] text-slate-500 italic block">
+                            {item.notes}
+                          </span>
+                        )}
+                      </div>
+                      <div className="font-mono font-semibold text-emerald-700">
+                        ₹{item.amount.toLocaleString("en-IN")}
+                      </div>
+                    </div>
+                  ))}
                 </div>
+              )}
+            </div>
+
+            {/* Close Button */}
+            <div className="pt-2 border-t border-slate-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setViewingBooking(null)}
+                className="h-[34px] max-h-[34px] px-4 rounded-[6px] border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-normal transition cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        )}
+      </OffCanvas>
+
+      {/* ===================================================================== */}
+      {/* COLLECT / RECORD PAYMENT MODAL */}
+      {/* ===================================================================== */}
+      <OffCanvas
+        isOpen={!!collectingBooking}
+        onClose={() => setCollectingBooking(null)}
+        title="Collect Payment"
+        subtitle={`Recording payment for trip ${collectingBooking?.bookingNumber || ""}`}
+        size="md"
+        widthClassName="max-w-md"
+      >
+        {collectingBooking && (
+          <div className="space-y-3.5 text-xs font-normal">
+            {/* Bill Summary */}
+            <div className="p-3 rounded-[6px] bg-slate-50 border border-slate-200 space-y-1">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Gross Bill Amount:</span>
+                <span className="font-mono font-medium text-slate-900">
+                  ₹{(collectingBooking.grossAmount || 0).toLocaleString("en-IN")}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Total Received So Far:</span>
+                <span className="font-mono font-medium text-emerald-700">
+                  ₹{(collectingBooking.receivedAmount || 0).toLocaleString("en-IN")}
+                </span>
+              </div>
+              <div className="flex justify-between border-t border-slate-200 pt-1 text-slate-900 font-medium">
+                <span>Remaining Balance Due:</span>
+                <span className="font-mono text-[#f16623]">
+                  ₹{(collectingBooking.balanceAmount || collectingBooking.netAmount || 0).toLocaleString("en-IN")}
+                </span>
+              </div>
+            </div>
+
+            {/* Amount to Collect Input */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                AMOUNT TO COLLECT (₹) *
+              </label>
+              <input
+                type="number"
+                min="1"
+                step="any"
+                value={collectAmount}
+                onChange={(e) => setCollectAmount(e.target.value)}
+                className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-mono font-medium"
+              />
+            </div>
+
+            {/* Payment Mode Selector: Cash, Card, UPI */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                PAYMENT MODE *
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {(["Cash", "Card", "UPI"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setCollectMode(m)}
+                    className={`h-[34px] max-h-[34px] rounded-[6px] text-xs font-normal border transition flex items-center justify-center gap-1.5 cursor-pointer ${
+                      collectMode === m
+                        ? "border-[#f16623] bg-orange-50/80 text-[#f16623] font-medium"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    }`}
+                  >
+                    {m === "Cash" && <Banknote className="w-3.5 h-3.5" />}
+                    {m === "Card" && <CreditCard className="w-3.5 h-3.5" />}
+                    {m === "UPI" && <QrCode className="w-3.5 h-3.5" />}
+                    <span>{m}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* If UPI, ask for Reference Number (Mandatory as per user spec) */}
+            {collectMode === "UPI" && (
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                  UPI REFERENCE NUMBER / UTR / TXN ID *
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. UPI/123456789012 or GPay-98213"
+                  value={collectRefNumber}
+                  onChange={(e) => setCollectRefNumber(e.target.value)}
+                  className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-mono"
+                />
               </div>
             )}
 
-            {/* Calculations Summary Card */}
-            <div className="bg-white p-2.5 rounded-[6px] border border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-              <div>
-                <span className="text-[10px] text-slate-400 block font-normal">
-                  Gross Fare
-                </span>
-                <span className="font-mono font-medium text-slate-800">
-                  ₹{parsedAmount.toLocaleString("en-IN")}
-                </span>
+            {/* If Card, optional card authorization ref */}
+            {collectMode === "Card" && (
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                  CARD TRANSACTION / INVOICE REF
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. POS-9842 / Auth code"
+                  value={collectRefNumber}
+                  onChange={(e) => setCollectRefNumber(e.target.value)}
+                  className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-mono"
+                />
               </div>
-              <div>
-                <span className="text-[10px] text-slate-400 block font-normal">
-                  Discount ({discountType === "percent" ? `${rawDiscountInput}%` : "₹"})
-                </span>
-                <span className="font-mono font-medium text-emerald-600">
-                  -₹{calculatedDiscount.toLocaleString("en-IN")}
-                </span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 block font-normal">
-                  Net Payable
-                </span>
-                <span className="font-mono font-medium text-slate-900">
-                  ₹{netPayable.toLocaleString("en-IN")}
-                </span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 block font-normal">
-                  Balance Due
-                </span>
-                <span
-                  className={`font-mono font-medium ${
-                    balanceDue > 0 ? "text-amber-600" : "text-emerald-600"
-                  }`}
-                >
-                  ₹{balanceDue.toLocaleString("en-IN")}
-                </span>
-              </div>
-            </div>
-          </div>
+            )}
 
-          {/* Action Buttons */}
-          <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
-            <button
-              type="button"
-              disabled={isSubmittingBooking}
-              onClick={() => setIsOffCanvasOpen(false)}
-              className="h-[34px] max-h-[34px] px-3 rounded-[6px] border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-medium transition cursor-pointer"
-            >
-              Cancel
-            </button>
-
-            <button
-              type="submit"
-              disabled={isSubmittingBooking}
-              className="h-[34px] max-h-[34px] px-4 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] disabled:opacity-60 text-white text-xs font-medium shadow-xs shadow-[#f16623]/25 transition flex items-center justify-center gap-1.5 active:scale-[0.98] cursor-pointer"
-            >
-              {isSubmittingBooking ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Creating Booking...</span>
-                </>
-              ) : (
-                <>
-                  <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
-                  <span>Create Booking</span>
-                </>
-              )}
-            </button>
-          </div>
-        </form>
-      </OffCanvas>
-
-      {/* REASSIGN DRIVER MODAL */}
-      <OffCanvas
-        isOpen={Boolean(assigningBooking)}
-        onClose={() => {
-          if (!isReassigning) setAssigningBooking(null);
-        }}
-        title="Assign Driver"
-        subtitle={`Booking #${assigningBooking?.bookingNumber || ""} • ${assigningBooking?.fromLocation || ""} ➔ ${assigningBooking?.toLocation || ""}`}
-      >
-        {assigningBooking && (
-          <form onSubmit={handleSaveReassignDriver} className="space-y-3.5">
-            <div className="bg-slate-50 p-2.5 rounded-[6px] border border-slate-200/80 space-y-1.5 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500 font-normal">Passenger / Client:</span>
-                <span className="font-medium text-slate-900">{assigningBooking.clientName}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500 font-normal">Pickup Time:</span>
-                <span className="font-mono font-medium text-slate-900">
-                  {assigningBooking.pickupTime || "09:00"} ({assigningBooking.pickupDate || "Today"})
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-slate-500 font-normal">Currently Assigned:</span>
-                <span className="font-medium text-[#f16623]">
-                  {assigningBooking.driverName || "None (Unassigned)"}
-                </span>
-              </div>
-            </div>
-
+            {/* Note / Remarks */}
             <div className="space-y-1">
-              <label
-                htmlFor="reassign-driver"
-                className="text-[10px] font-medium text-slate-600 uppercase tracking-wider flex items-center gap-1"
-              >
-                <UserCheck className="w-3 h-3 text-[#f16623]" />
-                Select Fleet Driver <span className="text-[#f16623]">*</span>
+              <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                NOTES / REMARKS
               </label>
-              <select
-                id="reassign-driver"
-                value={reassignDriverId}
-                onChange={(e) => setReassignDriverId(e.target.value)}
-                className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal"
-              >
-                <option value="">-- Remove Driver (Mark Unassigned) --</option>
-                {drivers.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name} {d.mobile ? `(${d.mobile})` : ""} {d.vehicleName ? `• ${d.vehicleName}` : ""}
-                  </option>
-                ))}
-              </select>
+              <input
+                type="text"
+                placeholder="e.g. Partial settlement from Accounts Dept"
+                value={collectNotes}
+                onChange={(e) => setCollectNotes(e.target.value)}
+                className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-normal"
+              />
             </div>
 
+            {/* Bottom Actions */}
             <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
               <button
                 type="button"
-                disabled={isReassigning}
-                onClick={() => setAssigningBooking(null)}
-                className="h-[34px] max-h-[34px] px-3 rounded-[6px] border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-medium transition cursor-pointer"
+                onClick={() => setCollectingBooking(null)}
+                className="h-[34px] max-h-[34px] px-3.5 rounded-[6px] border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-normal transition cursor-pointer"
               >
                 Cancel
               </button>
-
               <button
-                type="submit"
-                disabled={isReassigning}
-                className="h-[34px] max-h-[34px] px-4 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] disabled:opacity-60 text-white text-xs font-medium shadow-xs shadow-[#f16623]/25 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                type="button"
+                disabled={isCollectingPayment}
+                onClick={handleRecordPaymentSubmit}
+                className="h-[34px] max-h-[34px] px-4 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] text-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shadow-xs shadow-[#f16623]/25 disabled:opacity-50"
               >
-                {isReassigning ? (
+                {isCollectingPayment ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Assigning...</span>
+                    <span>Recording...</span>
                   </>
                 ) : (
                   <>
-                    <UserCheck className="w-3.5 h-3.5" />
-                    <span>Confirm Assignment</span>
+                    <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                    <span>Record Payment</span>
                   </>
                 )}
               </button>
             </div>
-          </form>
+          </div>
         )}
       </OffCanvas>
     </div>

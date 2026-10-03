@@ -7,9 +7,7 @@ import {
   Search,
   IndianRupee,
   Clock,
-  User,
   Building2,
-  ArrowRight,
   PhoneCall,
   Loader2,
   CheckCircle2,
@@ -17,13 +15,16 @@ import {
   Banknote,
   QrCode,
   CreditCard,
-  Coins,
-  Layers,
   ChevronDown,
   ChevronUp,
   Receipt,
   FileCheck,
+  History,
+  Car,
+  MapPin,
+  Calendar,
   X,
+  ExternalLink,
 } from "lucide-react";
 import {
   collection,
@@ -34,92 +35,83 @@ import {
   updateDoc,
   addDoc,
   serverTimestamp,
-  type Timestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { OffCanvas } from "@/components/OffCanvas";
 
-interface PaymentSplits {
-  cash: number;
-  upi: number;
-  card: number;
+export interface PaymentHistoryItem {
+  id: string;
+  date: string;
+  time: string;
+  amount: number;
+  paymentMode: "Cash" | "Card" | "UPI";
+  referenceNumber?: string;
+  notes?: string;
+  recordedAt: string;
 }
 
-interface BookingRecord {
+export interface CreditBookingRecord {
   id: string;
   bookingNumber: string;
-  fromLocation: string;
-  toLocation: string;
-  planId?: string;
-  planName?: string;
-  clientType: "customer" | "business_owner";
-  clientId: string;
-  clientName: string;
-  clientMobile: string;
-  clientEmail?: string;
+  startDate?: string;
+  startTime?: string;
+  endDate?: string;
+  endTime?: string;
+  fromLocation?: string;
+  toLocation?: string;
+  entityName?: string;
+  customerName?: string;
   companyName?: string;
-  amount: number;
-  discountType?: "rupees" | "percent";
-  discountValue?: number;
-  discount: number;
-  netAmount: number;
-  paymentMode: "cash" | "upi" | "card" | "split";
-  paymentSplits?: PaymentSplits | null;
-  receivedAmount: number;
-  balanceAmount: number;
-  status: string;
-  createdAt?: Timestamp | null;
+  travelerName?: string;
+  travelerMobile?: string;
+  vehicleCategoryName?: string;
+  vehicleNumber?: string;
+  driverName?: string;
+  driverMobile?: string;
+  tariffType?: string;
+  packageName?: string;
+  bookingStatus?: string;
+  paymentStatus?: "Unpaid" | "Partial" | "Paid";
+  grossAmount?: number;
+  netAmount?: number;
+  receivedAmount?: number;
+  balanceAmount?: number;
+  paymentHistory?: PaymentHistoryItem[];
+  createdAt?: any;
+  updatedAt?: any;
 }
 
-interface ClientSummary {
-  clientId: string;
-  clientName: string;
-  clientMobile: string;
-  clientEmail?: string;
-  companyName?: string;
-  ordersCount: number;
-  totalNetAmount: number;
+export interface CompanyCreditSummary {
+  companyName: string;
+  pendingTripsCount: number;
+  totalGrossAmount: number;
   totalReceivedAmount: number;
   totalBalanceDue: number;
-  orders: BookingRecord[];
+  bookings: CreditBookingRecord[];
+  primaryContactPhone?: string;
 }
 
 export default function CreditPage() {
-  const [bookings, setBookings] = useState<BookingRecord[]>([]);
+  const [bookings, setBookings] = useState<CreditBookingRecord[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<"orders" | "customers" | "owners">(
-    "orders"
-  );
+  const [activeTab, setActiveTab] = useState<"companies" | "all_bookings">("companies");
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Expanded client row in customer/owner views
-  const [expandedClientId, setExpandedClientId] = useState<string | null>(null);
+  // Accordion state for expanded company in companies view
+  const [expandedCompanies, setExpandedCompanies] = useState<Record<string, boolean>>({});
 
-  // INLINE Quick Collect on each order row
-  const [activeInlineOrderId, setActiveInlineOrderId] = useState<string | null>(
-    null
-  );
-  const [inlineAmount, setInlineAmount] = useState<string>("");
-  const [inlineMethod, setInlineMethod] = useState<
-    "cash" | "upi" | "card" | "split"
-  >("cash");
-  const [inlineSplitCash, setInlineSplitCash] = useState<string>("");
-  const [inlineSplitUpi, setInlineSplitUpi] = useState<string>("");
-  const [inlineSplitCard, setInlineSplitCard] = useState<string>("");
-  const [isSubmittingInline, setIsSubmittingInline] = useState(false);
-
-  // DRAWER Collect state (for full view)
-  const [selectedBookingForPayment, setSelectedBookingForPayment] =
-    useState<BookingRecord | null>(null);
-  const [collectAmount, setCollectAmount] = useState<string>("");
-  const [collectMode, setCollectMode] = useState<
-    "cash" | "upi" | "card" | "split"
-  >("cash");
-  const [collectSplitCash, setCollectSplitCash] = useState<string>("");
-  const [collectSplitUpi, setCollectSplitUpi] = useState<string>("");
-  const [collectSplitCard, setCollectSplitCard] = useState<string>("");
+  // Collect Payment Modal state
+  const [collectingBooking, setCollectingBooking] = useState<CreditBookingRecord | null>(null);
+  const [collectAmount, setCollectAmount] = useState("");
+  const [collectMode, setCollectMode] = useState<"Cash" | "Card" | "UPI">("Cash");
+  const [collectRefNumber, setCollectRefNumber] = useState("");
+  const [collectNotes, setCollectNotes] = useState("");
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
 
+  // Payment History Drawer state
+  const [historyBooking, setHistoryBooking] = useState<CreditBookingRecord | null>(null);
+
+  // Feedback banner
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
     message: string;
@@ -132,9 +124,9 @@ export default function CreditPage() {
       const unsub = onSnapshot(
         q,
         (snap) => {
-          const items: BookingRecord[] = snap.docs.map((docSnap) => ({
+          const items: CreditBookingRecord[] = snap.docs.map((docSnap) => ({
             id: docSnap.id,
-            ...(docSnap.data() as Omit<BookingRecord, "id">),
+            ...(docSnap.data() as Omit<CreditBookingRecord, "id">),
           }));
           setBookings(items);
           setLoading(false);
@@ -143,9 +135,9 @@ export default function CreditPage() {
           console.error("Credit bookings listener error, falling back:", err);
           const fallback = query(collection(db, "bookings"));
           const unsubFallback = onSnapshot(fallback, (snap) => {
-            const items: BookingRecord[] = snap.docs.map((docSnap) => ({
+            const items: CreditBookingRecord[] = snap.docs.map((docSnap) => ({
               id: docSnap.id,
-              ...(docSnap.data() as Omit<BookingRecord, "id">),
+              ...(docSnap.data() as Omit<CreditBookingRecord, "id">),
             }));
             setBookings(items);
             setLoading(false);
@@ -160,264 +152,161 @@ export default function CreditPage() {
     }
   }, []);
 
-  // Filter ONLY partial payment bookings (where balanceAmount > 0)
-  const creditBookings = useMemo(() => {
-    return bookings.filter((b) => (b.balanceAmount || 0) > 0);
+  // Filter ONLY bookings with pending payments (Unpaid or Partial, or balance > 0)
+  const pendingBookings = useMemo(() => {
+    return bookings.filter((b) => {
+      const balance = Number(b.balanceAmount) || 0;
+      const status = b.paymentStatus;
+      if (status === "Paid") return false;
+      return balance > 0 || status === "Unpaid" || status === "Partial";
+    });
   }, [bookings]);
 
-  // Aggregate Total Metrics
+  // Aggregate Key Financial Metrics
   const totalBalanceDue = useMemo(() => {
-    return creditBookings.reduce((sum, b) => sum + (b.balanceAmount || 0), 0);
-  }, [creditBookings]);
+    return pendingBookings.reduce((sum, b) => sum + (Number(b.balanceAmount) || 0), 0);
+  }, [pendingBookings]);
 
-  const totalCreditNetAmount = useMemo(() => {
-    return creditBookings.reduce((sum, b) => sum + (b.netAmount || 0), 0);
-  }, [creditBookings]);
-
-  const totalCreditReceivedAmount = useMemo(() => {
-    return creditBookings.reduce(
-      (sum, b) => sum + (b.receivedAmount || 0),
+  const totalGrossValue = useMemo(() => {
+    return pendingBookings.reduce(
+      (sum, b) => sum + (Number(b.grossAmount) || Number(b.netAmount) || 0),
       0
     );
-  }, [creditBookings]);
+  }, [pendingBookings]);
 
-  // Group by Customer
-  const customerSummaries = useMemo(() => {
-    const map = new Map<string, ClientSummary>();
+  const totalReceivedValue = useMemo(() => {
+    return pendingBookings.reduce(
+      (sum, b) => sum + (Number(b.receivedAmount) || 0),
+      0
+    );
+  }, [pendingBookings]);
 
-    creditBookings
-      .filter((b) => b.clientType === "customer")
-      .forEach((b) => {
-        const key = b.clientId || b.clientMobile || b.clientName;
-        const existing = map.get(key);
-        if (existing) {
-          existing.ordersCount += 1;
-          existing.totalNetAmount += b.netAmount || 0;
-          existing.totalReceivedAmount += b.receivedAmount || 0;
-          existing.totalBalanceDue += b.balanceAmount || 0;
-          existing.orders.push(b);
-        } else {
-          map.set(key, {
-            clientId: key,
-            clientName: b.clientName,
-            clientMobile: b.clientMobile,
-            clientEmail: b.clientEmail,
-            ordersCount: 1,
-            totalNetAmount: b.netAmount || 0,
-            totalReceivedAmount: b.receivedAmount || 0,
-            totalBalanceDue: b.balanceAmount || 0,
-            orders: [b],
-          });
+  // Group bookings Company-wise (customer means company)
+  const companySummaries = useMemo(() => {
+    const map = new Map<string, CompanyCreditSummary>();
+
+    pendingBookings.forEach((b) => {
+      const compName =
+        (b.customerName || b.companyName || "Direct Customer").trim();
+      const existing = map.get(compName);
+      const gross = Number(b.grossAmount) || Number(b.netAmount) || 0;
+      const received = Number(b.receivedAmount) || 0;
+      const balance = Number(b.balanceAmount) || Math.max(0, gross - received);
+
+      if (existing) {
+        existing.pendingTripsCount += 1;
+        existing.totalGrossAmount += gross;
+        existing.totalReceivedAmount += received;
+        existing.totalBalanceDue += balance;
+        existing.bookings.push(b);
+        if (!existing.primaryContactPhone && b.travelerMobile) {
+          existing.primaryContactPhone = b.travelerMobile;
         }
-      });
+      } else {
+        map.set(compName, {
+          companyName: compName,
+          pendingTripsCount: 1,
+          totalGrossAmount: gross,
+          totalReceivedAmount: received,
+          totalBalanceDue: balance,
+          bookings: [b],
+          primaryContactPhone: b.travelerMobile || "",
+        });
+      }
+    });
 
     return Array.from(map.values()).sort(
       (a, b) => b.totalBalanceDue - a.totalBalanceDue
     );
-  }, [creditBookings]);
+  }, [pendingBookings]);
 
-  // Group by Business Owner
-  const ownerSummaries = useMemo(() => {
-    const map = new Map<string, ClientSummary>();
-
-    creditBookings
-      .filter((b) => b.clientType === "business_owner")
-      .forEach((b) => {
-        const key = b.clientId || b.clientMobile || b.clientName;
-        const existing = map.get(key);
-        if (existing) {
-          existing.ordersCount += 1;
-          existing.totalNetAmount += b.netAmount || 0;
-          existing.totalReceivedAmount += b.receivedAmount || 0;
-          existing.totalBalanceDue += b.balanceAmount || 0;
-          existing.orders.push(b);
-        } else {
-          map.set(key, {
-            clientId: key,
-            clientName: b.clientName,
-            clientMobile: b.clientMobile,
-            clientEmail: b.clientEmail,
-            companyName: b.companyName,
-            ordersCount: 1,
-            totalNetAmount: b.netAmount || 0,
-            totalReceivedAmount: b.receivedAmount || 0,
-            totalBalanceDue: b.balanceAmount || 0,
-            orders: [b],
-          });
-        }
-      });
-
-    return Array.from(map.values()).sort(
-      (a, b) => b.totalBalanceDue - a.totalBalanceDue
-    );
-  }, [creditBookings]);
-
-  // Filtered views based on search query
-  const filteredOrders = useMemo(() => {
+  // Filtered Company Summaries based on search
+  const filteredCompanySummaries = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return creditBookings;
-    return creditBookings.filter(
+    if (!q) return companySummaries;
+    return companySummaries.filter(
+      (comp) =>
+        comp.companyName.toLowerCase().includes(q) ||
+        comp.bookings.some(
+          (b) =>
+            b.bookingNumber?.toLowerCase().includes(q) ||
+            b.travelerName?.toLowerCase().includes(q) ||
+            b.travelerMobile?.includes(q) ||
+            b.fromLocation?.toLowerCase().includes(q) ||
+            b.toLocation?.toLowerCase().includes(q)
+        )
+    );
+  }, [companySummaries, searchQuery]);
+
+  // Filtered flat pending bookings list based on search
+  const filteredBookings = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return pendingBookings;
+    return pendingBookings.filter(
       (b) =>
         b.bookingNumber?.toLowerCase().includes(q) ||
-        b.clientName?.toLowerCase().includes(q) ||
-        b.clientMobile?.toLowerCase().includes(q) ||
+        (b.customerName && b.customerName.toLowerCase().includes(q)) ||
+        (b.companyName && b.companyName.toLowerCase().includes(q)) ||
+        b.travelerName?.toLowerCase().includes(q) ||
+        b.travelerMobile?.includes(q) ||
         b.fromLocation?.toLowerCase().includes(q) ||
         b.toLocation?.toLowerCase().includes(q) ||
-        b.planName?.toLowerCase().includes(q) ||
-        (b.companyName && b.companyName.toLowerCase().includes(q))
+        b.vehicleNumber?.toLowerCase().includes(q) ||
+        b.driverName?.toLowerCase().includes(q)
     );
-  }, [creditBookings, searchQuery]);
+  }, [pendingBookings, searchQuery]);
 
-  const filteredCustomerSummaries = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return customerSummaries;
-    return customerSummaries.filter(
-      (c) =>
-        c.clientName.toLowerCase().includes(q) ||
-        c.clientMobile.toLowerCase().includes(q)
-    );
-  }, [customerSummaries, searchQuery]);
-
-  const filteredOwnerSummaries = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return ownerSummaries;
-    return ownerSummaries.filter(
-      (o) =>
-        o.clientName.toLowerCase().includes(q) ||
-        o.clientMobile.toLowerCase().includes(q) ||
-        (o.companyName && o.companyName.toLowerCase().includes(q))
-    );
-  }, [ownerSummaries, searchQuery]);
-
-  // Open Inline Quick Collect on a specific order
-  const handleOpenInlineCollect = (b: BookingRecord) => {
-    if (activeInlineOrderId === b.id) {
-      setActiveInlineOrderId(null);
-      return;
-    }
-    setActiveInlineOrderId(b.id);
-    setInlineAmount(String(b.balanceAmount));
-    setInlineMethod("cash");
-    setInlineSplitCash("");
-    setInlineSplitUpi("");
-    setInlineSplitCard("");
+  // Toggle company accordion
+  const toggleCompanyAccordion = (compName: string) => {
+    setExpandedCompanies((prev) => ({
+      ...prev,
+      [compName]: !prev[compName],
+    }));
   };
 
-  // Submit Inline Quick Payment
-  const handleSubmitInlinePayment = async (b: BookingRecord) => {
-    let paymentNum = Number(inlineAmount);
-
-    if (inlineMethod === "split") {
-      const c = Math.max(0, Number(inlineSplitCash) || 0);
-      const u = Math.max(0, Number(inlineSplitUpi) || 0);
-      const cd = Math.max(0, Number(inlineSplitCard) || 0);
-      paymentNum = c + u + cd;
-    }
-
-    if (isNaN(paymentNum) || paymentNum <= 0) {
-      alert("Please enter a payment amount greater than 0.");
-      return;
-    }
-
-    if (paymentNum > b.balanceAmount) {
-      alert(
-        `Amount cannot exceed the current balance due of ₹${b.balanceAmount.toLocaleString(
-          "en-IN"
-        )}.`
+  // Open Collect Payment Modal
+  const handleOpenCollectModal = (b: CreditBookingRecord) => {
+    setCollectingBooking(b);
+    const balance =
+      b.balanceAmount ??
+      Math.max(
+        0,
+        (Number(b.grossAmount) || Number(b.netAmount) || 0) -
+          (Number(b.receivedAmount) || 0)
       );
-      return;
-    }
-
-    setIsSubmittingInline(true);
-
-    try {
-      const newReceived = (b.receivedAmount || 0) + paymentNum;
-      const newBalance = Math.max(0, (b.balanceAmount || 0) - paymentNum);
-
-      // Update in Firestore
-      const bookingRef = doc(db, "bookings", b.id);
-      await updateDoc(bookingRef, {
-        receivedAmount: newReceived,
-        balanceAmount: newBalance,
-        status: newBalance === 0 ? "completed" : "confirmed",
-        updatedAt: serverTimestamp(),
-      });
-
-      // Record in payments ledger
-      await addDoc(collection(db, "payments"), {
-        bookingId: b.id,
-        bookingNumber: b.bookingNumber,
-        clientType: b.clientType,
-        clientId: b.clientId,
-        clientName: b.clientName,
-        clientMobile: b.clientMobile,
-        companyName: b.companyName || null,
-        amountCollected: paymentNum,
-        paymentMode: inlineMethod,
-        splits:
-          inlineMethod === "split"
-            ? {
-                cash: Number(inlineSplitCash) || 0,
-                upi: Number(inlineSplitUpi) || 0,
-                card: Number(inlineSplitCard) || 0,
-              }
-            : null,
-        createdAt: serverTimestamp(),
-      });
-
-      setFeedback({
-        type: "success",
-        message: `₹${paymentNum.toLocaleString(
-          "en-IN"
-        )} collected via ${inlineMethod.toUpperCase()} for Booking #${
-          b.bookingNumber
-        }!`,
-      });
-
-      setActiveInlineOrderId(null);
-      setTimeout(() => setFeedback(null), 4000);
-    } catch (err) {
-      console.error("Error saving inline payment:", err);
-      alert("Failed to record payment. Please try again.");
-    } finally {
-      setIsSubmittingInline(false);
-    }
+    setCollectAmount(String(balance));
+    setCollectMode("Cash");
+    setCollectRefNumber("");
+    setCollectNotes("");
   };
 
-  // Open Drawer Collect Payment
-  const handleOpenDrawerCollect = (b: BookingRecord) => {
-    setSelectedBookingForPayment(b);
-    setCollectAmount(String(b.balanceAmount));
-    setCollectMode("cash");
-    setCollectSplitCash("");
-    setCollectSplitUpi("");
-    setCollectSplitCard("");
-  };
-
-  // Submit Drawer Payment
-  const handleSubmitDrawerPayment = async (e: React.FormEvent) => {
+  // Submit Collect Payment
+  const handleSubmitCollectPayment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedBookingForPayment) return;
+    if (!collectingBooking) return;
 
-    let paymentNum = Number(collectAmount);
-
-    if (collectMode === "split") {
-      const c = Math.max(0, Number(collectSplitCash) || 0);
-      const u = Math.max(0, Number(collectSplitUpi) || 0);
-      const cd = Math.max(0, Number(collectSplitCard) || 0);
-      paymentNum = c + u + cd;
-    }
-
-    if (isNaN(paymentNum) || paymentNum <= 0) {
-      alert("Please enter a payment amount greater than 0.");
+    const amountNum = Number(collectAmount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      alert("Please enter a valid payment amount greater than ₹0.");
       return;
     }
 
-    if (paymentNum > selectedBookingForPayment.balanceAmount) {
+    if (collectMode === "UPI" && !collectRefNumber.trim()) {
+      alert("Please enter the UPI Reference Number (UTR / Ref ID).");
+      return;
+    }
+
+    const currentBalance =
+      collectingBooking.balanceAmount ??
+      Math.max(
+        0,
+        (Number(collectingBooking.grossAmount) || Number(collectingBooking.netAmount) || 0) -
+          (Number(collectingBooking.receivedAmount) || 0)
+      );
+
+    if (amountNum > currentBalance) {
       alert(
-        `Amount cannot exceed the balance due of ₹${selectedBookingForPayment.balanceAmount.toLocaleString(
-          "en-IN"
-        )}.`
+        `Amount cannot exceed the remaining balance due of ₹${currentBalance.toLocaleString("en-IN")}.`
       );
       return;
     }
@@ -425,55 +314,72 @@ export default function CreditPage() {
     setIsSubmittingPayment(true);
 
     try {
-      const newReceived =
-        (selectedBookingForPayment.receivedAmount || 0) + paymentNum;
-      const newBalance = Math.max(
-        0,
-        (selectedBookingForPayment.balanceAmount || 0) - paymentNum
-      );
+      const now = new Date();
+      const currentReceived = Number(collectingBooking.receivedAmount) || 0;
+      const newReceived = currentReceived + amountNum;
+      const totalPayable =
+        Number(collectingBooking.grossAmount) ||
+        Number(collectingBooking.netAmount) ||
+        0;
+      const newBalance = Math.max(0, totalPayable - newReceived);
 
-      const bookingRef = doc(db, "bookings", selectedBookingForPayment.id);
-      await updateDoc(bookingRef, {
+      let newPayStatus: "Unpaid" | "Partial" | "Paid" = "Partial";
+      if (newBalance <= 0) newPayStatus = "Paid";
+      else if (newReceived <= 0) newPayStatus = "Unpaid";
+
+      const newHistoryItem: PaymentHistoryItem = {
+        id: `pay-${Date.now()}`,
+        date: now.toISOString().split("T")[0],
+        time: `${String(now.getHours()).padStart(2, "0")}:${String(
+          now.getMinutes()
+        ).padStart(2, "0")}`,
+        amount: amountNum,
+        paymentMode: collectMode,
+        referenceNumber: collectRefNumber.trim() || undefined,
+        notes: collectNotes.trim() || undefined,
+        recordedAt: now.toISOString(),
+      };
+
+      const updatedHistory = [
+        ...(collectingBooking.paymentHistory || []),
+        newHistoryItem,
+      ];
+
+      // 1. Update booking in Firestore
+      await updateDoc(doc(db, "bookings", collectingBooking.id), {
         receivedAmount: newReceived,
         balanceAmount: newBalance,
-        status: newBalance === 0 ? "completed" : "confirmed",
+        paymentStatus: newPayStatus,
+        paymentHistory: updatedHistory,
         updatedAt: serverTimestamp(),
       });
 
+      // 2. Add ledger record in payments collection
       await addDoc(collection(db, "payments"), {
-        bookingId: selectedBookingForPayment.id,
-        bookingNumber: selectedBookingForPayment.bookingNumber,
-        clientType: selectedBookingForPayment.clientType,
-        clientId: selectedBookingForPayment.clientId,
-        clientName: selectedBookingForPayment.clientName,
-        clientMobile: selectedBookingForPayment.clientMobile,
-        companyName: selectedBookingForPayment.companyName || null,
-        amountCollected: paymentNum,
-        paymentMode: collectMode,
-        splits:
-          collectMode === "split"
-            ? {
-                cash: Number(collectSplitCash) || 0,
-                upi: Number(collectSplitUpi) || 0,
-                card: Number(collectSplitCard) || 0,
-              }
-            : null,
+        bookingId: collectingBooking.id,
+        bookingNumber: collectingBooking.bookingNumber,
+        clientType: "customer",
+        clientName: collectingBooking.customerName || collectingBooking.companyName || "Direct",
+        clientMobile: collectingBooking.travelerMobile || "",
+        companyName: collectingBooking.customerName || collectingBooking.companyName || "Direct",
+        fromLocation: collectingBooking.fromLocation || "",
+        toLocation: collectingBooking.toLocation || "",
+        amountCollected: amountNum,
+        paymentMode: collectMode.toLowerCase(),
+        referenceNumber: collectRefNumber.trim() || null,
+        note: collectNotes.trim() || null,
         createdAt: serverTimestamp(),
       });
 
       setFeedback({
         type: "success",
-        message: `₹${paymentNum.toLocaleString(
-          "en-IN"
-        )} collected via ${collectMode.toUpperCase()} for Booking #${
-          selectedBookingForPayment.bookingNumber
-        }!`,
+        message: `₹${amountNum.toLocaleString("en-IN")} collected via ${collectMode.toUpperCase()} for Booking #${collectingBooking.bookingNumber}!`,
       });
 
-      setSelectedBookingForPayment(null);
+      setCollectingBooking(null);
       setTimeout(() => setFeedback(null), 4000);
     } catch (err) {
-      console.error("Error submitting drawer payment:", err);
+      console.error("Error collecting payment in credit page:", err);
       alert("Failed to record payment. Please try again.");
     } finally {
       setIsSubmittingPayment(false);
@@ -481,7 +387,7 @@ export default function CreditPage() {
   };
 
   return (
-    <div className="w-full space-y-3">
+    <div className="w-full space-y-3 font-normal text-slate-800">
       {/* Breadcrumbs Navigation */}
       <nav className="flex items-center gap-1.5 text-xs text-slate-500 font-normal">
         <Link href="/dashboard" className="hover:text-slate-800 transition">
@@ -494,7 +400,7 @@ export default function CreditPage() {
       </nav>
 
       {/* Top Header Card */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-white p-3 rounded-[6px] border border-slate-200/80 shadow-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-white p-3 rounded-[6px] border border-slate-200 shadow-xs">
         <div className="flex items-center gap-2.5">
           <div className="w-[34px] h-[34px] max-h-[34px] rounded-[6px] bg-orange-50 border border-[#f16623]/25 flex items-center justify-center text-[#f16623]">
             <WalletCards className="w-4 h-4" />
@@ -502,14 +408,14 @@ export default function CreditPage() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-sm sm:text-base font-medium text-slate-900 leading-tight">
-                Credit & Partial Payment Ledgers
+                Credit & Outstanding Receivables
               </h1>
               <span className="px-2 py-0.5 rounded-[6px] text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
-                {creditBookings.length} Orders with Dues
+                {pendingBookings.length} Trips with Dues
               </span>
             </div>
             <p className="text-[11px] text-slate-400 font-normal">
-              Quickly collect pending payments order-wise, customer-wise and partner-wise
+              Manage unpaid & partial payment bookings grouped customer-wise (companies) with quick collection
             </p>
           </div>
         </div>
@@ -519,7 +425,7 @@ export default function CreditPage() {
           <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search booking, client, mobile..."
+            placeholder="Search company, traveler, trip #..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full h-[34px] max-h-[34px] pl-8 pr-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal transition"
@@ -529,11 +435,11 @@ export default function CreditPage() {
 
       {/* 4 Financial KPI Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-        {/* Total Outstanding Balance */}
-        <div className="bg-white p-2.5 rounded-[6px] border border-amber-200/80 shadow-xs flex items-center justify-between">
+        {/* Total Outstanding Dues */}
+        <div className="bg-white p-2.5 rounded-[6px] border border-amber-200 shadow-xs flex items-center justify-between">
           <div>
             <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
-              Total Pending Dues
+              Total Outstanding Due
             </span>
             <span className="text-base font-medium text-amber-600 font-mono">
               ₹{totalBalanceDue.toLocaleString("en-IN")}
@@ -544,1055 +450,619 @@ export default function CreditPage() {
           </div>
         </div>
 
-        {/* Total Billed Net Value */}
-        <div className="bg-white p-2.5 rounded-[6px] border border-slate-200/80 shadow-xs flex items-center justify-between">
+        {/* Total Companies with Dues */}
+        <div className="bg-white p-2.5 rounded-[6px] border border-slate-200 shadow-xs flex items-center justify-between">
           <div>
             <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
-              Credit Orders Value
+              Companies with Dues
             </span>
             <span className="text-base font-medium text-slate-900 font-mono">
-              ₹{totalCreditNetAmount.toLocaleString("en-IN")}
-            </span>
-          </div>
-          <div className="w-[30px] h-[30px] rounded-[6px] bg-slate-50 text-slate-600 flex items-center justify-center">
-            <IndianRupee className="w-4 h-4" />
-          </div>
-        </div>
-
-        {/* Total Already Collected */}
-        <div className="bg-white p-2.5 rounded-[6px] border border-slate-200/80 shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
-              Amount Recovered
-            </span>
-            <span className="text-base font-medium text-emerald-600 font-mono">
-              ₹{totalCreditReceivedAmount.toLocaleString("en-IN")}
-            </span>
-          </div>
-          <div className="w-[30px] h-[30px] rounded-[6px] bg-emerald-50 text-emerald-600 flex items-center justify-center">
-            <FileCheck className="w-4 h-4" />
-          </div>
-        </div>
-
-        {/* Total Accounts Involved */}
-        <div className="bg-white p-2.5 rounded-[6px] border border-slate-200/80 shadow-xs flex items-center justify-between">
-          <div>
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
-              Accounts with Dues
-            </span>
-            <span className="text-base font-medium text-slate-900 font-mono">
-              {customerSummaries.length + ownerSummaries.length}
+              {companySummaries.length}
             </span>
           </div>
           <div className="w-[30px] h-[30px] rounded-[6px] bg-blue-50 text-blue-600 flex items-center justify-center">
-            <User className="w-4 h-4" />
+            <Building2 className="w-4 h-4" />
+          </div>
+        </div>
+
+        {/* Total Billed Trip Amount */}
+        <div className="bg-white p-2.5 rounded-[6px] border border-slate-200 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
+              Total Billed Amount
+            </span>
+            <span className="text-base font-medium text-slate-700 font-mono">
+              ₹{totalGrossValue.toLocaleString("en-IN")}
+            </span>
+          </div>
+          <div className="w-[30px] h-[30px] rounded-[6px] bg-slate-50 text-slate-600 flex items-center justify-center">
+            <Receipt className="w-4 h-4" />
+          </div>
+        </div>
+
+        {/* Total Advances Collected */}
+        <div className="bg-white p-2.5 rounded-[6px] border border-emerald-200 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
+              Advances / Collected
+            </span>
+            <span className="text-base font-medium text-emerald-600 font-mono">
+              ₹{totalReceivedValue.toLocaleString("en-IN")}
+            </span>
+          </div>
+          <div className="w-[30px] h-[30px] rounded-[6px] bg-emerald-50 text-emerald-600 flex items-center justify-center">
+            <Banknote className="w-4 h-4" />
           </div>
         </div>
       </div>
 
-      {/* View Switcher Tabs */}
-      <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-white px-3 py-1.5 rounded-[6px] shadow-xs">
-        <div className="flex items-center gap-1.5">
+      {/* Feedback Toast */}
+      {feedback && (
+        <div
+          className={`p-2.5 rounded-[6px] text-xs flex items-center justify-between ${
+            feedback.type === "success"
+              ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+              : "bg-red-50 text-red-800 border border-red-200"
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {feedback.type === "success" ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-red-600" />
+            )}
+            <span>{feedback.message}</span>
+          </div>
           <button
-            type="button"
-            onClick={() => setActiveTab("orders")}
-            className={`h-[30px] max-h-[34px] px-3 rounded-[6px] text-xs font-medium transition flex items-center gap-1.5 cursor-pointer ${
-              activeTab === "orders"
-                ? "bg-[#f16623] text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-            }`}
+            onClick={() => setFeedback(null)}
+            className="text-slate-400 hover:text-slate-600"
           >
-            <Receipt className="w-3.5 h-3.5" />
-            <span>Order Wise</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-                activeTab === "orders"
-                  ? "bg-white/20 text-white"
-                  : "bg-slate-200 text-slate-600"
-              }`}
-            >
-              {creditBookings.length}
-            </span>
+            <X className="w-3.5 h-3.5" />
           </button>
+        </div>
+      )}
 
+      {/* Main Tabs Navigation */}
+      <div className="flex items-center justify-between border-b border-slate-200">
+        <div className="flex items-center gap-1">
           <button
-            type="button"
-            onClick={() => setActiveTab("customers")}
-            className={`h-[30px] max-h-[34px] px-3 rounded-[6px] text-xs font-medium transition flex items-center gap-1.5 cursor-pointer ${
-              activeTab === "customers"
-                ? "bg-[#f16623] text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
-            }`}
-          >
-            <User className="w-3.5 h-3.5" />
-            <span>Customer Wise</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-                activeTab === "customers"
-                  ? "bg-white/20 text-white"
-                  : "bg-slate-200 text-slate-600"
-              }`}
-            >
-              {customerSummaries.length}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab("owners")}
-            className={`h-[30px] max-h-[34px] px-3 rounded-[6px] text-xs font-medium transition flex items-center gap-1.5 cursor-pointer ${
-              activeTab === "owners"
-                ? "bg-[#f16623] text-white shadow-xs"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+            onClick={() => setActiveTab("companies")}
+            className={`px-3 py-2 text-xs font-medium border-b-2 transition flex items-center gap-1.5 ${
+              activeTab === "companies"
+                ? "border-[#f16623] text-[#f16623]"
+                : "border-transparent text-slate-500 hover:text-slate-800"
             }`}
           >
             <Building2 className="w-3.5 h-3.5" />
-            <span>Business Owner Wise</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] ${
-                activeTab === "owners"
-                  ? "bg-white/20 text-white"
-                  : "bg-slate-200 text-slate-600"
-              }`}
-            >
-              {ownerSummaries.length}
+            <span>Customer / Company Wise</span>
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-100 text-slate-700">
+              {companySummaries.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("all_bookings")}
+            className={`px-3 py-2 text-xs font-medium border-b-2 transition flex items-center gap-1.5 ${
+              activeTab === "all_bookings"
+                ? "border-[#f16623] text-[#f16623]"
+                : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            <Receipt className="w-3.5 h-3.5" />
+            <span>All Pending Bookings List</span>
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-100 text-slate-700">
+              {pendingBookings.length}
             </span>
           </button>
         </div>
-
-        <span className="text-[11px] text-slate-400 font-normal hidden sm:inline">
-          {activeTab === "orders"
-            ? "Click 'Collect' on any order to record payment & payment method"
-            : "Grouped ledger view with quick collection per order"}
-        </span>
       </div>
 
-      {/* Feedback Banner */}
-      {feedback && (
-        <div
-          className={`flex items-center gap-2 px-3 py-1.5 rounded-[6px] text-xs font-normal border ${
-            feedback.type === "success"
-              ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-              : "bg-rose-50 text-rose-800 border-rose-200"
-          }`}
-        >
-          {feedback.type === "success" ? (
-            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-          ) : (
-            <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-          )}
-          <span>{feedback.message}</span>
+      {/* Loading State */}
+      {loading && (
+        <div className="p-8 text-center bg-white rounded-[6px] border border-slate-200">
+          <Loader2 className="w-6 h-6 animate-spin text-[#f16623] mx-auto mb-2" />
+          <p className="text-xs text-slate-500">Loading credit and outstanding ledgers...</p>
         </div>
       )}
 
-      {/* TAB 1: ORDER WISE VIEW WITH INLINE QUICK COLLECT */}
-      {activeTab === "orders" && (
-        <div className="bg-white rounded-[6px] border border-slate-200/80 shadow-xs overflow-hidden">
-          <div className="px-3.5 py-2.5 border-b border-slate-100 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-[2px] bg-amber-500"></span>
-              <h3 className="text-xs font-medium text-slate-900">
-                Order Dues & Immediate Payment Collection
-              </h3>
-            </div>
-            <span className="text-[11px] text-slate-400 font-normal">
-              {filteredOrders.length} order{filteredOrders.length === 1 ? "" : "s"}
-            </span>
-          </div>
-
-          {loading ? (
-            <div className="py-8 flex flex-col items-center justify-center text-slate-400 gap-1.5">
-              <Loader2 className="w-5 h-5 animate-spin text-[#f16623]" />
-              <span className="text-xs font-normal">
-                Loading credit orders from Firestore...
-              </span>
-            </div>
-          ) : filteredOrders.length === 0 ? (
-            <div className="py-10 px-4 text-center">
-              <div className="w-10 h-10 rounded-[6px] bg-emerald-50 border border-emerald-200 flex items-center justify-center mx-auto text-emerald-600 mb-2">
-                <CheckCircle2 className="w-5 h-5" />
-              </div>
-              <h4 className="text-xs font-medium text-slate-800">
-                {searchQuery ? "No matching credit orders" : "No pending credit dues!"}
-              </h4>
-              <p className="text-[11px] text-slate-400 max-w-sm mx-auto mt-0.5 font-normal">
-                All bookings are currently fully settled.
+      {/* Tab 1: Customer / Company Wise */}
+      {!loading && activeTab === "companies" && (
+        <div className="space-y-2.5">
+          {filteredCompanySummaries.length === 0 ? (
+            <div className="p-8 text-center bg-white rounded-[6px] border border-slate-200 text-slate-500 text-xs">
+              <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
+              <p className="font-medium text-slate-700">No outstanding company credits found</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                All trips for registered companies are completely settled and marked as Paid.
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-600">
-                <thead className="bg-slate-50/80 text-[10px] uppercase tracking-wider text-slate-500 font-medium border-b border-slate-200">
-                  <tr>
-                    <th className="py-2 px-3 font-medium">Booking #</th>
-                    <th className="py-2 px-3 font-medium">Route (From ➔ To)</th>
-                    <th className="py-2 px-3 font-medium">Client / Stakeholder</th>
-                    <th className="py-2 px-3 font-medium">Plan</th>
-                    <th className="py-2 px-3 font-medium">Net Fare</th>
-                    <th className="py-2 px-3 font-medium">Paid</th>
-                    <th className="py-2 px-3 font-medium text-amber-600">Balance Due</th>
-                    <th className="py-2 px-3 font-medium">Date</th>
-                    <th className="py-2 px-3 text-right font-medium">Collect Payment</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredOrders.map((b) => {
-                    let dateStr = "Just now";
-                    if (b.createdAt && typeof b.createdAt.toDate === "function") {
-                      dateStr = b.createdAt.toDate().toLocaleDateString("en-IN", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                      });
-                    }
+            filteredCompanySummaries.map((comp) => {
+              const isExpanded = !!expandedCompanies[comp.companyName];
 
-                    const isCust = b.clientType === "customer";
-                    const isInlineOpen = activeInlineOrderId === b.id;
+              return (
+                <div
+                  key={comp.companyName}
+                  className="bg-white rounded-[6px] border border-slate-200 overflow-hidden shadow-xs transition hover:border-slate-300"
+                >
+                  {/* Company Summary Card Header */}
+                  <div
+                    onClick={() => toggleCompanyAccordion(comp.companyName)}
+                    className="p-3 cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white hover:bg-slate-50/50 transition"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-[36px] h-[36px] rounded-[6px] bg-orange-50 border border-orange-200 text-[#f16623] flex items-center justify-center shrink-0">
+                        <Building2 className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-xs sm:text-sm font-medium text-slate-900">
+                            {comp.companyName}
+                          </h3>
+                          <span className="px-2 py-0.5 rounded-[4px] text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                            {comp.pendingTripsCount} {comp.pendingTripsCount === 1 ? "Trip Due" : "Trips Due"}
+                          </span>
+                        </div>
+                        {comp.primaryContactPhone && (
+                          <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
+                            <PhoneCall className="w-3 h-3 text-slate-400" />
+                            <span>{comp.primaryContactPhone}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Financial Figures Pill Row */}
+                    <div className="flex items-center gap-3 sm:gap-4 shrink-0">
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
+                          Billed
+                        </span>
+                        <span className="text-xs font-mono font-medium text-slate-700">
+                          ₹{comp.totalGrossAmount.toLocaleString("en-IN")}
+                        </span>
+                      </div>
+
+                      <div className="text-right">
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
+                          Collected
+                        </span>
+                        <span className="text-xs font-mono font-medium text-emerald-600">
+                          ₹{comp.totalReceivedAmount.toLocaleString("en-IN")}
+                        </span>
+                      </div>
+
+                      <div className="text-right pl-2 border-l border-slate-200">
+                        <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
+                          Balance Due
+                        </span>
+                        <span className="text-sm font-mono font-medium text-amber-600">
+                          ₹{comp.totalBalanceDue.toLocaleString("en-IN")}
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="p-1 rounded-[4px] text-slate-400 hover:text-slate-600 transition"
+                      >
+                        {isExpanded ? (
+                          <ChevronUp className="w-4 h-4" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Accordion Content: All Unpaid & Partial Bookings for this Company */}
+                  {isExpanded && (
+                    <div className="border-t border-slate-100 bg-slate-50/40 p-3 space-y-2">
+                      <div className="text-[11px] font-medium text-slate-500 flex items-center justify-between pb-1">
+                        <span>Pending Trips for {comp.companyName}:</span>
+                        <span className="text-[10px] text-slate-400">
+                          Click Collect Payment on any trip to record payment
+                        </span>
+                      </div>
+
+                      <div className="overflow-x-auto border border-slate-200 rounded-[6px] bg-white">
+                        <table className="w-full text-left text-xs">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[10px] uppercase tracking-wider font-medium">
+                              <th className="py-2 px-3">Trip # / Date</th>
+                              <th className="py-2 px-3">Passenger & Route</th>
+                              <th className="py-2 px-3">Vehicle & Driver</th>
+                              <th className="py-2 px-3 text-right">Total Bill</th>
+                              <th className="py-2 px-3 text-right">Paid / Advance</th>
+                              <th className="py-2 px-3 text-right">Balance Due</th>
+                              <th className="py-2 px-3 text-center">Status</th>
+                              <th className="py-2 px-3 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {comp.bookings.map((b) => {
+                              const totalBill =
+                                Number(b.grossAmount) || Number(b.netAmount) || 0;
+                              const paid = Number(b.receivedAmount) || 0;
+                              const balance =
+                                b.balanceAmount ?? Math.max(0, totalBill - paid);
+
+                              return (
+                                <tr
+                                  key={b.id}
+                                  className="hover:bg-slate-50/70 transition"
+                                >
+                                  {/* Trip # & Date */}
+                                  <td className="py-2.5 px-3">
+                                    <div className="font-mono font-medium text-[#f16623]">
+                                      {b.bookingNumber}
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                                      <Calendar className="w-3 h-3 text-slate-400" />
+                                      <span>
+                                        {b.startDate || "N/A"} {b.startTime || ""}
+                                      </span>
+                                    </div>
+                                  </td>
+
+                                  {/* Passenger & Route */}
+                                  <td className="py-2.5 px-3">
+                                    <div className="font-medium text-slate-800">
+                                      {b.travelerName || "Direct Passenger"}
+                                    </div>
+                                    <div className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5">
+                                      <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                                      <span className="truncate max-w-[160px]">
+                                        {b.fromLocation || "Pickup"} → {b.toLocation || "Drop"}
+                                      </span>
+                                    </div>
+                                  </td>
+
+                                  {/* Vehicle & Driver */}
+                                  <td className="py-2.5 px-3">
+                                    <div className="text-slate-800 flex items-center gap-1">
+                                      <Car className="w-3 h-3 text-slate-400" />
+                                      <span>
+                                        {b.vehicleNumber || b.vehicleCategoryName || "Unassigned"}
+                                      </span>
+                                    </div>
+                                    <div className="text-[10px] text-slate-400 mt-0.5">
+                                      {b.driverName ? `Driver: ${b.driverName}` : "No driver assigned"}
+                                    </div>
+                                  </td>
+
+                                  {/* Total Bill */}
+                                  <td className="py-2.5 px-3 text-right font-mono text-slate-700">
+                                    ₹{totalBill.toLocaleString("en-IN")}
+                                  </td>
+
+                                  {/* Paid / Advance */}
+                                  <td className="py-2.5 px-3 text-right font-mono text-emerald-600">
+                                    ₹{paid.toLocaleString("en-IN")}
+                                  </td>
+
+                                  {/* Balance Due */}
+                                  <td className="py-2.5 px-3 text-right font-mono font-medium text-amber-600">
+                                    ₹{balance.toLocaleString("en-IN")}
+                                  </td>
+
+                                  {/* Payment Status Badge */}
+                                  <td className="py-2.5 px-3 text-center">
+                                    <span
+                                      className={`px-2 py-0.5 rounded-[4px] text-[10px] font-medium border ${
+                                        b.paymentStatus === "Unpaid"
+                                          ? "bg-red-50 text-red-700 border-red-200"
+                                          : b.paymentStatus === "Partial"
+                                          ? "bg-amber-50 text-amber-700 border-amber-200"
+                                          : "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                      }`}
+                                    >
+                                      {b.paymentStatus || "Unpaid"}
+                                    </span>
+                                  </td>
+
+                                  {/* Actions */}
+                                  <td className="py-2.5 px-3 text-right">
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      {/* History button */}
+                                      <button
+                                        onClick={() => setHistoryBooking(b)}
+                                        title="View Payment History"
+                                        className="h-[30px] px-2 rounded-[6px] border border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:border-slate-300 text-xs flex items-center gap-1 transition"
+                                      >
+                                        <History className="w-3.5 h-3.5" />
+                                        <span className="hidden sm:inline">History</span>
+                                      </button>
+
+                                      {/* Collect Payment Button */}
+                                      <button
+                                        onClick={() => handleOpenCollectModal(b)}
+                                        className="h-[30px] px-2.5 rounded-[6px] bg-[#f16623] hover:bg-[#d9551a] text-white text-xs font-medium flex items-center gap-1 transition shadow-xs"
+                                      >
+                                        <Banknote className="w-3.5 h-3.5" />
+                                        <span>Collect</span>
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {/* Tab 2: All Pending Bookings Flat List */}
+      {!loading && activeTab === "all_bookings" && (
+        <div className="bg-white rounded-[6px] border border-slate-200 overflow-hidden shadow-xs">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[10px] uppercase tracking-wider font-medium">
+                  <th className="py-2 px-3">Trip # / Date</th>
+                  <th className="py-2 px-3">Customer (Company)</th>
+                  <th className="py-2 px-3">Traveler & Route</th>
+                  <th className="py-2 px-3">Vehicle & Driver</th>
+                  <th className="py-2 px-3 text-right">Total Bill</th>
+                  <th className="py-2 px-3 text-right">Paid / Advance</th>
+                  <th className="py-2 px-3 text-right">Balance Due</th>
+                  <th className="py-2 px-3 text-center">Status</th>
+                  <th className="py-2 px-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredBookings.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="py-8 text-center text-slate-400">
+                      No pending payment trips found matching your search.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredBookings.map((b) => {
+                    const totalBill =
+                      Number(b.grossAmount) || Number(b.netAmount) || 0;
+                    const paid = Number(b.receivedAmount) || 0;
+                    const balance =
+                      b.balanceAmount ?? Math.max(0, totalBill - paid);
 
                     return (
-                      <Fragment key={b.id}>
-                        <tr
-                          className={`hover:bg-orange-50/30 transition-colors ${
-                            isInlineOpen ? "bg-orange-50/40" : ""
-                          }`}
-                        >
-                          {/* Booking Number */}
-                          <td className="py-2 px-3 font-mono font-medium text-slate-900 text-[11px]">
-                            <span className="px-1.5 py-0.5 rounded-[4px] bg-slate-100 border border-slate-200">
-                              {b.bookingNumber}
-                            </span>
-                          </td>
+                      <tr key={b.id} className="hover:bg-slate-50/70 transition">
+                        <td className="py-2.5 px-3">
+                          <div className="font-mono font-medium text-[#f16623]">
+                            {b.bookingNumber}
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-0.5">
+                            {b.startDate || "N/A"}
+                          </div>
+                        </td>
 
-                          {/* Route */}
-                          <td className="py-2 px-3">
-                            <div className="flex items-center gap-1.5">
-                              <span className="font-medium text-slate-900">
-                                {b.fromLocation}
-                              </span>
-                              <ArrowRight className="w-3 h-3 text-[#f16623] shrink-0" />
-                              <span className="font-medium text-slate-900">
-                                {b.toLocation}
-                              </span>
-                            </div>
-                          </td>
+                        <td className="py-2.5 px-3">
+                          <div className="font-medium text-slate-800">
+                            {b.customerName || b.companyName || "Direct"}
+                          </div>
+                        </td>
 
-                          {/* Client */}
-                          <td className="py-2 px-3">
-                            <div className="flex flex-col">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-medium text-slate-900">
-                                  {b.clientName}
-                                </span>
-                                <span
-                                  className={`px-1.5 py-0.2 rounded-[3px] text-[9px] font-medium border ${
-                                    isCust
-                                      ? "bg-blue-50 text-blue-700 border-blue-200"
-                                      : "bg-purple-50 text-purple-700 border-purple-200"
-                                  }`}
-                                >
-                                  {isCust ? "Customer" : "Business Owner"}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-2 text-[10px] text-slate-400 font-normal">
-                                <span className="flex items-center gap-0.5">
-                                  <PhoneCall className="w-2.5 h-2.5" />
-                                  {b.clientMobile}
-                                </span>
-                                {b.companyName && (
-                                  <span className="text-slate-500">
-                                    • {b.companyName}
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </td>
+                        <td className="py-2.5 px-3">
+                          <div className="text-slate-800">{b.travelerName || "Traveler"}</div>
+                          <div className="text-[10px] text-slate-400 truncate max-w-[140px]">
+                            {b.fromLocation} → {b.toLocation}
+                          </div>
+                        </td>
 
-                          {/* Plan */}
-                          <td className="py-2 px-3">
-                            <span className="px-2 py-0.5 rounded-[4px] bg-orange-50 text-[#f16623] border border-[#f16623]/20 font-medium text-[11px] inline-flex items-center gap-1 max-w-[120px] truncate">
-                              <Layers className="w-3 h-3 shrink-0" />
-                              <span className="truncate">{b.planName}</span>
-                            </span>
-                          </td>
+                        <td className="py-2.5 px-3">
+                          <div className="text-slate-800">
+                            {b.vehicleNumber || b.vehicleCategoryName || "Unassigned"}
+                          </div>
+                          <div className="text-[10px] text-slate-400">
+                            {b.driverName || "No driver"}
+                          </div>
+                        </td>
 
-                          {/* Net Fare */}
-                          <td className="py-2 px-3 font-mono text-slate-900 text-xs">
-                            ₹{Number(b.netAmount).toLocaleString("en-IN")}
-                          </td>
+                        <td className="py-2.5 px-3 text-right font-mono text-slate-700">
+                          ₹{totalBill.toLocaleString("en-IN")}
+                        </td>
 
-                          {/* Paid Amount */}
-                          <td className="py-2 px-3 font-mono text-emerald-600 text-xs">
-                            ₹{Number(b.receivedAmount).toLocaleString("en-IN")}
-                          </td>
+                        <td className="py-2.5 px-3 text-right font-mono text-emerald-600">
+                          ₹{paid.toLocaleString("en-IN")}
+                        </td>
 
-                          {/* Pending Balance Due */}
-                          <td className="py-2 px-3 font-mono font-medium text-amber-600 text-xs">
-                            ₹{Number(b.balanceAmount).toLocaleString("en-IN")}
-                          </td>
+                        <td className="py-2.5 px-3 text-right font-mono font-medium text-amber-600">
+                          ₹{balance.toLocaleString("en-IN")}
+                        </td>
 
-                          {/* Date */}
-                          <td className="py-2 px-3 text-slate-400 text-[10px] font-normal">
-                            {dateStr}
-                          </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <span
+                            className={`px-2 py-0.5 rounded-[4px] text-[10px] font-medium border ${
+                              b.paymentStatus === "Unpaid"
+                                ? "bg-red-50 text-red-700 border-red-200"
+                                : "bg-amber-50 text-amber-700 border-amber-200"
+                            }`}
+                          >
+                            {b.paymentStatus || "Unpaid"}
+                          </span>
+                        </td>
 
-                          {/* Collect Action Button */}
-                          <td className="py-2 px-3 text-right">
+                        <td className="py-2.5 px-3 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
                             <button
-                              type="button"
-                              onClick={() => handleOpenInlineCollect(b)}
-                              className={`h-[28px] max-h-[34px] px-3 rounded-[6px] text-[11px] font-medium transition inline-flex items-center gap-1 shadow-xs cursor-pointer ${
-                                isInlineOpen
-                                  ? "bg-slate-800 text-white"
-                                  : "bg-[#f16623] hover:bg-[#d95318] text-white"
-                              }`}
+                              onClick={() => setHistoryBooking(b)}
+                              title="Payment History"
+                              className="h-[30px] px-2 rounded-[6px] border border-slate-200 bg-white text-slate-600 hover:text-slate-900 text-xs flex items-center gap-1 transition"
                             >
-                              <IndianRupee className="w-3 h-3" />
-                              <span>{isInlineOpen ? "Cancel" : "Collect"}</span>
+                              <History className="w-3.5 h-3.5" />
                             </button>
-                          </td>
-                        </tr>
-
-                        {/* INLINE QUICK COLLECT ACTION ROW */}
-                        {isInlineOpen && (
-                          <tr className="bg-orange-50/50 border-b-2 border-orange-200">
-                            <td colSpan={9} className="p-3">
-                              <div className="bg-white p-3 rounded-[6px] border border-[#f16623]/30 shadow-xs space-y-2.5">
-                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
-                                  <div className="flex items-center gap-2">
-                                    <span className="w-2 h-2 rounded-full bg-[#f16623]"></span>
-                                    <span className="text-xs font-medium text-slate-900">
-                                      Collect Payment for #{b.bookingNumber} ({b.clientName})
-                                    </span>
-                                    <span className="text-[11px] text-amber-600 font-mono font-medium">
-                                      Due: ₹{b.balanceAmount.toLocaleString("en-IN")}
-                                    </span>
-                                  </div>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenDrawerCollect(b)}
-                                    className="text-[11px] text-[#f16623] hover:underline font-medium cursor-pointer"
-                                  >
-                                    Open Full Drawer View
-                                  </button>
-                                </div>
-
-                                <div className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end">
-                                  {/* Field 1: Amount */}
-                                  <div className="sm:col-span-4 space-y-1">
-                                    <div className="flex items-center justify-between">
-                                      <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider">
-                                        Payment Amount (₹) <span className="text-[#f16623]">*</span>
-                                      </label>
-                                      <button
-                                        type="button"
-                                        onClick={() => setInlineAmount(String(b.balanceAmount))}
-                                        className="text-[10px] text-[#f16623] hover:underline font-medium"
-                                      >
-                                        Full Due (₹{b.balanceAmount})
-                                      </button>
-                                    </div>
-                                    <div className="relative">
-                                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-mono">
-                                        ₹
-                                      </span>
-                                      <input
-                                        type="number"
-                                        min="1"
-                                        max={b.balanceAmount}
-                                        value={inlineAmount}
-                                        onChange={(e) => setInlineAmount(e.target.value)}
-                                        placeholder="Enter amount"
-                                        className="w-full h-[34px] max-h-[34px] pl-6 pr-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal"
-                                      />
-                                    </div>
-                                  </div>
-
-                                  {/* Field 2: Payment Method */}
-                                  <div className="sm:col-span-5 space-y-1">
-                                    <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
-                                      Payment Method <span className="text-[#f16623]">*</span>
-                                    </label>
-                                    <div className="grid grid-cols-4 gap-1">
-                                      <button
-                                        type="button"
-                                        onClick={() => setInlineMethod("cash")}
-                                        className={`h-[34px] max-h-[34px] rounded-[6px] border text-[11px] font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
-                                          inlineMethod === "cash"
-                                            ? "bg-emerald-50 border-emerald-500 text-emerald-700 shadow-xs"
-                                            : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-white"
-                                        }`}
-                                      >
-                                        <Banknote className="w-3 h-3" />
-                                        <span>Cash</span>
-                                      </button>
-
-                                      <button
-                                        type="button"
-                                        onClick={() => setInlineMethod("upi")}
-                                        className={`h-[34px] max-h-[34px] rounded-[6px] border text-[11px] font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
-                                          inlineMethod === "upi"
-                                            ? "bg-blue-50 border-blue-500 text-blue-700 shadow-xs"
-                                            : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-white"
-                                        }`}
-                                      >
-                                        <QrCode className="w-3 h-3" />
-                                        <span>UPI</span>
-                                      </button>
-
-                                      <button
-                                        type="button"
-                                        onClick={() => setInlineMethod("card")}
-                                        className={`h-[34px] max-h-[34px] rounded-[6px] border text-[11px] font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
-                                          inlineMethod === "card"
-                                            ? "bg-purple-50 border-purple-500 text-purple-700 shadow-xs"
-                                            : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-white"
-                                        }`}
-                                      >
-                                        <CreditCard className="w-3 h-3" />
-                                        <span>Card</span>
-                                      </button>
-
-                                      <button
-                                        type="button"
-                                        onClick={() => setInlineMethod("split")}
-                                        className={`h-[34px] max-h-[34px] rounded-[6px] border text-[11px] font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
-                                          inlineMethod === "split"
-                                            ? "bg-orange-50 border-[#f16623] text-[#f16623] shadow-xs"
-                                            : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-white"
-                                        }`}
-                                      >
-                                        <Coins className="w-3 h-3" />
-                                        <span>Split</span>
-                                      </button>
-                                    </div>
-                                  </div>
-
-                                  {/* Field 3: Save Button */}
-                                  <div className="sm:col-span-3 flex items-center gap-1.5">
-                                    <button
-                                      type="button"
-                                      disabled={isSubmittingInline}
-                                      onClick={() => handleSubmitInlinePayment(b)}
-                                      className="flex-1 h-[34px] max-h-[34px] px-3 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] disabled:opacity-60 text-white text-xs font-medium shadow-xs transition flex items-center justify-center gap-1.5 active:scale-[0.98] cursor-pointer"
-                                    >
-                                      {isSubmittingInline ? (
-                                        <>
-                                          <Loader2 className="w-3 h-3 animate-spin" />
-                                          <span>Saving...</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <CheckCircle2 className="w-3.5 h-3.5" />
-                                          <span>Save Payment</span>
-                                        </>
-                                      )}
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      onClick={() => setActiveInlineOrderId(null)}
-                                      className="h-[34px] max-h-[34px] w-[34px] rounded-[6px] border border-slate-200 hover:bg-slate-100 text-slate-500 flex items-center justify-center transition cursor-pointer"
-                                      title="Close"
-                                    >
-                                      <X className="w-3.5 h-3.5" />
-                                    </button>
-                                  </div>
-                                </div>
-
-                                {/* Split Breakdown if Split is chosen */}
-                                {inlineMethod === "split" && (
-                                  <div className="pt-2 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                    <div className="space-y-0.5">
-                                      <label className="text-[9px] font-medium text-slate-600 flex items-center gap-1">
-                                        <Banknote className="w-2.5 h-2.5 text-emerald-600" />
-                                        Cash (₹)
-                                      </label>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        placeholder="0"
-                                        value={inlineSplitCash}
-                                        onChange={(e) => setInlineSplitCash(e.target.value)}
-                                        className="w-full h-[32px] px-2 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
-                                      />
-                                    </div>
-
-                                    <div className="space-y-0.5">
-                                      <label className="text-[9px] font-medium text-slate-600 flex items-center gap-1">
-                                        <QrCode className="w-2.5 h-2.5 text-blue-600" />
-                                        UPI (₹)
-                                      </label>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        placeholder="0"
-                                        value={inlineSplitUpi}
-                                        onChange={(e) => setInlineSplitUpi(e.target.value)}
-                                        className="w-full h-[32px] px-2 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
-                                      />
-                                    </div>
-
-                                    <div className="space-y-0.5">
-                                      <label className="text-[9px] font-medium text-slate-600 flex items-center gap-1">
-                                        <CreditCard className="w-2.5 h-2.5 text-purple-600" />
-                                        Card (₹)
-                                      </label>
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        placeholder="0"
-                                        value={inlineSplitCard}
-                                        onChange={(e) => setInlineSplitCard(e.target.value)}
-                                        className="w-full h-[32px] px-2 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800"
-                                      />
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </Fragment>
+                            <button
+                              onClick={() => handleOpenCollectModal(b)}
+                              className="h-[30px] px-2.5 rounded-[6px] bg-[#f16623] hover:bg-[#d9551a] text-white text-xs font-medium flex items-center gap-1 transition shadow-xs"
+                            >
+                              <Banknote className="w-3.5 h-3.5" />
+                              <span>Collect</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
                     );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TAB 2: CUSTOMER WISE VIEW */}
-      {activeTab === "customers" && (
-        <div className="bg-white rounded-[6px] border border-slate-200/80 shadow-xs overflow-hidden">
-          <div className="px-3.5 py-2.5 border-b border-slate-100 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-[2px] bg-blue-500"></span>
-              <h3 className="text-xs font-medium text-slate-900">
-                Customer Dues Summary
-              </h3>
-            </div>
-            <span className="text-[11px] text-slate-400 font-normal">
-              {filteredCustomerSummaries.length} customer{filteredCustomerSummaries.length === 1 ? "" : "s"} with dues
-            </span>
-          </div>
-
-          {filteredCustomerSummaries.length === 0 ? (
-            <div className="py-10 px-4 text-center">
-              <div className="w-10 h-10 rounded-[6px] bg-blue-50 border border-blue-200 flex items-center justify-center mx-auto text-blue-600 mb-2">
-                <User className="w-5 h-5" />
-              </div>
-              <h4 className="text-xs font-medium text-slate-800">
-                No customer credit dues
-              </h4>
-              <p className="text-[11px] text-slate-400 max-w-sm mx-auto mt-0.5 font-normal">
-                There are no retail customers with unpaid partial balances.
-              </p>
-            </div>
-          ) : (
-            <div className="divide-y divide-slate-100">
-              {filteredCustomerSummaries.map((c) => {
-                const isExpanded = expandedClientId === c.clientId;
-
-                return (
-                  <div key={c.clientId} className="p-3 hover:bg-slate-50/50 transition">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-[32px] h-[32px] rounded-[6px] bg-blue-50 text-blue-600 flex items-center justify-center font-medium text-xs">
-                          <User className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-medium text-slate-900">
-                              {c.clientName}
-                            </span>
-                            <span className="px-1.5 py-0.2 rounded-[3px] bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-medium">
-                              {c.ordersCount} Due Order{c.ordersCount === 1 ? "" : "s"}
-                            </span>
-                          </div>
-                          <span className="text-[10px] text-slate-400 flex items-center gap-1 font-normal">
-                            <PhoneCall className="w-2.5 h-2.5" />
-                            {c.clientMobile}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Amounts Breakdown & Expand Toggle */}
-                      <div className="flex items-center gap-4">
-                        <div className="text-right">
-                          <span className="text-[10px] text-slate-400 block font-normal">
-                            Net: ₹{c.totalNetAmount.toLocaleString("en-IN")} • Paid: ₹{c.totalReceivedAmount.toLocaleString("en-IN")}
-                          </span>
-                          <span className="text-xs font-mono font-medium text-amber-600">
-                            Total Due: ₹{c.totalBalanceDue.toLocaleString("en-IN")}
-                          </span>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setExpandedClientId(isExpanded ? null : c.clientId)
-                          }
-                          className="h-[30px] max-h-[34px] px-2.5 rounded-[6px] border border-slate-200 hover:bg-white text-slate-600 text-xs font-medium flex items-center gap-1 transition cursor-pointer"
-                        >
-                          <span>{isExpanded ? "Hide Orders" : "View Orders"}</span>
-                          {isExpanded ? (
-                            <ChevronUp className="w-3.5 h-3.5" />
-                          ) : (
-                            <ChevronDown className="w-3.5 h-3.5" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Expanded Individual Orders for Customer */}
-                    {isExpanded && (
-                      <div className="mt-2.5 pt-2.5 border-t border-slate-100 space-y-1.5">
-                        <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider block">
-                          Pending Orders Manifest
-                        </span>
-                        <div className="space-y-1.5">
-                          {c.orders.map((ord) => (
-                            <div
-                              key={ord.id}
-                              className="p-2 rounded-[6px] bg-slate-50 border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs"
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono text-[11px] font-medium text-slate-800 bg-white px-1.5 py-0.5 rounded border border-slate-200">
-                                  {ord.bookingNumber}
-                                </span>
-                                <span className="text-slate-700 font-medium">
-                                  {ord.fromLocation} ➔ {ord.toLocation}
-                                </span>
-                                <span className="text-[10px] text-slate-400 font-normal">
-                                  ({ord.planName})
-                                </span>
-                              </div>
-
-                              <div className="flex items-center gap-3">
-                                <span className="font-mono text-slate-500 text-[11px]">
-                                  Paid: ₹{ord.receivedAmount.toLocaleString("en-IN")}
-                                </span>
-                                <span className="font-mono font-medium text-amber-600 text-xs">
-                                  Due: ₹{ord.balanceAmount.toLocaleString("en-IN")}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenDrawerCollect(ord)}
-                                  className="h-[26px] max-h-[34px] px-2 rounded-[4px] bg-[#f16623] hover:bg-[#d95318] text-white text-[10px] font-medium transition inline-flex items-center gap-1 cursor-pointer"
-                                >
-                                  <IndianRupee className="w-2.5 h-2.5" />
-                                  <span>Collect</span>
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* TAB 3: BUSINESS OWNER WISE VIEW */}
-      {activeTab === "owners" && (
-        <div className="bg-white rounded-[6px] border border-slate-200/80 shadow-xs overflow-hidden">
-          <div className="px-3.5 py-2.5 border-b border-slate-100 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-[2px] bg-purple-500"></span>
-              <h3 className="text-xs font-medium text-slate-900">
-                Business Owner & Partner Dues Summary
-              </h3>
-            </div>
-            <span className="text-[11px] text-slate-400 font-normal">
-              {filteredOwnerSummaries.length} business owner{filteredOwnerSummaries.length === 1 ? "" : "s"} with dues
-            </span>
-          </div>
-
-          {filteredOwnerSummaries.length === 0 ? (
-            <div className="py-10 px-4 text-center">
-              <div className="w-10 h-10 rounded-[6px] bg-purple-50 border border-purple-200 flex items-center justify-center mx-auto text-purple-600 mb-2">
-                <Building2 className="w-5 h-5" />
-              </div>
-              <h4 className="text-xs font-medium text-slate-800">
-                No business owner credit dues
-              </h4>
-              <p className="text-[11px] text-slate-400 max-w-sm mx-auto mt-0.5 font-normal">
-                There are no corporate or partner accounts with outstanding credit balances.
-              </p>
-            </div>
-          ) : (
-            <div className="divide-y divide-slate-100">
-              {filteredOwnerSummaries.map((o) => {
-                const isExpanded = expandedClientId === o.clientId;
-
-                return (
-                  <div key={o.clientId} className="p-3 hover:bg-slate-50/50 transition">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-[32px] h-[32px] rounded-[6px] bg-purple-50 text-purple-600 flex items-center justify-center font-medium text-xs">
-                          <Building2 className="w-4 h-4" />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-medium text-slate-900">
-                              {o.clientName}
-                            </span>
-                            {o.companyName && (
-                              <span className="text-[11px] text-slate-500 font-normal">
-                                • {o.companyName}
-                              </span>
-                            )}
-                            <span className="px-1.5 py-0.2 rounded-[3px] bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-medium">
-                              {o.ordersCount} Due Order{o.ordersCount === 1 ? "" : "s"}
-                            </span>
-                          </div>
-                          <span className="text-[10px] text-slate-400 flex items-center gap-1 font-normal">
-                            <PhoneCall className="w-2.5 h-2.5" />
-                            {o.clientMobile}
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Amounts Breakdown & Expand Toggle */}
-                      <div className="flex items-center gap-4">
-                        <div className="text-right">
-                          <span className="text-[10px] text-slate-400 block font-normal">
-                            Net: ₹{o.totalNetAmount.toLocaleString("en-IN")} • Paid: ₹{o.totalReceivedAmount.toLocaleString("en-IN")}
-                          </span>
-                          <span className="text-xs font-mono font-medium text-amber-600">
-                            Total Due: ₹{o.totalBalanceDue.toLocaleString("en-IN")}
-                          </span>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setExpandedClientId(isExpanded ? null : o.clientId)
-                          }
-                          className="h-[30px] max-h-[34px] px-2.5 rounded-[6px] border border-slate-200 hover:bg-white text-slate-600 text-xs font-medium flex items-center gap-1 transition cursor-pointer"
-                        >
-                          <span>{isExpanded ? "Hide Orders" : "View Orders"}</span>
-                          {isExpanded ? (
-                            <ChevronUp className="w-3.5 h-3.5" />
-                          ) : (
-                            <ChevronDown className="w-3.5 h-3.5" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Expanded Individual Orders for Business Owner */}
-                    {isExpanded && (
-                      <div className="mt-2.5 pt-2.5 border-t border-slate-100 space-y-1.5">
-                        <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider block">
-                          Pending Corporate Orders Manifest
-                        </span>
-                        <div className="space-y-1.5">
-                          {o.orders.map((ord) => (
-                            <div
-                              key={ord.id}
-                              className="p-2 rounded-[6px] bg-slate-50 border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs"
-                            >
-                              <div className="flex items-center gap-2">
-                                <span className="font-mono text-[11px] font-medium text-slate-800 bg-white px-1.5 py-0.5 rounded border border-slate-200">
-                                  {ord.bookingNumber}
-                                </span>
-                                <span className="text-slate-700 font-medium">
-                                  {ord.fromLocation} ➔ {ord.toLocation}
-                                </span>
-                                <span className="text-[10px] text-slate-400 font-normal">
-                                  ({ord.planName})
-                                </span>
-                              </div>
-
-                              <div className="flex items-center gap-3">
-                                <span className="font-mono text-slate-500 text-[11px]">
-                                  Paid: ₹{ord.receivedAmount.toLocaleString("en-IN")}
-                                </span>
-                                <span className="font-mono font-medium text-amber-600 text-xs">
-                                  Due: ₹{ord.balanceAmount.toLocaleString("en-IN")}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenDrawerCollect(ord)}
-                                  className="h-[26px] max-h-[34px] px-2 rounded-[4px] bg-[#f16623] hover:bg-[#d95318] text-white text-[10px] font-medium transition inline-flex items-center gap-1 cursor-pointer"
-                                >
-                                  <IndianRupee className="w-2.5 h-2.5" />
-                                  <span>Collect</span>
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Collect Partial Payment Off-Canvas Drawer */}
-      <OffCanvas
-        isOpen={Boolean(selectedBookingForPayment)}
-        onClose={() => {
-          if (!isSubmittingPayment) setSelectedBookingForPayment(null);
-        }}
-        title="Collect Credit Payment"
-        subtitle={`Settle balance for Booking #${selectedBookingForPayment?.bookingNumber || ""}`}
-      >
-        {selectedBookingForPayment && (
-          <form onSubmit={handleSubmitDrawerPayment} className="space-y-3.5">
-            {/* Booking & Client Overview Card */}
-            <div className="bg-slate-50/70 p-2.5 rounded-[6px] border border-slate-200/80 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-mono font-medium text-slate-900 bg-white px-2 py-0.5 rounded border border-slate-200">
-                  {selectedBookingForPayment.bookingNumber}
-                </span>
-                <span
-                  className={`px-2 py-0.5 rounded-[3px] text-[10px] font-medium border ${
-                    selectedBookingForPayment.clientType === "customer"
-                      ? "bg-blue-50 text-blue-700 border-blue-200"
-                      : "bg-purple-50 text-purple-700 border-purple-200"
-                  }`}
-                >
-                  {selectedBookingForPayment.clientType === "customer"
-                    ? "Customer"
-                    : "Business Owner"}
-                </span>
-              </div>
-
-              <div className="text-xs text-slate-800">
-                <span className="font-medium text-slate-900">
-                  {selectedBookingForPayment.clientName}
-                </span>
-                {selectedBookingForPayment.companyName && (
-                  <span className="text-slate-500 font-normal">
-                    {" "}
-                    ({selectedBookingForPayment.companyName})
-                  </span>
+                  })
                 )}
-                <span className="text-[11px] text-slate-400 block font-normal">
-                  {selectedBookingForPayment.clientMobile}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* COLLECT PAYMENT MODAL                                                  */}
+      {/* ===================================================================== */}
+      <OffCanvas
+        isOpen={!!collectingBooking}
+        onClose={() => setCollectingBooking(null)}
+        title="Collect Payment"
+        subtitle={`Recording receipt for trip #${collectingBooking?.bookingNumber || ""}`}
+        size="md"
+        widthClassName="max-w-md"
+      >
+        {collectingBooking && (
+          <form onSubmit={handleSubmitCollectPayment} className="space-y-3.5 text-xs font-normal">
+            {/* Bill & Balance Breakdown Card */}
+            <div className="p-3 rounded-[6px] bg-slate-50 border border-slate-200 space-y-1">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Customer (Company):</span>
+                <span className="font-medium text-slate-900">
+                  {collectingBooking.customerName || collectingBooking.companyName || "Direct"}
                 </span>
               </div>
-
-              <div className="text-xs text-slate-600 flex items-center gap-1.5 pt-1 border-t border-slate-200/60">
-                <span className="font-medium">
-                  {selectedBookingForPayment.fromLocation}
+              <div className="flex justify-between">
+                <span className="text-slate-500">Total Billed:</span>
+                <span className="font-mono text-slate-800">
+                  ₹{(Number(collectingBooking.grossAmount) || Number(collectingBooking.netAmount) || 0).toLocaleString("en-IN")}
                 </span>
-                <ArrowRight className="w-3 h-3 text-[#f16623]" />
-                <span className="font-medium">
-                  {selectedBookingForPayment.toLocation}
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Already Received:</span>
+                <span className="font-mono text-emerald-600">
+                  ₹{(Number(collectingBooking.receivedAmount) || 0).toLocaleString("en-IN")}
+                </span>
+              </div>
+              <div className="flex justify-between pt-1 border-t border-slate-200 font-medium">
+                <span className="text-amber-700">Remaining Balance Due:</span>
+                <span className="font-mono text-amber-700">
+                  ₹{(collectingBooking.balanceAmount ?? 0).toLocaleString("en-IN")}
                 </span>
               </div>
             </div>
 
-            {/* Financial Status Summary */}
-            <div className="bg-amber-50/50 p-2.5 rounded-[6px] border border-amber-200 grid grid-cols-3 gap-2 text-xs">
-              <div>
-                <span className="text-[10px] text-slate-500 block font-normal">
-                  Net Fare
-                </span>
-                <span className="font-mono font-medium text-slate-900">
-                  ₹{selectedBookingForPayment.netAmount.toLocaleString("en-IN")}
-                </span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-500 block font-normal">
-                  Paid So Far
-                </span>
-                <span className="font-mono font-medium text-emerald-600">
-                  ₹{selectedBookingForPayment.receivedAmount.toLocaleString("en-IN")}
-                </span>
-              </div>
-              <div>
-                <span className="text-[10px] text-amber-700 block font-medium">
-                  Current Due
-                </span>
-                <span className="font-mono font-medium text-amber-600 text-sm">
-                  ₹{selectedBookingForPayment.balanceAmount.toLocaleString("en-IN")}
-                </span>
-              </div>
-            </div>
-
-            {/* Payment Collection Amount Field */}
+            {/* Amount Input */}
             <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <label
-                  htmlFor="collect-amount"
-                  className="text-[10px] font-medium text-slate-600 uppercase tracking-wider"
-                >
-                  Amount to Collect (₹) <span className="text-[#f16623]">*</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() =>
-                    setCollectAmount(String(selectedBookingForPayment.balanceAmount))
-                  }
-                  className="text-[10px] text-[#f16623] hover:underline font-medium cursor-pointer"
-                >
-                  Full Due (₹{selectedBookingForPayment.balanceAmount.toLocaleString("en-IN")})
-                </button>
-              </div>
-
-              <div className="relative">
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-mono">
-                  ₹
-                </span>
-                <input
-                  id="collect-amount"
-                  type="number"
-                  min="1"
-                  max={selectedBookingForPayment.balanceAmount}
-                  required
-                  placeholder="e.g. 1500"
-                  value={collectAmount}
-                  onChange={(e) => setCollectAmount(e.target.value)}
-                  className="w-full h-[34px] max-h-[34px] pl-6 pr-3 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal transition"
-                />
-              </div>
-            </div>
-
-            {/* Payment Method Selection: Cash, UPI, Card, Split */}
-            <div className="space-y-1.5">
               <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
-                Payment Method <span className="text-[#f16623]">*</span>
+                AMOUNT TO COLLECT (₹) *
               </label>
+              <input
+                type="number"
+                step="any"
+                min="1"
+                max={collectingBooking.balanceAmount || undefined}
+                value={collectAmount}
+                onChange={(e) => setCollectAmount(e.target.value)}
+                placeholder="0.00"
+                required
+                className="w-full h-[34px] max-h-[34px] px-2.5 text-sm font-mono font-medium bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623]"
+              />
+            </div>
 
-              <div className="grid grid-cols-4 gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => setCollectMode("cash")}
-                  className={`h-[34px] max-h-[34px] rounded-[6px] border text-xs font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
-                    collectMode === "cash"
-                      ? "bg-emerald-50 border-emerald-500 text-emerald-700 shadow-xs"
-                      : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  <Banknote className="w-3.5 h-3.5" />
-                  <span>Cash</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setCollectMode("upi")}
-                  className={`h-[34px] max-h-[34px] rounded-[6px] border text-xs font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
-                    collectMode === "upi"
-                      ? "bg-blue-50 border-blue-500 text-blue-700 shadow-xs"
-                      : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  <QrCode className="w-3.5 h-3.5" />
-                  <span>UPI</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setCollectMode("card")}
-                  className={`h-[34px] max-h-[34px] rounded-[6px] border text-xs font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
-                    collectMode === "card"
-                      ? "bg-purple-50 border-purple-500 text-purple-700 shadow-xs"
-                      : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  <CreditCard className="w-3.5 h-3.5" />
-                  <span>Card</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setCollectMode("split")}
-                  className={`h-[34px] max-h-[34px] rounded-[6px] border text-xs font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
-                    collectMode === "split"
-                      ? "bg-orange-50 border-[#f16623] text-[#f16623] shadow-xs"
-                      : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-                  }`}
-                >
-                  <Coins className="w-3.5 h-3.5" />
-                  <span>Split</span>
-                </button>
+            {/* Payment Mode Selection: Cash, Card, UPI */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                PAYMENT MODE *
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { mode: "Cash" as const, icon: Banknote },
+                  { mode: "Card" as const, icon: CreditCard },
+                  { mode: "UPI" as const, icon: QrCode },
+                ].map(({ mode, icon: Icon }) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setCollectMode(mode)}
+                    className={`h-[34px] max-h-[34px] rounded-[6px] text-xs font-medium border flex items-center justify-center gap-1.5 transition ${
+                      collectMode === mode
+                        ? "border-[#f16623] bg-orange-50/50 text-[#f16623]"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    <span>{mode}</span>
+                  </button>
+                ))}
               </div>
             </div>
 
-            {/* Split Breakdown in Drawer */}
-            {collectMode === "split" && (
-              <div className="p-2 bg-slate-50 rounded-[6px] border border-orange-200 space-y-2">
-                <span className="text-[10px] font-medium text-slate-700 uppercase tracking-wider block">
-                  Split Amount Breakdown
-                </span>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
-                  <div className="space-y-0.5">
-                    <label className="text-[9px] font-medium text-slate-600 flex items-center gap-1">
-                      <Banknote className="w-2.5 h-2.5 text-emerald-600" />
-                      Cash (₹)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="0"
-                      value={collectSplitCash}
-                      onChange={(e) => setCollectSplitCash(e.target.value)}
-                      className="w-full h-[32px] px-2 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800"
-                    />
-                  </div>
-
-                  <div className="space-y-0.5">
-                    <label className="text-[9px] font-medium text-slate-600 flex items-center gap-1">
-                      <QrCode className="w-2.5 h-2.5 text-blue-600" />
-                      UPI (₹)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="0"
-                      value={collectSplitUpi}
-                      onChange={(e) => setCollectSplitUpi(e.target.value)}
-                      className="w-full h-[32px] px-2 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800"
-                    />
-                  </div>
-
-                  <div className="space-y-0.5">
-                    <label className="text-[9px] font-medium text-slate-600 flex items-center gap-1">
-                      <CreditCard className="w-2.5 h-2.5 text-purple-600" />
-                      Card (₹)
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder="0"
-                      value={collectSplitCard}
-                      onChange={(e) => setCollectSplitCard(e.target.value)}
-                      className="w-full h-[32px] px-2 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800"
-                    />
-                  </div>
-                </div>
+            {/* If UPI, Reference Number is mandatory */}
+            {collectMode === "UPI" && (
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-[#f16623] uppercase tracking-wider block">
+                  UPI REFERENCE NUMBER / UTR *
+                </label>
+                <input
+                  type="text"
+                  value={collectRefNumber}
+                  onChange={(e) => setCollectRefNumber(e.target.value)}
+                  placeholder="e.g. UPI/409218291039"
+                  required
+                  className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-[#f16623]/60 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623]"
+                />
               </div>
             )}
 
-            {/* Action Buttons */}
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+            {/* If Card, optional Transaction Ref */}
+            {collectMode === "Card" && (
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                  CARD TRANSACTION / APPROVAL CODE
+                </label>
+                <input
+                  type="text"
+                  value={collectRefNumber}
+                  onChange={(e) => setCollectRefNumber(e.target.value)}
+                  placeholder="e.g. APPR-893012"
+                  className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623]"
+                />
+              </div>
+            )}
+
+            {/* Notes */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                PAYMENT NOTES / REMARKS
+              </label>
+              <input
+                type="text"
+                value={collectNotes}
+                onChange={(e) => setCollectNotes(e.target.value)}
+                placeholder="e.g. Cleared by accounts dept / RTGS"
+                className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623]"
+              />
+            </div>
+
+            {/* Submit Action Buttons */}
+            <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
               <button
                 type="button"
-                disabled={isSubmittingPayment}
-                onClick={() => setSelectedBookingForPayment(null)}
-                className="h-[34px] max-h-[34px] px-3 rounded-[6px] border border-slate-200 hover:bg-slate-50 text-slate-600 text-xs font-medium transition cursor-pointer"
+                onClick={() => setCollectingBooking(null)}
+                className="h-[34px] max-h-[34px] px-3 text-xs text-slate-600 border border-slate-200 rounded-[6px] hover:bg-slate-50 transition"
               >
                 Cancel
               </button>
-
               <button
                 type="submit"
                 disabled={isSubmittingPayment}
-                className="h-[34px] max-h-[34px] px-4 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] disabled:opacity-60 text-white text-xs font-medium shadow-xs shadow-[#f16623]/25 transition flex items-center justify-center gap-1.5 active:scale-[0.98] cursor-pointer"
+                className="h-[34px] max-h-[34px] px-4 text-xs font-medium text-white bg-[#f16623] hover:bg-[#d9551a] rounded-[6px] flex items-center gap-1.5 transition disabled:opacity-50"
               >
                 {isSubmittingPayment ? (
                   <>
@@ -1602,12 +1072,137 @@ export default function CreditPage() {
                 ) : (
                   <>
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Save Payment</span>
+                    <span>Record Payment</span>
                   </>
                 )}
               </button>
             </div>
           </form>
+        )}
+      </OffCanvas>
+
+      {/* ===================================================================== */}
+      {/* PAYMENT HISTORY DRAWER                                                 */}
+      {/* ===================================================================== */}
+      <OffCanvas
+        isOpen={!!historyBooking}
+        onClose={() => setHistoryBooking(null)}
+        title="Payment History Trail"
+        subtitle={`Chronological receipts for Trip #${historyBooking?.bookingNumber || ""}`}
+        size="md"
+        widthClassName="max-w-md"
+      >
+        {historyBooking && (
+          <div className="space-y-4 text-xs font-normal">
+            {/* Quick Trip Header Info */}
+            <div className="p-3 rounded-[6px] bg-slate-50 border border-slate-200 space-y-1.5">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Customer (Company):</span>
+                <span className="font-medium text-slate-900">
+                  {historyBooking.customerName || historyBooking.companyName || "Direct"}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Passenger:</span>
+                <span className="text-slate-800">{historyBooking.travelerName || "N/A"}</span>
+              </div>
+              <div className="flex justify-between items-center pt-1 border-t border-slate-200">
+                <span className="text-slate-500">Total Bill:</span>
+                <span className="font-mono font-medium text-slate-900">
+                  ₹{(Number(historyBooking.grossAmount) || Number(historyBooking.netAmount) || 0).toLocaleString("en-IN")}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-emerald-700">Total Collected:</span>
+                <span className="font-mono font-medium text-emerald-600">
+                  ₹{(Number(historyBooking.receivedAmount) || 0).toLocaleString("en-IN")}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-amber-700">Balance Due:</span>
+                <span className="font-mono font-medium text-amber-600">
+                  ₹{(Number(historyBooking.balanceAmount) || 0).toLocaleString("en-IN")}
+                </span>
+              </div>
+            </div>
+
+            {/* Chronological List of Payments */}
+            <div className="space-y-2">
+              <div className="text-[11px] font-medium text-slate-600 uppercase tracking-wider">
+                PAYMENT TRANSACTIONS ({(historyBooking.paymentHistory || []).length})
+              </div>
+
+              {(!historyBooking.paymentHistory || historyBooking.paymentHistory.length === 0) ? (
+                <div className="p-6 text-center bg-slate-50 rounded-[6px] border border-dashed border-slate-200 text-slate-400">
+                  <Banknote className="w-6 h-6 mx-auto mb-1 text-slate-300" />
+                  <p>No payments recorded yet.</p>
+                  <p className="text-[10px] mt-0.5">This trip is currently marked as Unpaid.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {historyBooking.paymentHistory.map((item, idx) => (
+                    <div
+                      key={item.id || idx}
+                      className="p-2.5 rounded-[6px] border border-slate-200 bg-white space-y-1 hover:border-slate-300 transition"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 font-medium text-slate-900">
+                          {item.paymentMode === "Cash" && (
+                            <Banknote className="w-3.5 h-3.5 text-emerald-600" />
+                          )}
+                          {item.paymentMode === "Card" && (
+                            <CreditCard className="w-3.5 h-3.5 text-blue-600" />
+                          )}
+                          {item.paymentMode === "UPI" && (
+                            <QrCode className="w-3.5 h-3.5 text-purple-600" />
+                          )}
+                          <span>{item.paymentMode}</span>
+                        </div>
+                        <span className="font-mono font-medium text-emerald-600">
+                          +₹{(Number(item.amount) || 0).toLocaleString("en-IN")}
+                        </span>
+                      </div>
+
+                      <div className="text-[10px] text-slate-400 flex items-center justify-between">
+                        <span>
+                          {item.date} {item.time}
+                        </span>
+                        {item.referenceNumber && (
+                          <span className="font-mono text-slate-600">
+                            Ref: {item.referenceNumber}
+                          </span>
+                        )}
+                      </div>
+
+                      {item.notes && (
+                        <div className="text-[10px] text-slate-500 italic bg-slate-50 px-2 py-1 rounded-[4px]">
+                          &ldquo;{item.notes}&rdquo;
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Quick Action in History Drawer */}
+            {(historyBooking.balanceAmount ?? 0) > 0 && (
+              <div className="pt-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const b = historyBooking;
+                    setHistoryBooking(null);
+                    handleOpenCollectModal(b);
+                  }}
+                  className="w-full h-[34px] max-h-[34px] rounded-[6px] bg-[#f16623] hover:bg-[#d9551a] text-white text-xs font-medium flex items-center justify-center gap-1.5 transition"
+                >
+                  <Banknote className="w-3.5 h-3.5" />
+                  <span>Collect Remaining ₹{(historyBooking.balanceAmount ?? 0).toLocaleString("en-IN")}</span>
+                </button>
+              </div>
+            )}
+          </div>
         )}
       </OffCanvas>
     </div>

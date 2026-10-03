@@ -6,105 +6,225 @@ import {
   CreditCard,
   Banknote,
   QrCode,
-  Coins,
   Search,
   IndianRupee,
   Calendar,
-  ArrowRight,
   PhoneCall,
   Loader2,
   Receipt,
-  User,
   Building2,
-  FileCheck,
-  TrendingUp,
+  CheckCircle2,
+  AlertCircle,
+  Clock,
+  History,
+  Car,
+  MapPin,
+  X,
+  Filter,
 } from "lucide-react";
 import {
   collection,
   query,
   orderBy,
   onSnapshot,
-  type Timestamp,
+  doc,
+  updateDoc,
+  addDoc,
+  serverTimestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { OffCanvas } from "@/components/OffCanvas";
 
-interface PaymentSplits {
-  cash?: number;
-  upi?: number;
-  card?: number;
+export interface PaymentHistoryItem {
+  id: string;
+  date: string;
+  time: string;
+  amount: number;
+  paymentMode: "Cash" | "Card" | "UPI";
+  referenceNumber?: string;
+  notes?: string;
+  recordedAt: string;
 }
 
-interface PaymentRecord {
+export interface BookingPaymentItem {
+  id: string;
+  bookingNumber: string;
+  startDate?: string;
+  startTime?: string;
+  endDate?: string;
+  endTime?: string;
+  fromLocation?: string;
+  toLocation?: string;
+  entityName?: string;
+  customerName?: string;
+  companyName?: string;
+  travelerName?: string;
+  travelerMobile?: string;
+  vehicleCategoryName?: string;
+  vehicleNumber?: string;
+  driverName?: string;
+  driverMobile?: string;
+  tariffType?: string;
+  packageName?: string;
+  bookingStatus?: string;
+  paymentStatus?: "Unpaid" | "Partial" | "Paid";
+  grossAmount?: number;
+  netAmount?: number;
+  receivedAmount?: number;
+  balanceAmount?: number;
+  paymentHistory?: PaymentHistoryItem[];
+  createdAt?: any;
+  updatedAt?: any;
+}
+
+export interface LedgerTransaction {
   id: string;
   bookingId?: string;
   bookingNumber?: string;
-  clientType?: "customer" | "business_owner";
+  clientType?: string;
   clientName?: string;
   clientMobile?: string;
   companyName?: string;
   fromLocation?: string;
   toLocation?: string;
   amountCollected: number;
-  paymentMode: "cash" | "upi" | "card" | "split";
-  splits?: PaymentSplits | null;
-  note?: string;
-  createdAt?: Timestamp | null;
+  paymentMode: string;
+  referenceNumber?: string | null;
+  note?: string | null;
+  createdAt?: any;
 }
 
 export default function PaymentsPage() {
-  const [payments, setPayments] = useState<PaymentRecord[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<"pending" | "ledger">("pending");
+  const [bookings, setBookings] = useState<BookingPaymentItem[]>([]);
+  const [ledgerPayments, setLedgerPayments] = useState<LedgerTransaction[]>([]);
+  const [loadingBookings, setLoadingBookings] = useState(true);
+  const [loadingLedger, setLoadingLedger] = useState(true);
+
+  // Filters & Search
   const [searchQuery, setSearchQuery] = useState("");
-  const [dateFilter, setDateFilter] = useState<
-    "today" | "yesterday" | "this_month" | "all"
-  >("today");
+  const [statusFilter, setStatusFilter] = useState<"all" | "Unpaid" | "Partial">("all");
+  const [dateFilter, setDateFilter] = useState<"all" | "today" | "yesterday" | "this_month">("all");
   const [modeFilter, setModeFilter] = useState<string>("all");
 
-  // Subscribe to real-time payments collection
+  // Collect Payment Modal
+  const [collectingBooking, setCollectingBooking] = useState<BookingPaymentItem | null>(null);
+  const [collectAmount, setCollectAmount] = useState("");
+  const [collectMode, setCollectMode] = useState<"Cash" | "Card" | "UPI">("Cash");
+  const [collectRefNumber, setCollectRefNumber] = useState("");
+  const [collectNotes, setCollectNotes] = useState("");
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+
+  // Payment History Drawer
+  const [historyBooking, setHistoryBooking] = useState<BookingPaymentItem | null>(null);
+
+  // Feedback banner
+  const [feedback, setFeedback] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
+
+  // 1. Subscribe to real-time Bookings for pending unpaid & partial trips
   useEffect(() => {
     try {
-      const q = query(collection(db, "payments"), orderBy("createdAt", "desc"));
+      const q = query(collection(db, "bookings"), orderBy("createdAt", "desc"));
       const unsub = onSnapshot(
         q,
         (snap) => {
-          const items: PaymentRecord[] = snap.docs.map((docSnap) => ({
+          const items: BookingPaymentItem[] = snap.docs.map((docSnap) => ({
             id: docSnap.id,
-            ...(docSnap.data() as Omit<PaymentRecord, "id">),
-            amountCollected:
-              Number(
-                docSnap.data().amountCollected || docSnap.data().amount || 0
-              ) || 0,
+            ...(docSnap.data() as Omit<BookingPaymentItem, "id">),
           }));
-          setPayments(items);
-          setLoading(false);
+          setBookings(items);
+          setLoadingBookings(false);
         },
         (err) => {
-          console.error("Payments listener error, falling back:", err);
-          const fallback = query(collection(db, "payments"));
+          console.error("Bookings listener error, fallback query:", err);
+          const fallback = query(collection(db, "bookings"));
           const unsubFallback = onSnapshot(fallback, (snap) => {
-            const items: PaymentRecord[] = snap.docs.map((docSnap) => ({
+            const items: BookingPaymentItem[] = snap.docs.map((docSnap) => ({
               id: docSnap.id,
-              ...(docSnap.data() as Omit<PaymentRecord, "id">),
-              amountCollected:
-                Number(
-                  docSnap.data().amountCollected || docSnap.data().amount || 0
-                ) || 0,
+              ...(docSnap.data() as Omit<BookingPaymentItem, "id">),
             }));
-            setPayments(items);
-            setLoading(false);
+            setBookings(items);
+            setLoadingBookings(false);
           });
           return () => unsubFallback();
         }
       );
       return () => unsub();
     } catch (err) {
-      console.error("Failed to load payments:", err);
-      setLoading(false);
+      console.error("Failed to load bookings in payments page:", err);
+      setLoadingBookings(false);
     }
   }, []);
 
-  // Helper to check if a date is today
-  const isToday = (timestamp?: Timestamp | null) => {
+  // 2. Subscribe to real-time Ledger Transactions from payments collection
+  useEffect(() => {
+    try {
+      const q = query(collection(db, "payments"), orderBy("createdAt", "desc"));
+      const unsub = onSnapshot(
+        q,
+        (snap) => {
+          const items: LedgerTransaction[] = snap.docs.map((docSnap) => ({
+            id: docSnap.id,
+            ...(docSnap.data() as Omit<LedgerTransaction, "id">),
+            amountCollected:
+              Number(
+                docSnap.data().amountCollected || docSnap.data().amount || 0
+              ) || 0,
+          }));
+          setLedgerPayments(items);
+          setLoadingLedger(false);
+        },
+        (err) => {
+          console.error("Payments ledger listener error, fallback query:", err);
+          const fallback = query(collection(db, "payments"));
+          const unsubFallback = onSnapshot(fallback, (snap) => {
+            const items: LedgerTransaction[] = snap.docs.map((docSnap) => ({
+              id: docSnap.id,
+              ...(docSnap.data() as Omit<LedgerTransaction, "id">),
+              amountCollected:
+                Number(
+                  docSnap.data().amountCollected || docSnap.data().amount || 0
+                ) || 0,
+            }));
+            setLedgerPayments(items);
+            setLoadingLedger(false);
+          });
+          return () => unsubFallback();
+        }
+      );
+      return () => unsub();
+    } catch (err) {
+      console.error("Failed to load payments ledger:", err);
+      setLoadingLedger(false);
+    }
+  }, []);
+
+  // Filter ONLY pending bookings (Unpaid & Partial, balance > 0)
+  const pendingBookings = useMemo(() => {
+    return bookings.filter((b) => {
+      const balance = Number(b.balanceAmount) || 0;
+      const status = b.paymentStatus;
+      if (status === "Paid") return false;
+      return balance > 0 || status === "Unpaid" || status === "Partial";
+    });
+  }, [bookings]);
+
+  // Aggregate Metrics for Header
+  const totalPendingDues = useMemo(() => {
+    return pendingBookings.reduce(
+      (sum, b) => sum + (Number(b.balanceAmount) || 0),
+      0
+    );
+  }, [pendingBookings]);
+
+  const totalAllTimeCollected = useMemo(() => {
+    return ledgerPayments.reduce((sum, p) => sum + (p.amountCollected || 0), 0);
+  }, [ledgerPayments]);
+
+  const isToday = (timestamp?: any) => {
     if (!timestamp || typeof timestamp.toDate !== "function") return false;
     const d = timestamp.toDate();
     const today = new Date();
@@ -115,8 +235,7 @@ export default function PaymentsPage() {
     );
   };
 
-  // Helper to check if a date is yesterday
-  const isYesterday = (timestamp?: Timestamp | null) => {
+  const isYesterday = (timestamp?: any) => {
     if (!timestamp || typeof timestamp.toDate !== "function") return false;
     const d = timestamp.toDate();
     const yesterday = new Date();
@@ -128,8 +247,7 @@ export default function PaymentsPage() {
     );
   };
 
-  // Helper to check if a date is this month
-  const isThisMonth = (timestamp?: Timestamp | null) => {
+  const isThisMonth = (timestamp?: any) => {
     if (!timestamp || typeof timestamp.toDate !== "function") return false;
     const d = timestamp.toDate();
     const today = new Date();
@@ -139,73 +257,200 @@ export default function PaymentsPage() {
     );
   };
 
-  // 1. TODAY'S COLLECTIONS & MODE BREAKDOWN
-  const todayPayments = useMemo(() => {
-    return payments.filter((p) => isToday(p.createdAt));
-  }, [payments]);
-
-  const todayTotal = useMemo(() => {
-    return todayPayments.reduce((sum, p) => sum + (p.amountCollected || 0), 0);
-  }, [todayPayments]);
-
-  const todayCash = useMemo(() => {
-    return todayPayments
-      .filter((p) => p.paymentMode === "cash")
+  const todayCollected = useMemo(() => {
+    return ledgerPayments
+      .filter((p) => isToday(p.createdAt))
       .reduce((sum, p) => sum + (p.amountCollected || 0), 0);
-  }, [todayPayments]);
+  }, [ledgerPayments]);
 
-  const todayUpi = useMemo(() => {
-    return todayPayments
-      .filter((p) => p.paymentMode === "upi")
-      .reduce((sum, p) => sum + (p.amountCollected || 0), 0);
-  }, [todayPayments]);
+  // Filtered Pending Bookings
+  const filteredPendingBookings = useMemo(() => {
+    let result = pendingBookings;
 
-  const todayCard = useMemo(() => {
-    return todayPayments
-      .filter((p) => p.paymentMode === "card")
-      .reduce((sum, p) => sum + (p.amountCollected || 0), 0);
-  }, [todayPayments]);
+    if (statusFilter !== "all") {
+      result = result.filter((b) => b.paymentStatus === statusFilter);
+    }
 
-  const todaySplit = useMemo(() => {
-    return todayPayments
-      .filter((p) => p.paymentMode === "split")
-      .reduce((sum, p) => sum + (p.amountCollected || 0), 0);
-  }, [todayPayments]);
-
-  // All-time total collection
-  const allTimeTotal = useMemo(() => {
-    return payments.reduce((sum, p) => sum + (p.amountCollected || 0), 0);
-  }, [payments]);
-
-  // Filtered Payments List
-  const filteredPayments = useMemo(() => {
-    return payments.filter((p) => {
-      // Date filter
-      if (dateFilter === "today" && !isToday(p.createdAt)) return false;
-      if (dateFilter === "yesterday" && !isYesterday(p.createdAt)) return false;
-      if (dateFilter === "this_month" && !isThisMonth(p.createdAt)) return false;
-
-      // Mode filter
-      if (modeFilter !== "all" && p.paymentMode !== modeFilter) return false;
-
-      // Text search
-      const q = searchQuery.trim().toLowerCase();
-      if (!q) return true;
-      return (
-        p.bookingNumber?.toLowerCase().includes(q) ||
-        p.clientName?.toLowerCase().includes(q) ||
-        p.clientMobile?.toLowerCase().includes(q) ||
-        p.fromLocation?.toLowerCase().includes(q) ||
-        p.toLocation?.toLowerCase().includes(q) ||
-        p.paymentMode?.toLowerCase().includes(q) ||
-        (p.companyName && p.companyName.toLowerCase().includes(q)) ||
-        (p.note && p.note.toLowerCase().includes(q))
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      result = result.filter(
+        (b) =>
+          b.bookingNumber?.toLowerCase().includes(q) ||
+          b.customerName?.toLowerCase().includes(q) ||
+          b.companyName?.toLowerCase().includes(q) ||
+          b.travelerName?.toLowerCase().includes(q) ||
+          b.travelerMobile?.includes(q) ||
+          b.fromLocation?.toLowerCase().includes(q) ||
+          b.toLocation?.toLowerCase().includes(q) ||
+          b.vehicleNumber?.toLowerCase().includes(q) ||
+          b.driverName?.toLowerCase().includes(q)
       );
-    });
-  }, [payments, dateFilter, modeFilter, searchQuery]);
+    }
+
+    return result;
+  }, [pendingBookings, statusFilter, searchQuery]);
+
+  // Filtered Ledger Transactions
+  const filteredLedger = useMemo(() => {
+    let result = ledgerPayments;
+
+    // Date filter
+    if (dateFilter === "today") {
+      result = result.filter((p) => isToday(p.createdAt));
+    } else if (dateFilter === "yesterday") {
+      result = result.filter((p) => isYesterday(p.createdAt));
+    } else if (dateFilter === "this_month") {
+      result = result.filter((p) => isThisMonth(p.createdAt));
+    }
+
+    // Payment Mode filter
+    if (modeFilter !== "all") {
+      result = result.filter(
+        (p) => (p.paymentMode || "").toLowerCase() === modeFilter.toLowerCase()
+      );
+    }
+
+    // Search query
+    const q = searchQuery.trim().toLowerCase();
+    if (q) {
+      result = result.filter(
+        (p) =>
+          p.bookingNumber?.toLowerCase().includes(q) ||
+          p.clientName?.toLowerCase().includes(q) ||
+          p.companyName?.toLowerCase().includes(q) ||
+          p.clientMobile?.includes(q) ||
+          p.referenceNumber?.toLowerCase().includes(q) ||
+          p.note?.toLowerCase().includes(q)
+      );
+    }
+
+    return result;
+  }, [ledgerPayments, dateFilter, modeFilter, searchQuery]);
+
+  // Open Collect Payment Modal
+  const handleOpenCollectModal = (b: BookingPaymentItem) => {
+    setCollectingBooking(b);
+    const balance =
+      b.balanceAmount ??
+      Math.max(
+        0,
+        (Number(b.grossAmount) || Number(b.netAmount) || 0) -
+          (Number(b.receivedAmount) || 0)
+      );
+    setCollectAmount(String(balance));
+    setCollectMode("Cash");
+    setCollectRefNumber("");
+    setCollectNotes("");
+  };
+
+  // Submit Collect Payment
+  const handleSubmitCollectPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!collectingBooking) return;
+
+    const amountNum = Number(collectAmount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      alert("Please enter a valid amount greater than ₹0.");
+      return;
+    }
+
+    if (collectMode === "UPI" && !collectRefNumber.trim()) {
+      alert("Please enter the UPI Reference Number (UTR / Ref #).");
+      return;
+    }
+
+    const currentBalance =
+      collectingBooking.balanceAmount ??
+      Math.max(
+        0,
+        (Number(collectingBooking.grossAmount) || Number(collectingBooking.netAmount) || 0) -
+          (Number(collectingBooking.receivedAmount) || 0)
+      );
+
+    if (amountNum > currentBalance) {
+      alert(
+        `Amount cannot exceed current balance due of ₹${currentBalance.toLocaleString("en-IN")}.`
+      );
+      return;
+    }
+
+    setIsSubmittingPayment(true);
+
+    try {
+      const now = new Date();
+      const currentReceived = Number(collectingBooking.receivedAmount) || 0;
+      const newReceived = currentReceived + amountNum;
+      const totalPayable =
+        Number(collectingBooking.grossAmount) ||
+        Number(collectingBooking.netAmount) ||
+        0;
+      const newBalance = Math.max(0, totalPayable - newReceived);
+
+      let newPayStatus: "Unpaid" | "Partial" | "Paid" = "Partial";
+      if (newBalance <= 0) newPayStatus = "Paid";
+      else if (newReceived <= 0) newPayStatus = "Unpaid";
+
+      const newHistoryItem: PaymentHistoryItem = {
+        id: `pay-${Date.now()}`,
+        date: now.toISOString().split("T")[0],
+        time: `${String(now.getHours()).padStart(2, "0")}:${String(
+          now.getMinutes()
+        ).padStart(2, "0")}`,
+        amount: amountNum,
+        paymentMode: collectMode,
+        referenceNumber: collectRefNumber.trim() || undefined,
+        notes: collectNotes.trim() || undefined,
+        recordedAt: now.toISOString(),
+      };
+
+      const updatedHistory = [
+        ...(collectingBooking.paymentHistory || []),
+        newHistoryItem,
+      ];
+
+      // 1. Update Booking record in Firestore
+      await updateDoc(doc(db, "bookings", collectingBooking.id), {
+        receivedAmount: newReceived,
+        balanceAmount: newBalance,
+        paymentStatus: newPayStatus,
+        paymentHistory: updatedHistory,
+        updatedAt: serverTimestamp(),
+      });
+
+      // 2. Add entry to Payments Ledger
+      await addDoc(collection(db, "payments"), {
+        bookingId: collectingBooking.id,
+        bookingNumber: collectingBooking.bookingNumber,
+        clientType: "customer",
+        clientName: collectingBooking.customerName || collectingBooking.companyName || "Direct",
+        clientMobile: collectingBooking.travelerMobile || "",
+        companyName: collectingBooking.customerName || collectingBooking.companyName || "Direct",
+        fromLocation: collectingBooking.fromLocation || "",
+        toLocation: collectingBooking.toLocation || "",
+        amountCollected: amountNum,
+        paymentMode: collectMode.toLowerCase(),
+        referenceNumber: collectRefNumber.trim() || null,
+        note: collectNotes.trim() || null,
+        createdAt: serverTimestamp(),
+      });
+
+      setFeedback({
+        type: "success",
+        message: `₹${amountNum.toLocaleString("en-IN")} collected via ${collectMode.toUpperCase()} for Booking #${collectingBooking.bookingNumber}!`,
+      });
+
+      setCollectingBooking(null);
+      setTimeout(() => setFeedback(null), 4000);
+    } catch (err) {
+      console.error("Error submitting collected payment:", err);
+      alert("Failed to record payment. Please try again.");
+    } finally {
+      setIsSubmittingPayment(false);
+    }
+  };
 
   return (
-    <div className="w-full space-y-3">
+    <div className="w-full space-y-3 font-normal text-slate-800">
       {/* Breadcrumbs Navigation */}
       <nav className="flex items-center gap-1.5 text-xs text-slate-500 font-normal">
         <Link href="/dashboard" className="hover:text-slate-800 transition">
@@ -214,36 +459,36 @@ export default function PaymentsPage() {
         <span className="text-slate-300">/</span>
         <span className="text-slate-500">FINANCIALS</span>
         <span className="text-slate-300">/</span>
-        <span className="text-[#f16623] font-medium">Payments</span>
+        <span className="text-[#f16623] font-medium">Payments & Collections</span>
       </nav>
 
       {/* Top Header Card */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-white p-3 rounded-[6px] border border-slate-200/80 shadow-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-white p-3 rounded-[6px] border border-slate-200 shadow-xs">
         <div className="flex items-center gap-2.5">
           <div className="w-[34px] h-[34px] max-h-[34px] rounded-[6px] bg-orange-50 border border-[#f16623]/25 flex items-center justify-center text-[#f16623]">
-            <CreditCard className="w-4 h-4" />
+            <Banknote className="w-4 h-4" />
           </div>
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-sm sm:text-base font-medium text-slate-900 leading-tight">
-                Daily Collections & Payment Register
+                Payments & Collections
               </h1>
-              <span className="px-2 py-0.5 rounded-[6px] text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                Live Sync
+              <span className="px-2 py-0.5 rounded-[6px] text-[10px] font-medium bg-amber-50 text-amber-700 border border-amber-200">
+                {pendingBookings.length} Trips with Dues
               </span>
             </div>
             <p className="text-[11px] text-slate-400 font-normal">
-              Today&apos;s collections breakdown by payment mode & complete receipts log
+              Collect unpaid & partial amounts (Cash, Card, UPI with Ref #) and track chronological payment history
             </p>
           </div>
         </div>
 
-        {/* Search */}
+        {/* Global Search Input */}
         <div className="relative sm:w-64">
           <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
           <input
             type="text"
-            placeholder="Search receipt, client, booking..."
+            placeholder="Search booking #, company, passenger..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full h-[34px] max-h-[34px] pl-8 pr-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal transition"
@@ -251,372 +496,737 @@ export default function PaymentsPage() {
         </div>
       </div>
 
-      {/* REQUIREMENT 1: TODAY'S TOTAL & IN WHAT PAYMENT MODE HOW MUCH */}
-      <div className="bg-white p-3.5 rounded-[6px] border border-slate-200/80 shadow-xs space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
-          <div className="flex items-center gap-2">
-            <span className="w-2.5 h-2.5 rounded-[2px] bg-[#f16623]"></span>
-            <h2 className="text-xs font-medium text-slate-900 uppercase tracking-wider">
-              Today&apos;s Collections Summary ({new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })})
-            </h2>
-          </div>
-          <div className="flex items-center gap-1.5 text-xs font-normal text-slate-500">
-            <span>All-time Collections:</span>
-            <span className="font-mono font-medium text-slate-900">
-              ₹{allTimeTotal.toLocaleString("en-IN")}
+      {/* 4 Financial KPI Summary Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+        {/* Total Outstanding Dues */}
+        <div className="bg-white p-2.5 rounded-[6px] border border-amber-200 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
+              Total Outstanding Due
             </span>
+            <span className="text-base font-medium text-amber-600 font-mono">
+              ₹{totalPendingDues.toLocaleString("en-IN")}
+            </span>
+          </div>
+          <div className="w-[30px] h-[30px] rounded-[6px] bg-amber-50 text-amber-600 flex items-center justify-center">
+            <Clock className="w-4 h-4" />
           </div>
         </div>
 
-        {/* Big Today Metrics Bar */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
-          {/* Total Collected Today */}
-          <div className="col-span-2 sm:col-span-1 bg-gradient-to-br from-orange-50 to-amber-50/40 p-3 rounded-[6px] border border-[#f16623]/30 flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-medium uppercase tracking-wider text-[#f16623]">
-                Total Today
-              </span>
-              <TrendingUp className="w-4 h-4 text-[#f16623]" />
-            </div>
-            <div className="mt-2">
-              <span className="text-lg sm:text-xl font-mono font-medium text-slate-900 block leading-tight">
-                ₹{todayTotal.toLocaleString("en-IN")}
-              </span>
-              <span className="text-[10px] text-slate-500 font-normal">
-                {todayPayments.length} receipt{todayPayments.length === 1 ? "" : "s"} today
-              </span>
-            </div>
+        {/* Total Collected Today */}
+        <div className="bg-white p-2.5 rounded-[6px] border border-emerald-200 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
+              Collected Today
+            </span>
+            <span className="text-base font-medium text-emerald-600 font-mono">
+              ₹{todayCollected.toLocaleString("en-IN")}
+            </span>
           </div>
-
-          {/* Cash Today */}
-          <div className="bg-emerald-50/50 p-2.5 rounded-[6px] border border-emerald-200 flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-medium uppercase tracking-wider text-emerald-700 flex items-center gap-1">
-                <Banknote className="w-3 h-3" />
-                Cash
-              </span>
-              <span className="text-[9px] font-mono text-emerald-600 bg-white px-1.5 py-0.2 rounded border border-emerald-200">
-                Mode
-              </span>
-            </div>
-            <div className="mt-2">
-              <span className="text-base font-mono font-medium text-emerald-700 block">
-                ₹{todayCash.toLocaleString("en-IN")}
-              </span>
-              <span className="text-[10px] text-slate-400 font-normal">
-                Cash in hand
-              </span>
-            </div>
+          <div className="w-[30px] h-[30px] rounded-[6px] bg-emerald-50 text-emerald-600 flex items-center justify-center">
+            <Banknote className="w-4 h-4" />
           </div>
+        </div>
 
-          {/* UPI Today */}
-          <div className="bg-blue-50/50 p-2.5 rounded-[6px] border border-blue-200 flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-medium uppercase tracking-wider text-blue-700 flex items-center gap-1">
-                <QrCode className="w-3 h-3" />
-                UPI / QR
-              </span>
-              <span className="text-[9px] font-mono text-blue-600 bg-white px-1.5 py-0.2 rounded border border-blue-200">
-                Mode
-              </span>
-            </div>
-            <div className="mt-2">
-              <span className="text-base font-mono font-medium text-blue-700 block">
-                ₹{todayUpi.toLocaleString("en-IN")}
-              </span>
-              <span className="text-[10px] text-slate-400 font-normal">
-                Direct bank UPI
-              </span>
-            </div>
+        {/* Total All-Time Collected */}
+        <div className="bg-white p-2.5 rounded-[6px] border border-slate-200 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
+              Total Ledger Collected
+            </span>
+            <span className="text-base font-medium text-slate-900 font-mono">
+              ₹{totalAllTimeCollected.toLocaleString("en-IN")}
+            </span>
           </div>
-
-          {/* Card Today */}
-          <div className="bg-purple-50/50 p-2.5 rounded-[6px] border border-purple-200 flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-medium uppercase tracking-wider text-purple-700 flex items-center gap-1">
-                <CreditCard className="w-3 h-3" />
-                Card / POS
-              </span>
-              <span className="text-[9px] font-mono text-purple-600 bg-white px-1.5 py-0.2 rounded border border-purple-200">
-                Mode
-              </span>
-            </div>
-            <div className="mt-2">
-              <span className="text-base font-mono font-medium text-purple-700 block">
-                ₹{todayCard.toLocaleString("en-IN")}
-              </span>
-              <span className="text-[10px] text-slate-400 font-normal">
-                Card terminal
-              </span>
-            </div>
+          <div className="w-[30px] h-[30px] rounded-[6px] bg-blue-50 text-blue-600 flex items-center justify-center">
+            <Receipt className="w-4 h-4" />
           </div>
+        </div>
 
-          {/* Split / Mixed Today */}
-          <div className="bg-slate-50 p-2.5 rounded-[6px] border border-slate-200 flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-medium uppercase tracking-wider text-slate-700 flex items-center gap-1">
-                <Coins className="w-3 h-3 text-[#f16623]" />
-                Split
-              </span>
-              <span className="text-[9px] font-mono text-slate-600 bg-white px-1.5 py-0.2 rounded border border-slate-200">
-                Mixed
-              </span>
-            </div>
-            <div className="mt-2">
-              <span className="text-base font-mono font-medium text-slate-800 block">
-                ₹{todaySplit.toLocaleString("en-IN")}
-              </span>
-              <span className="text-[10px] text-slate-400 font-normal">
-                Mixed payments
-              </span>
-            </div>
+        {/* Pending Trips Count */}
+        <div className="bg-white p-2.5 rounded-[6px] border border-slate-200 shadow-xs flex items-center justify-between">
+          <div>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
+              Pending Trips Count
+            </span>
+            <span className="text-base font-medium text-slate-700 font-mono">
+              {pendingBookings.length}
+            </span>
+          </div>
+          <div className="w-[30px] h-[30px] rounded-[6px] bg-slate-50 text-slate-600 flex items-center justify-center">
+            <Building2 className="w-4 h-4" />
           </div>
         </div>
       </div>
 
-      {/* REQUIREMENT 1 (BELOW): LIST OF RECEIVED PAYMENTS WITH FILTERS */}
-      <div className="bg-white rounded-[6px] border border-slate-200/80 shadow-xs overflow-hidden">
-        {/* Table Filter Bar */}
-        <div className="px-3.5 py-2.5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-          <div className="flex items-center gap-1.5">
-            {/* Date Filters */}
-            <div className="flex rounded-[6px] bg-slate-100 p-0.5 text-xs font-medium">
-              <button
-                type="button"
-                onClick={() => setDateFilter("today")}
-                className={`h-[28px] max-h-[34px] px-2.5 rounded-[4px] transition cursor-pointer ${
-                  dateFilter === "today"
-                    ? "bg-white text-[#f16623] shadow-xs"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                Today
-              </button>
-              <button
-                type="button"
-                onClick={() => setDateFilter("yesterday")}
-                className={`h-[28px] max-h-[34px] px-2.5 rounded-[4px] transition cursor-pointer ${
-                  dateFilter === "yesterday"
-                    ? "bg-white text-[#f16623] shadow-xs"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                Yesterday
-              </button>
-              <button
-                type="button"
-                onClick={() => setDateFilter("this_month")}
-                className={`h-[28px] max-h-[34px] px-2.5 rounded-[4px] transition cursor-pointer ${
-                  dateFilter === "this_month"
-                    ? "bg-white text-[#f16623] shadow-xs"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                This Month
-              </button>
-              <button
-                type="button"
-                onClick={() => setDateFilter("all")}
-                className={`h-[28px] max-h-[34px] px-2.5 rounded-[4px] transition cursor-pointer ${
-                  dateFilter === "all"
-                    ? "bg-white text-[#f16623] shadow-xs"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                All Time
-              </button>
-            </div>
+      {/* Feedback Banner */}
+      {feedback && (
+        <div
+          className={`p-2.5 rounded-[6px] text-xs flex items-center justify-between ${
+            feedback.type === "success"
+              ? "bg-emerald-50 text-emerald-800 border border-emerald-200"
+              : "bg-red-50 text-red-800 border border-red-200"
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            {feedback.type === "success" ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-red-600" />
+            )}
+            <span>{feedback.message}</span>
+          </div>
+          <button
+            onClick={() => setFeedback(null)}
+            className="text-slate-400 hover:text-slate-600"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
-            {/* Mode Filter Dropdown */}
+      {/* Primary Tab Navigation & Controls */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-1">
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setActiveTab("pending")}
+            className={`px-3 py-2 text-xs font-medium border-b-2 transition flex items-center gap-1.5 ${
+              activeTab === "pending"
+                ? "border-[#f16623] text-[#f16623]"
+                : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            <Clock className="w-3.5 h-3.5" />
+            <span>Unpaid & Partial Bookings</span>
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-100 text-slate-700">
+              {pendingBookings.length}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("ledger")}
+            className={`px-3 py-2 text-xs font-medium border-b-2 transition flex items-center gap-1.5 ${
+              activeTab === "ledger"
+                ? "border-[#f16623] text-[#f16623]"
+                : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            <Receipt className="w-3.5 h-3.5" />
+            <span>Transactions Ledger</span>
+            <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-100 text-slate-700">
+              {ledgerPayments.length}
+            </span>
+          </button>
+        </div>
+
+        {/* Tab-specific Filters */}
+        {activeTab === "pending" ? (
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-slate-400 font-medium">Status:</span>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as any)}
+              className="h-[30px] px-2 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-700 focus:outline-none focus:border-[#f16623] cursor-pointer"
+            >
+              <option value="all">All Pending ({pendingBookings.length})</option>
+              <option value="Unpaid">Unpaid Only</option>
+              <option value="Partial">Partial Only</option>
+            </select>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value as any)}
+              className="h-[30px] px-2 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-700 focus:outline-none focus:border-[#f16623] cursor-pointer"
+            >
+              <option value="all">All Dates</option>
+              <option value="today">Today</option>
+              <option value="yesterday">Yesterday</option>
+              <option value="this_month">This Month</option>
+            </select>
+
             <select
               value={modeFilter}
               onChange={(e) => setModeFilter(e.target.value)}
-              className="h-[28px] max-h-[34px] px-2 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-700 focus:outline-none focus:border-[#f16623] font-normal"
+              className="h-[30px] px-2 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-700 focus:outline-none focus:border-[#f16623] cursor-pointer"
             >
-              <option value="all">All Modes</option>
-              <option value="cash">Cash Only</option>
-              <option value="upi">UPI Only</option>
-              <option value="card">Card Only</option>
-              <option value="split">Split Only</option>
+              <option value="all">All Payment Modes</option>
+              <option value="cash">Cash</option>
+              <option value="upi">UPI</option>
+              <option value="card">Card</option>
             </select>
-          </div>
-
-          <span className="text-[11px] text-slate-400 font-normal">
-            {filteredPayments.length} receipt{filteredPayments.length === 1 ? "" : "s"} found
-          </span>
-        </div>
-
-        {/* Payments Table */}
-        {loading ? (
-          <div className="py-8 flex flex-col items-center justify-center text-slate-400 gap-1.5">
-            <Loader2 className="w-5 h-5 animate-spin text-[#f16623]" />
-            <span className="text-xs font-normal">
-              Loading payment receipts from Firestore...
-            </span>
-          </div>
-        ) : filteredPayments.length === 0 ? (
-          <div className="py-10 px-4 text-center">
-            <div className="w-10 h-10 rounded-[6px] bg-orange-50 border border-[#f16623]/20 flex items-center justify-center mx-auto text-[#f16623] mb-2">
-              <Receipt className="w-5 h-5" />
-            </div>
-            <h4 className="text-xs font-medium text-slate-800">
-              No payments recorded for this filter
-            </h4>
-            <p className="text-[11px] text-slate-400 max-w-sm mx-auto mt-0.5 font-normal">
-              {dateFilter === "today"
-                ? "No payments recorded yet today. When payments are received on bookings or credit settlements, they appear here instantly."
-                : "Try selecting 'All Time' or clearing your search query."}
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-600">
-              <thead className="bg-slate-50/80 text-[10px] uppercase tracking-wider text-slate-500 font-medium border-b border-slate-200">
-                <tr>
-                  <th className="py-2 px-3 font-medium">Receipt #</th>
-                  <th className="py-2 px-3 font-medium">Booking / Route</th>
-                  <th className="py-2 px-3 font-medium">Client / Stakeholder</th>
-                  <th className="py-2 px-3 font-medium">Amount Received</th>
-                  <th className="py-2 px-3 font-medium">Payment Mode</th>
-                  <th className="py-2 px-3 font-medium">Date & Time</th>
-                  <th className="py-2 px-3 font-medium">Note / Ref</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredPayments.map((p, idx) => {
-                  let dateStr = "Just now";
-                  let timeStr = "";
-                  if (p.createdAt && typeof p.createdAt.toDate === "function") {
-                    const d = p.createdAt.toDate();
-                    dateStr = d.toLocaleDateString("en-IN", {
-                      day: "2-digit",
-                      month: "short",
-                      year: "numeric",
-                    });
-                    timeStr = d.toLocaleTimeString("en-IN", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                      hour12: true,
-                    });
-                  }
-
-                  const isCust = p.clientType !== "business_owner";
-
-                  return (
-                    <tr
-                      key={p.id}
-                      className="hover:bg-orange-50/30 transition-colors"
-                    >
-                      {/* Receipt ID */}
-                      <td className="py-2 px-3 font-mono font-medium text-slate-900 text-[11px]">
-                        <span className="px-1.5 py-0.5 rounded-[4px] bg-slate-100 border border-slate-200">
-                          RCP-{p.id.slice(-5).toUpperCase()}
-                        </span>
-                      </td>
-
-                      {/* Booking / Route */}
-                      <td className="py-2 px-3">
-                        <div className="flex flex-col">
-                          <span className="font-mono text-[11px] font-medium text-slate-800">
-                            {p.bookingNumber || "Direct Settlement"}
-                          </span>
-                          {p.fromLocation && p.toLocation && (
-                            <span className="text-[10px] text-slate-400 flex items-center gap-1 font-normal">
-                              {p.fromLocation} ➔ {p.toLocation}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Client */}
-                      <td className="py-2 px-3">
-                        <div className="flex flex-col">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-medium text-slate-900">
-                              {p.clientName || "Walk-in Passenger"}
-                            </span>
-                            <span
-                              className={`px-1.5 py-0.2 rounded-[3px] text-[9px] font-medium border ${
-                                isCust
-                                  ? "bg-blue-50 text-blue-700 border-blue-200"
-                                  : "bg-purple-50 text-purple-700 border-purple-200"
-                              }`}
-                            >
-                              {isCust ? "Customer" : "Business Owner"}
-                            </span>
-                          </div>
-                          {p.clientMobile && (
-                            <span className="text-[10px] text-slate-400 font-normal">
-                              {p.clientMobile}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-
-                      {/* Amount Collected */}
-                      <td className="py-2 px-3 font-mono font-medium text-emerald-700 text-xs">
-                        ₹{Number(p.amountCollected).toLocaleString("en-IN")}
-                      </td>
-
-                      {/* Payment Mode Badge */}
-                      <td className="py-2 px-3">
-                        {p.paymentMode === "cash" && (
-                          <span className="px-2 py-0.5 rounded-[4px] bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium text-[10px] inline-flex items-center gap-1">
-                            <Banknote className="w-3 h-3" />
-                            Cash
-                          </span>
-                        )}
-                        {p.paymentMode === "upi" && (
-                          <span className="px-2 py-0.5 rounded-[4px] bg-blue-50 text-blue-700 border border-blue-200 font-medium text-[10px] inline-flex items-center gap-1">
-                            <QrCode className="w-3 h-3" />
-                            UPI
-                          </span>
-                        )}
-                        {p.paymentMode === "card" && (
-                          <span className="px-2 py-0.5 rounded-[4px] bg-purple-50 text-purple-700 border border-purple-200 font-medium text-[10px] inline-flex items-center gap-1">
-                            <CreditCard className="w-3 h-3" />
-                            Card
-                          </span>
-                        )}
-                        {p.paymentMode === "split" && (
-                          <div className="flex flex-col gap-0.5">
-                            <span className="px-1.5 py-0.5 rounded-[4px] bg-orange-50 text-[#f16623] border border-[#f16623]/25 font-medium text-[10px] inline-flex items-center gap-1 w-fit">
-                              <Coins className="w-3 h-3" />
-                              Split Payment
-                            </span>
-                            {p.splits && (
-                              <span className="text-[9px] text-slate-500 font-mono">
-                                {(p.splits.cash || 0) > 0 && `Cash: ₹${p.splits.cash} `}
-                                {(p.splits.upi || 0) > 0 && `UPI: ₹${p.splits.upi} `}
-                                {(p.splits.card || 0) > 0 && `Card: ₹${p.splits.card}`}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Date & Time */}
-                      <td className="py-2 px-3 text-slate-500 text-[11px] font-normal">
-                        <div>{dateStr}</div>
-                        {timeStr && (
-                          <div className="text-[10px] text-slate-400">
-                            {timeStr}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Note / Reference */}
-                      <td className="py-2 px-3 text-slate-400 text-[10px] font-normal italic">
-                        {p.note || "Standard receipt"}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
           </div>
         )}
       </div>
+
+      {/* ===================================================================== */}
+      {/* TAB 1: UNPAID & PARTIAL BOOKINGS TABLE                                 */}
+      {/* ===================================================================== */}
+      {activeTab === "pending" && (
+        <div className="bg-white rounded-[6px] border border-slate-200 overflow-hidden shadow-xs">
+          {loadingBookings ? (
+            <div className="p-8 text-center text-slate-500">
+              <Loader2 className="w-6 h-6 animate-spin text-[#f16623] mx-auto mb-2" />
+              <p className="text-xs">Loading pending bookings...</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[10px] uppercase tracking-wider font-medium">
+                    <th className="py-2.5 px-3">Trip # / Date</th>
+                    <th className="py-2.5 px-3">Company (Customer)</th>
+                    <th className="py-2.5 px-3">Traveler & Route</th>
+                    <th className="py-2.5 px-3">Vehicle & Driver</th>
+                    <th className="py-2.5 px-3 text-right">Total Fare</th>
+                    <th className="py-2.5 px-3 text-right">Paid / Advance</th>
+                    <th className="py-2.5 px-3 text-right">Balance Due</th>
+                    <th className="py-2.5 px-3 text-center">Status</th>
+                    <th className="py-2.5 px-3 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredPendingBookings.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="py-8 text-center text-slate-400">
+                        No unpaid or partial bookings found. All trips are settled!
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredPendingBookings.map((b) => {
+                      const totalBill =
+                        Number(b.grossAmount) || Number(b.netAmount) || 0;
+                      const paid = Number(b.receivedAmount) || 0;
+                      const balance =
+                        b.balanceAmount ?? Math.max(0, totalBill - paid);
+
+                      return (
+                        <tr
+                          key={b.id}
+                          className="hover:bg-slate-50/70 transition"
+                        >
+                          {/* Trip # & Date */}
+                          <td className="py-2.5 px-3">
+                            <div className="font-mono font-medium text-[#f16623]">
+                              {b.bookingNumber}
+                            </div>
+                            <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                              <Calendar className="w-3 h-3 text-slate-400" />
+                              <span>{b.startDate || "N/A"}</span>
+                            </div>
+                          </td>
+
+                          {/* Company / Customer */}
+                          <td className="py-2.5 px-3">
+                            <div className="font-medium text-slate-900">
+                              {b.customerName || b.companyName || "Direct"}
+                            </div>
+                            <div className="text-[10px] text-slate-400 mt-0.5">
+                              {b.entityName || "RK Travels"}
+                            </div>
+                          </td>
+
+                          {/* Traveler & Route */}
+                          <td className="py-2.5 px-3">
+                            <div className="text-slate-800">{b.travelerName || "Passenger"}</div>
+                            <div className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5 truncate max-w-[150px]">
+                              <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                              <span>{b.fromLocation} → {b.toLocation}</span>
+                            </div>
+                          </td>
+
+                          {/* Vehicle & Driver */}
+                          <td className="py-2.5 px-3">
+                            <div className="text-slate-800 flex items-center gap-1">
+                              <Car className="w-3 h-3 text-slate-400" />
+                              <span>{b.vehicleNumber || b.vehicleCategoryName || "Unassigned"}</span>
+                            </div>
+                            <div className="text-[10px] text-slate-400 mt-0.5">
+                              {b.driverName ? `Driver: ${b.driverName}` : "No driver"}
+                            </div>
+                          </td>
+
+                          {/* Total Fare */}
+                          <td className="py-2.5 px-3 text-right font-mono text-slate-700">
+                            ₹{totalBill.toLocaleString("en-IN")}
+                          </td>
+
+                          {/* Paid / Advance */}
+                          <td className="py-2.5 px-3 text-right font-mono text-emerald-600">
+                            ₹{paid.toLocaleString("en-IN")}
+                          </td>
+
+                          {/* Balance Due */}
+                          <td className="py-2.5 px-3 text-right font-mono font-medium text-amber-600">
+                            ₹{balance.toLocaleString("en-IN")}
+                          </td>
+
+                          {/* Payment Status Badge */}
+                          <td className="py-2.5 px-3 text-center">
+                            <span
+                              className={`px-2 py-0.5 rounded-[4px] text-[10px] font-medium border ${
+                                b.paymentStatus === "Unpaid"
+                                  ? "bg-red-50 text-red-700 border-red-200"
+                                  : "bg-amber-50 text-amber-700 border-amber-200"
+                              }`}
+                            >
+                              {b.paymentStatus || "Unpaid"}
+                            </span>
+                          </td>
+
+                          {/* Actions: Collect Payment & Payment History */}
+                          <td className="py-2.5 px-3 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {/* Payment History Button */}
+                              <button
+                                onClick={() => setHistoryBooking(b)}
+                                title="View Payment History"
+                                className="h-[30px] px-2 rounded-[6px] border border-slate-200 bg-white text-slate-600 hover:text-slate-900 hover:border-slate-300 text-xs flex items-center gap-1 transition"
+                              >
+                                <History className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">History</span>
+                              </button>
+
+                              {/* Collect Payment Button */}
+                              <button
+                                onClick={() => handleOpenCollectModal(b)}
+                                className="h-[30px] px-2.5 rounded-[6px] bg-[#f16623] hover:bg-[#d9551a] text-white text-xs font-medium flex items-center gap-1 transition shadow-xs"
+                              >
+                                <Banknote className="w-3.5 h-3.5" />
+                                <span>Collect</span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* TAB 2: TRANSACTIONS LEDGER TABLE                                       */}
+      {/* ===================================================================== */}
+      {activeTab === "ledger" && (
+        <div className="bg-white rounded-[6px] border border-slate-200 overflow-hidden shadow-xs">
+          {loadingLedger ? (
+            <div className="p-8 text-center text-slate-500">
+              <Loader2 className="w-6 h-6 animate-spin text-[#f16623] mx-auto mb-2" />
+              <p className="text-xs">Loading payment transactions...</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 text-[10px] uppercase tracking-wider font-medium">
+                    <th className="py-2.5 px-3">Date & Time</th>
+                    <th className="py-2.5 px-3">Trip #</th>
+                    <th className="py-2.5 px-3">Customer / Company</th>
+                    <th className="py-2.5 px-3">Route</th>
+                    <th className="py-2.5 px-3 text-right">Amount (₹)</th>
+                    <th className="py-2.5 px-3">Payment Mode</th>
+                    <th className="py-2.5 px-3">Reference / UTR</th>
+                    <th className="py-2.5 px-3">Notes</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredLedger.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-8 text-center text-slate-400">
+                        No transactions recorded matching the selected filter.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredLedger.map((tx) => {
+                      const dt =
+                        tx.createdAt && typeof tx.createdAt.toDate === "function"
+                          ? tx.createdAt.toDate()
+                          : null;
+                      const dateStr = dt
+                        ? dt.toLocaleDateString("en-IN", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                          })
+                        : "N/A";
+                      const timeStr = dt
+                        ? dt.toLocaleTimeString("en-IN", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : "";
+
+                      const modeLower = (tx.paymentMode || "").toLowerCase();
+
+                      return (
+                        <tr
+                          key={tx.id}
+                          className="hover:bg-slate-50/70 transition"
+                        >
+                          <td className="py-2.5 px-3">
+                            <div className="text-slate-800">{dateStr}</div>
+                            <div className="text-[10px] text-slate-400">{timeStr}</div>
+                          </td>
+
+                          <td className="py-2.5 px-3 font-mono font-medium text-[#f16623]">
+                            {tx.bookingNumber || "N/A"}
+                          </td>
+
+                          <td className="py-2.5 px-3">
+                            <div className="font-medium text-slate-800">
+                              {tx.companyName || tx.clientName || "Direct"}
+                            </div>
+                            {tx.clientMobile && (
+                              <div className="text-[10px] text-slate-400">{tx.clientMobile}</div>
+                            )}
+                          </td>
+
+                          <td className="py-2.5 px-3 text-slate-600">
+                            {tx.fromLocation && tx.toLocation ? (
+                              <span className="truncate max-w-[150px] block">
+                                {tx.fromLocation} → {tx.toLocation}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">-</span>
+                            )}
+                          </td>
+
+                          <td className="py-2.5 px-3 text-right font-mono font-medium text-emerald-600">
+                            +₹{(tx.amountCollected || 0).toLocaleString("en-IN")}
+                          </td>
+
+                          <td className="py-2.5 px-3">
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-[10px] font-medium border ${
+                                modeLower === "cash"
+                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                  : modeLower === "upi"
+                                  ? "bg-purple-50 text-purple-700 border-purple-200"
+                                  : "bg-blue-50 text-blue-700 border-blue-200"
+                              }`}
+                            >
+                              {modeLower === "cash" && <Banknote className="w-3 h-3" />}
+                              {modeLower === "upi" && <QrCode className="w-3 h-3" />}
+                              {modeLower === "card" && <CreditCard className="w-3 h-3" />}
+                              <span className="uppercase">{tx.paymentMode || "Cash"}</span>
+                            </span>
+                          </td>
+
+                          <td className="py-2.5 px-3 font-mono text-[11px] text-slate-600">
+                            {tx.referenceNumber || "-"}
+                          </td>
+
+                          <td className="py-2.5 px-3 text-slate-500 italic text-[11px]">
+                            {tx.note || "-"}
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* COLLECT PAYMENT MODAL                                                  */}
+      {/* ===================================================================== */}
+      <OffCanvas
+        isOpen={!!collectingBooking}
+        onClose={() => setCollectingBooking(null)}
+        title="Collect Payment"
+        subtitle={`Recording receipt for Trip #${collectingBooking?.bookingNumber || ""}`}
+        size="md"
+        widthClassName="max-w-md"
+      >
+        {collectingBooking && (
+          <form onSubmit={handleSubmitCollectPayment} className="space-y-3.5 text-xs font-normal">
+            {/* Bill & Balance Breakdown Card */}
+            <div className="p-3 rounded-[6px] bg-slate-50 border border-slate-200 space-y-1">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Customer (Company):</span>
+                <span className="font-medium text-slate-900">
+                  {collectingBooking.customerName || collectingBooking.companyName || "Direct"}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Total Billed:</span>
+                <span className="font-mono text-slate-800">
+                  ₹{(Number(collectingBooking.grossAmount) || Number(collectingBooking.netAmount) || 0).toLocaleString("en-IN")}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Already Received:</span>
+                <span className="font-mono text-emerald-600">
+                  ₹{(Number(collectingBooking.receivedAmount) || 0).toLocaleString("en-IN")}
+                </span>
+              </div>
+              <div className="flex justify-between pt-1 border-t border-slate-200 font-medium">
+                <span className="text-amber-700">Remaining Balance Due:</span>
+                <span className="font-mono text-amber-700">
+                  ₹{(collectingBooking.balanceAmount ?? 0).toLocaleString("en-IN")}
+                </span>
+              </div>
+            </div>
+
+            {/* Amount Input */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                AMOUNT TO COLLECT (₹) *
+              </label>
+              <input
+                type="number"
+                step="any"
+                min="1"
+                max={collectingBooking.balanceAmount || undefined}
+                value={collectAmount}
+                onChange={(e) => setCollectAmount(e.target.value)}
+                placeholder="0.00"
+                required
+                className="w-full h-[34px] max-h-[34px] px-2.5 text-sm font-mono font-medium bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623]"
+              />
+            </div>
+
+            {/* Payment Mode Selection: Cash, Card, UPI */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                PAYMENT MODE *
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { mode: "Cash" as const, icon: Banknote },
+                  { mode: "Card" as const, icon: CreditCard },
+                  { mode: "UPI" as const, icon: QrCode },
+                ].map(({ mode, icon: Icon }) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setCollectMode(mode)}
+                    className={`h-[34px] max-h-[34px] rounded-[6px] text-xs font-medium border flex items-center justify-center gap-1.5 transition ${
+                      collectMode === mode
+                        ? "border-[#f16623] bg-orange-50/50 text-[#f16623]"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    <span>{mode}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* If UPI, Reference Number is mandatory */}
+            {collectMode === "UPI" && (
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-[#f16623] uppercase tracking-wider block">
+                  UPI REFERENCE NUMBER / UTR *
+                </label>
+                <input
+                  type="text"
+                  value={collectRefNumber}
+                  onChange={(e) => setCollectRefNumber(e.target.value)}
+                  placeholder="e.g. UPI/409218291039"
+                  required
+                  className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-[#f16623]/60 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623]"
+                />
+              </div>
+            )}
+
+            {/* If Card, optional Transaction Ref */}
+            {collectMode === "Card" && (
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                  CARD TRANSACTION / APPROVAL CODE
+                </label>
+                <input
+                  type="text"
+                  value={collectRefNumber}
+                  onChange={(e) => setCollectRefNumber(e.target.value)}
+                  placeholder="e.g. APPR-893012"
+                  className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623]"
+                />
+              </div>
+            )}
+
+            {/* Notes */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                PAYMENT NOTES / REMARKS
+              </label>
+              <input
+                type="text"
+                value={collectNotes}
+                onChange={(e) => setCollectNotes(e.target.value)}
+                placeholder="e.g. Cleared by accounts dept / RTGS"
+                className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623]"
+              />
+            </div>
+
+            {/* Submit Action Buttons */}
+            <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setCollectingBooking(null)}
+                className="h-[34px] max-h-[34px] px-3 text-xs text-slate-600 border border-slate-200 rounded-[6px] hover:bg-slate-50 transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmittingPayment}
+                className="h-[34px] max-h-[34px] px-4 text-xs font-medium text-white bg-[#f16623] hover:bg-[#d9551a] rounded-[6px] flex items-center gap-1.5 transition disabled:opacity-50"
+              >
+                {isSubmittingPayment ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Saving Payment...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Record Payment</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
+        )}
+      </OffCanvas>
+
+      {/* ===================================================================== */}
+      {/* DEDICATED PAYMENT HISTORY DRAWER / SECTION FOR EACH BOOKING           */}
+      {/* ===================================================================== */}
+      <OffCanvas
+        isOpen={!!historyBooking}
+        onClose={() => setHistoryBooking(null)}
+        title="Payment History Trail"
+        subtitle={`Chronological receipts for Trip #${historyBooking?.bookingNumber || ""}`}
+        size="md"
+        widthClassName="max-w-md"
+      >
+        {historyBooking && (
+          <div className="space-y-4 text-xs font-normal">
+            {/* Quick Trip Header Info */}
+            <div className="p-3 rounded-[6px] bg-slate-50 border border-slate-200 space-y-1.5">
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Customer (Company):</span>
+                <span className="font-medium text-slate-900">
+                  {historyBooking.customerName || historyBooking.companyName || "Direct"}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-slate-500">Passenger / Traveler:</span>
+                <span className="text-slate-800">{historyBooking.travelerName || "N/A"}</span>
+              </div>
+              <div className="flex justify-between items-center pt-1 border-t border-slate-200">
+                <span className="text-slate-500">Total Billed:</span>
+                <span className="font-mono font-medium text-slate-900">
+                  ₹{(Number(historyBooking.grossAmount) || Number(historyBooking.netAmount) || 0).toLocaleString("en-IN")}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-emerald-700">Total Collected:</span>
+                <span className="font-mono font-medium text-emerald-600">
+                  ₹{(Number(historyBooking.receivedAmount) || 0).toLocaleString("en-IN")}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-amber-700">Remaining Balance:</span>
+                <span className="font-mono font-medium text-amber-600">
+                  ₹{(Number(historyBooking.balanceAmount) || 0).toLocaleString("en-IN")}
+                </span>
+              </div>
+            </div>
+
+            {/* Chronological Payment Trail Section */}
+            <div className="space-y-2">
+              <div className="text-[11px] font-medium text-slate-600 uppercase tracking-wider flex items-center justify-between">
+                <span>Payment History Events</span>
+                <span className="font-mono text-slate-400">
+                  {(historyBooking.paymentHistory || []).length} Recorded
+                </span>
+              </div>
+
+              {(!historyBooking.paymentHistory || historyBooking.paymentHistory.length === 0) ? (
+                <div className="p-6 text-center bg-slate-50 rounded-[6px] border border-dashed border-slate-200 text-slate-400">
+                  <Banknote className="w-6 h-6 mx-auto mb-1 text-slate-300" />
+                  <p>No payments recorded yet for this booking.</p>
+                  <p className="text-[10px] mt-0.5">This trip is currently Unpaid.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {historyBooking.paymentHistory.map((item, idx) => (
+                    <div
+                      key={item.id || idx}
+                      className="p-2.5 rounded-[6px] border border-slate-200 bg-white space-y-1 hover:border-slate-300 transition"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 font-medium text-slate-900">
+                          {item.paymentMode === "Cash" && (
+                            <Banknote className="w-3.5 h-3.5 text-emerald-600" />
+                          )}
+                          {item.paymentMode === "Card" && (
+                            <CreditCard className="w-3.5 h-3.5 text-blue-600" />
+                          )}
+                          {item.paymentMode === "UPI" && (
+                            <QrCode className="w-3.5 h-3.5 text-purple-600" />
+                          )}
+                          <span>{item.paymentMode}</span>
+                        </div>
+                        <span className="font-mono font-medium text-emerald-600">
+                          +₹{(Number(item.amount) || 0).toLocaleString("en-IN")}
+                        </span>
+                      </div>
+
+                      <div className="text-[10px] text-slate-400 flex items-center justify-between">
+                        <span>
+                          {item.date} {item.time}
+                        </span>
+                        {item.referenceNumber && (
+                          <span className="font-mono text-slate-600">
+                            Ref: {item.referenceNumber}
+                          </span>
+                        )}
+                      </div>
+
+                      {item.notes && (
+                        <div className="text-[10px] text-slate-500 italic bg-slate-50 px-2 py-1 rounded-[4px]">
+                          &ldquo;{item.notes}&rdquo;
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Quick Action from History Drawer */}
+            {(historyBooking.balanceAmount ?? 0) > 0 && (
+              <div className="pt-2 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const b = historyBooking;
+                    setHistoryBooking(null);
+                    handleOpenCollectModal(b);
+                  }}
+                  className="w-full h-[34px] max-h-[34px] rounded-[6px] bg-[#f16623] hover:bg-[#d9551a] text-white text-xs font-medium flex items-center justify-center gap-1.5 transition"
+                >
+                  <Banknote className="w-3.5 h-3.5" />
+                  <span>Collect Remaining ₹{(historyBooking.balanceAmount ?? 0).toLocaleString("en-IN")}</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </OffCanvas>
     </div>
   );
 }
