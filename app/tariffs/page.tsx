@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import Link from "next/link";
 import {
   Tags,
@@ -137,28 +137,6 @@ export interface TariffRecord {
   updatedAt?: Timestamp | null;
 }
 
-const ALL_STANDARD_VEHICLE_CATEGORIES = [
-  "SEDAN (A/C)",
-  "SEDAN (NON-AC)",
-  "HATCHBACK (A/C)",
-  "HATCHBACK (NON-AC)",
-  "SUV (A/C)",
-  "INNOVA (A/C)",
-  "CRYSTA (A/C)",
-  "HYCROSS (A/C)",
-  "LUXURY SUV (A/C)",
-  "LUXURY SEDAN (A/C)",
-  "TEMPO TRAVELLER (12+1)",
-  "TEMPO TRAVELLER (17+1)",
-  "TEMPO TRAVELLER (26+1)",
-  "FORCE URBANIA (A/C)",
-  "MINI BUS (21+1)",
-  "MINI BUS (32+1)",
-  "COACH BUS (40+1)",
-  "COACH BUS (50+1)",
-  "ELECTRIC VEHICLE (EV A/C)",
-];
-
 const ITEMS_PER_PAGE = 24;
 
 export default function TariffsPage() {
@@ -172,16 +150,9 @@ export default function TariffsPage() {
   const [tariffStatus, setTariffStatus] = useState<"Active" | "Inactive">("Active");
   const [offerActivityLog, setOfferActivityLog] = useState(false);
 
-  // Selected vehicle categories (each becomes a column)
-  const [allAvailableCategories, setAllAvailableCategories] = useState<string[]>(
-    ALL_STANDARD_VEHICLE_CATEGORIES
-  );
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([
-    "SEDAN (A/C)",
-    "INNOVA (A/C)",
-    "CRYSTA (A/C)",
-    "HYCROSS (A/C)",
-  ]);
+  // Selected vehicle categories (loaded dynamically from database)
+  const [allAvailableCategories, setAllAvailableCategories] = useState<string[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [categorySearchQuery, setCategorySearchQuery] = useState("");
   const [newCategoryInput, setNewCategoryInput] = useState("");
   const [showAddCategoryInput, setShowAddCategoryInput] = useState(false);
@@ -257,52 +228,43 @@ export default function TariffsPage() {
   useEffect(() => {
     const unsubList: (() => void)[] = [];
     try {
-      const mergedSet = new Set<string>(ALL_STANDARD_VEHICLE_CATEGORIES);
-
-      const updateCategories = () => {
-        setAllAvailableCategories(Array.from(mergedSet));
+      const parseDocs = (docs: any[]) => {
+        const catMap = new Map<string, string>();
+        docs.forEach((d) => {
+          const data = d.data();
+          if (data.isActive !== false) {
+            const rawName = (data.printName || data.categoryName || "").trim();
+            if (rawName) {
+              const nameUpper = rawName.toUpperCase();
+              catMap.set(nameUpper.toLowerCase(), nameUpper);
+            }
+          }
+        });
+        return Array.from(catMap.values());
       };
 
-      // vehicleCategories
-      const unsub1 = onSnapshot(collection(db, "vehicleCategories"), (snap) => {
-        snap.docs.forEach((d) => {
-          const data = d.data();
-          if (data.printName) mergedSet.add(data.printName.toUpperCase());
-          if (data.categoryName) {
-            const name = data.categoryName.toUpperCase();
-            const acSuffix = data.acType === "Non-AC" ? "(NON-AC)" : "(A/C)";
-            mergedSet.add(`${name} ${acSuffix}`);
-          }
-        });
-        updateCategories();
+      const unsub1 = onSnapshot(collection(db, "vehicle_categories"), (snap) => {
+        const cats = parseDocs(snap.docs);
+        if (cats.length === 0) {
+          getDocs(collection(db, "vehicleCategories"))
+            .then((vcSnap) => {
+              const fallbackCats = parseDocs(vcSnap.docs);
+              if (fallbackCats.length > 0) {
+                setAllAvailableCategories(fallbackCats);
+                setSelectedCategories((prev) => (prev.length === 0 ? fallbackCats : prev));
+              }
+            })
+            .catch(() => {});
+        } else {
+          setAllAvailableCategories(cats);
+          setSelectedCategories((prev) => {
+            if (prev.length === 0) return cats;
+            const valid = prev.filter((c) => cats.includes(c));
+            return valid.length > 0 ? valid : cats;
+          });
+        }
       });
       unsubList.push(unsub1);
-
-      // vehicle_categories
-      const unsub2 = onSnapshot(collection(db, "vehicle_categories"), (snap) => {
-        snap.docs.forEach((d) => {
-          const data = d.data();
-          if (data.categoryName) {
-            const name = data.categoryName.toUpperCase();
-            mergedSet.add(name.includes("(A/C)") || name.includes("AC") ? name : `${name} (A/C)`);
-          }
-        });
-        updateCategories();
-      });
-      unsubList.push(unsub2);
-
-      // vehicles collection
-      const unsub3 = onSnapshot(collection(db, "vehicles"), (snap) => {
-        snap.docs.forEach((d) => {
-          const data = d.data();
-          if (data.category) {
-            const name = String(data.category).toUpperCase();
-            mergedSet.add(name.includes("(A/C)") || name.includes("AC") ? name : `${name} (A/C)`);
-          }
-        });
-        updateCategories();
-      });
-      unsubList.push(unsub3);
     } catch (err) {
       console.warn("Could not load dynamic vehicle categories:", err);
     }
@@ -778,7 +740,9 @@ interface CompanyOptionItem {
     setSelectedCategories(
       tariff.selectedCategories?.length > 0
         ? tariff.selectedCategories
-        : ["SEDAN (A/C)", "INNOVA (A/C)", "CRYSTA (A/C)", "HYCROSS (A/C)"]
+        : allAvailableCategories.length > 0
+        ? allAvailableCategories
+        : []
     );
 
     // Local
@@ -820,7 +784,7 @@ interface CompanyOptionItem {
     setValidTo("");
     setTariffStatus("Active");
     setActiveTab("Local");
-    setSelectedCategories(["SEDAN (A/C)", "INNOVA (A/C)", "CRYSTA (A/C)", "HYCROSS (A/C)"]);
+    setSelectedCategories(allAvailableCategories.length > 0 ? allAvailableCategories : []);
     setOfferLocal(false);
     setLocalPackages([]);
     setLocalExtraRates({ extraPerHour: {}, extraPerKm: {} });
@@ -1728,7 +1692,7 @@ interface CompanyOptionItem {
                           </tr>
                         )}
                         {localPackages.map((pkg) => (
-                          <div key={pkg.id} className="contents">
+                          <Fragment key={pkg.id}>
                             {/* Package Header Row */}
                             <tr className="bg-orange-50/20 border-t border-b border-orange-100">
                               <td colSpan={selectedCategories.length + 1} className="py-2 px-3.5">
@@ -1802,7 +1766,7 @@ interface CompanyOptionItem {
                                 </td>
                               ))}
                             </tr>
-                          </div>
+                          </Fragment>
                         ))}
 
                         {/* Extra Rates */}
