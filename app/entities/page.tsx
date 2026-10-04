@@ -44,6 +44,8 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { OffCanvas } from "@/components/OffCanvas";
+import { SearchableSelect } from "@/components/SearchableSelect";
+import { CustomDatePicker } from "@/components/CustomDatePicker";
 
 // --- Types & Data Models ---
 
@@ -1874,17 +1876,15 @@ export default function EntitiesPage() {
                     <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider">
                       SUPPLIER STATE <span className="text-[#f16623]">*</span>
                     </label>
-                    <select
+                    <SearchableSelect
+                      options={INDIAN_STATES.map((st) => ({
+                        value: `${st.code} — ${st.name}`,
+                        label: `${st.code} — ${st.name}`,
+                      }))}
                       value={supplierState}
-                      onChange={(e) => setSupplierState(e.target.value)}
-                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal transition cursor-pointer"
-                    >
-                      {INDIAN_STATES.map((st) => (
-                        <option key={st.code} value={`${st.code} — ${st.name}`}>
-                          {st.code} — {st.name}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setSupplierState}
+                      placeholder="Select State..."
+                    />
                   </div>
                 </div>
               </div>
@@ -2717,32 +2717,30 @@ export default function EntitiesPage() {
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider">
                     ACCOUNT TYPE
                   </label>
-                  <select
+                  <SearchableSelect
+                    options={[
+                      { value: "Current", label: "Current" },
+                      { value: "Savings", label: "Savings" },
+                      { value: "Overdraft", label: "Overdraft" },
+                      { value: "Cash Credit", label: "Cash Credit" },
+                    ]}
                     value={modalAccountType}
-                    onChange={(e) =>
+                    onChange={(val) =>
                       setModalAccountType(
-                        e.target.value as "Current" | "Savings" | "Overdraft" | "Cash Credit"
+                        val as "Current" | "Savings" | "Overdraft" | "Cash Credit"
                       )
                     }
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal transition cursor-pointer"
-                  >
-                    <option value="Current">Current</option>
-                    <option value="Savings">Savings</option>
-                    <option value="Overdraft">Overdraft</option>
-                    <option value="Cash Credit">Cash Credit</option>
-                  </select>
+                  />
                 </div>
 
                 <div className="space-y-1 sm:col-span-2">
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider">
                     EFFECTIVE FROM <span className="text-[#f16623]">*</span>
                   </label>
-                  <input
-                    type="date"
-                    required
+                  <CustomDatePicker
                     value={modalEffectiveFrom}
-                    onChange={(e) => setModalEffectiveFrom(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal transition"
+                    onChange={setModalEffectiveFrom}
+                    placeholder="Select effective date..."
                   />
                 </div>
               </div>
@@ -2900,17 +2898,17 @@ export default function EntitiesPage() {
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider">
                     RESET RULE
                   </label>
-                  <select
+                  <SearchableSelect
+                    options={[
+                      { value: "Yearly", label: "Yearly" },
+                      { value: "Monthly", label: "Monthly" },
+                      { value: "Never", label: "Never" },
+                    ]}
                     value={modalResetRule}
-                    onChange={(e) =>
-                      setModalResetRule(e.target.value as "Yearly" | "Monthly" | "Never")
+                    onChange={(val) =>
+                      setModalResetRule(val as "Yearly" | "Monthly" | "Never")
                     }
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal transition cursor-pointer"
-                  >
-                    <option value="Yearly">Yearly</option>
-                    <option value="Monthly">Monthly</option>
-                    <option value="Never">Never</option>
-                  </select>
+                  />
                 </div>
               </div>
 
@@ -3067,12 +3065,10 @@ export default function EntitiesPage() {
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider">
                     EFFECTIVE FROM <span className="text-[#f16623]">*</span>
                   </label>
-                  <input
-                    type="date"
-                    required
+                  <CustomDatePicker
                     value={modalFuelEffectiveFrom}
-                    onChange={(e) => setModalFuelEffectiveFrom(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal transition"
+                    onChange={setModalFuelEffectiveFrom}
+                    placeholder="Select effective date..."
                   />
                   <span className="text-[9px] text-slate-400 block">
                     Date from which these fuel rates become active.
@@ -3083,11 +3079,11 @@ export default function EntitiesPage() {
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider">
                     EFFECTIVE TO (OPTIONAL)
                   </label>
-                  <input
-                    type="date"
+                  <CustomDatePicker
                     value={modalFuelEffectiveTo}
-                    onChange={(e) => setModalFuelEffectiveTo(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal transition"
+                    onChange={setModalFuelEffectiveTo}
+                    placeholder="Select effective to date..."
+                    minDate={modalFuelEffectiveFrom}
                   />
                   <span className="text-[9px] text-slate-400 block">
                     Leave blank if this is the current active rate.

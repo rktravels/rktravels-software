@@ -43,6 +43,8 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { OffCanvas } from "@/components/OffCanvas";
+import { SearchableSelect } from "@/components/SearchableSelect";
+import { CustomDatePicker } from "@/components/CustomDatePicker";
 
 // --- Types & Data Models ---
 
@@ -1275,40 +1277,40 @@ interface CompanyOptionItem {
 
               {!isCustomCompany ? (
                 <div className="relative">
-                  <select
-                    required
+                  <SearchableSelect
+                    options={[
+                      { value: "Standard", label: "Standard (Global Fallback)", badge: "Standard" },
+                      { value: "HIMEROS PHARMA", label: "HIMEROS PHARMA" },
+                      ...(customerName &&
+                      customerName !== "Standard" &&
+                      customerName !== "HIMEROS PHARMA" &&
+                      !companiesList.some((c) => c.name === customerName)
+                        ? [{ value: customerName, label: `${customerName} (Selected)` }]
+                        : []),
+                      ...companiesList
+                        .filter((c) => c.name !== "Standard" && c.name !== "HIMEROS PHARMA")
+                        .map((c) => ({
+                          value: c.name,
+                          label: c.name,
+                          subLabel: c.billingState ? `State: ${c.billingState}` : undefined,
+                        })),
+                      {
+                        value: "__custom__",
+                        label: "+ Enter Custom Company Name...",
+                        subLabel: "Type a new corporate entity name",
+                      },
+                    ]}
                     value={customerName}
-                    onChange={(e) => {
-                      if (e.target.value === "__custom__") {
+                    onChange={(val) => {
+                      if (val === "__custom__") {
                         setIsCustomCompany(true);
                         setCustomerName("");
                       } else {
-                        setCustomerName(e.target.value);
+                        setCustomerName(val);
                       }
                     }}
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal transition cursor-pointer"
-                  >
-                    <option value="Standard">Standard (Global Fallback)</option>
-                    <option value="HIMEROS PHARMA">HIMEROS PHARMA</option>
-                    {customerName &&
-                      customerName !== "Standard" &&
-                      customerName !== "HIMEROS PHARMA" &&
-                      !companiesList.some((c) => c.name === customerName) && (
-                        <option value={customerName}>{customerName} (Selected)</option>
-                      )}
-                    {companiesList.length > 0 && (
-                      <optgroup label="Registered Corporate Companies">
-                        {companiesList
-                          .filter((c) => c.name !== "Standard" && c.name !== "HIMEROS PHARMA")
-                          .map((c) => (
-                            <option key={c.id} value={c.name}>
-                              {c.name} {c.billingState ? `• ${c.billingState}` : ""}
-                            </option>
-                          ))}
-                      </optgroup>
-                    )}
-                    <option value="__custom__">+ Enter Custom Company Name...</option>
-                  </select>
+                    placeholder="Search & select company..."
+                  />
                 </div>
               ) : (
                 <div className="flex items-center gap-1.5">
@@ -1342,12 +1344,10 @@ interface CompanyOptionItem {
               <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
                 VALID FROM <span className="text-[#f16623]">*</span>
               </label>
-              <input
-                type="date"
-                required
+              <CustomDatePicker
                 value={validFrom}
-                onChange={(e) => setValidFrom(e.target.value)}
-                className="w-full h-[34px] max-h-[34px] px-2 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal transition"
+                onChange={setValidFrom}
+                placeholder="Select start date..."
               />
             </div>
 
@@ -1356,11 +1356,11 @@ interface CompanyOptionItem {
               <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
                 VALID TO
               </label>
-              <input
-                type="date"
+              <CustomDatePicker
                 value={validTo}
-                onChange={(e) => setValidTo(e.target.value)}
-                className="w-full h-[34px] max-h-[34px] px-2 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal transition"
+                onChange={setValidTo}
+                placeholder="Select end date..."
+                minDate={validFrom}
               />
               <span className="text-[10px] text-slate-400 font-normal block">
                 Blank = open-ended.
@@ -1372,26 +1372,14 @@ interface CompanyOptionItem {
               <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
                 TARIFF STATUS
               </label>
-              <div className="relative">
-                <select
-                  value={tariffStatus}
-                  onChange={(e) => setTariffStatus(e.target.value as "Active" | "Inactive")}
-                  className="w-full h-[34px] max-h-[34px] pl-2.5 pr-8 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal transition appearance-none cursor-pointer"
-                >
-                  <option value="Active">Active</option>
-                  <option value="Inactive">Inactive</option>
-                </select>
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none flex items-center gap-1">
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full ${
-                      tariffStatus === "Active" ? "bg-emerald-500" : "bg-slate-400"
-                    }`}
-                  />
-                  <span className="text-[10px] text-emerald-700 font-medium">
-                    {tariffStatus === "Active" ? "● Active" : "● Inactive"}
-                  </span>
-                </div>
-              </div>
+              <SearchableSelect
+                options={[
+                  { value: "Active", label: "Active", badge: "Active", badgeColor: "green" },
+                  { value: "Inactive", label: "Inactive", badge: "Inactive", badgeColor: "slate" },
+                ]}
+                value={tariffStatus}
+                onChange={(val) => setTariffStatus(val as "Active" | "Inactive")}
+              />
             </div>
 
             {/* Copy Standard Button */}

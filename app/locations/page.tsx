@@ -37,6 +37,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { OffCanvas } from "@/components/OffCanvas";
+import { SearchableSelect } from "@/components/SearchableSelect";
 
 // ==========================================
 // ALL-INDIA 28 STATES & 8 UNION TERRITORIES
@@ -1153,32 +1154,32 @@ export default function LocationsPage() {
             </div>
 
             {/* States Dropdown Filter */}
-            <div className="flex items-center gap-1.5">
+            <div className="flex items-center gap-1.5 w-44">
               <span className="text-[11px] text-slate-400 shrink-0">State:</span>
-              <select
+              <SearchableSelect
+                options={[
+                  { value: "ALL", label: `All States (${totalStatesCount})` },
+                  ...distinctStates.map((st) => ({ value: st, label: st })),
+                ]}
                 value={selectedStateFilter}
-                onChange={(e) => setSelectedStateFilter(e.target.value)}
-                className="h-[32px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-700 font-normal focus:outline-none focus:border-[#f16623] cursor-pointer"
-              >
-                <option value="ALL">All States ({totalStatesCount})</option>
-                {distinctStates.map((st) => (
-                  <option key={st} value={st}>
-                    {st}
-                  </option>
-                ))}
-              </select>
+                onChange={setSelectedStateFilter}
+                placeholder="Filter State..."
+              />
             </div>
 
             {/* Status Dropdown Filter */}
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="h-[32px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-700 font-normal focus:outline-none focus:border-[#f16623] cursor-pointer"
-            >
-              <option value="ALL">All Status</option>
-              <option value="ACTIVE">Active Only</option>
-              <option value="INACTIVE">Inactive Only</option>
-            </select>
+            <div className="w-36">
+              <SearchableSelect
+                options={[
+                  { value: "ALL", label: "All Status" },
+                  { value: "ACTIVE", label: "Active Only", badge: "Active", badgeColor: "green" },
+                  { value: "INACTIVE", label: "Inactive Only", badge: "Inactive", badgeColor: "slate" },
+                ]}
+                value={statusFilter}
+                onChange={setStatusFilter}
+                placeholder="Filter Status..."
+              />
+            </div>
           </div>
 
           {/* View Toggle */}
@@ -1524,17 +1525,15 @@ export default function LocationsPage() {
               <label className="block text-xs font-medium text-slate-700 mb-1 uppercase tracking-wide text-[10px]">
                 State <span className="text-[#f16623]">*</span>
               </label>
-              <select
+              <SearchableSelect
+                options={ALL_INDIA_STATES_DATA.map((st) => ({
+                  value: st.name,
+                  label: `${st.name} (${st.code})`,
+                }))}
                 value={state}
-                onChange={(e) => handleStateChange(e.target.value)}
-                className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition cursor-pointer"
-              >
-                {ALL_INDIA_STATES_DATA.map((st) => (
-                  <option key={st.name} value={st.name}>
-                    {st.name} ({st.code})
-                  </option>
-                ))}
-              </select>
+                onChange={handleStateChange}
+                placeholder="Select State..."
+              />
             </div>
 
             {/* 3. State Code */}

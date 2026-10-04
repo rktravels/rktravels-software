@@ -54,6 +54,8 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { OffCanvas } from "@/components/OffCanvas";
+import { SearchableSelect } from "@/components/SearchableSelect";
+import { CustomDatePicker } from "@/components/CustomDatePicker";
 
 // Indian States with Vehicle Registration Codes
 export const INDIAN_STATES = [
@@ -1205,32 +1207,35 @@ export default function VehiclesPage() {
 
           <div className="flex items-center gap-2 flex-wrap">
             {/* Status Filter */}
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="h-[30px] px-2 text-[11px] bg-white border border-slate-200 rounded-[6px] text-slate-700 font-normal focus:outline-none focus:border-[#f16623]"
-            >
-              <option value="ALL">All Status</option>
-              {STATUS_OPTIONS.map((st) => (
-                <option key={st} value={st}>
-                  {st}
-                </option>
-              ))}
-            </select>
+            <div className="w-36">
+              <SearchableSelect
+                options={[
+                  { value: "ALL", label: "All Status" },
+                  ...STATUS_OPTIONS.map((st) => ({
+                    value: st,
+                    label: st,
+                    badge: st,
+                    badgeColor: st === "Active" ? ("green" as const) : ("slate" as const),
+                  })),
+                ]}
+                value={filterStatus}
+                onChange={setFilterStatus}
+                placeholder="Filter status..."
+              />
+            </div>
 
             {/* Category Filter */}
-            <select
-              value={filterCategory}
-              onChange={(e) => setFilterCategory(e.target.value)}
-              className="h-[30px] px-2 text-[11px] bg-white border border-slate-200 rounded-[6px] text-slate-700 font-normal focus:outline-none focus:border-[#f16623]"
-            >
-              <option value="ALL">All Categories</option>
-              {categoryOptions.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-            </select>
+            <div className="w-40">
+              <SearchableSelect
+                options={[
+                  { value: "ALL", label: "All Categories" },
+                  ...categoryOptions.map((cat) => ({ value: cat, label: cat })),
+                ]}
+                value={filterCategory}
+                onChange={setFilterCategory}
+                placeholder="Filter category..."
+              />
+            </div>
           </div>
         </div>
 
@@ -1602,17 +1607,12 @@ export default function VehiclesPage() {
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     Vehicle Category <span className="text-[#f16623]">*</span>
                   </label>
-                  <select
+                  <SearchableSelect
+                    options={categoryOptions.map((c) => ({ value: c, label: c }))}
                     value={category}
-                    onChange={(e) => setCategory(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition"
-                  >
-                    {categoryOptions.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setCategory}
+                    placeholder="Select Category..."
+                  />
                 </div>
               </div>
 
@@ -1640,17 +1640,12 @@ export default function VehiclesPage() {
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     Fuel Type <span className="text-[#f16623]">*</span>
                   </label>
-                  <select
+                  <SearchableSelect
+                    options={FUEL_TYPES.map((f) => ({ value: f, label: f }))}
                     value={fuelType}
-                    onChange={(e) => setFuelType(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition"
-                  >
-                    {FUEL_TYPES.map((f) => (
-                      <option key={f} value={f}>
-                        {f}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setFuelType}
+                    placeholder="Select Fuel Type..."
+                  />
                 </div>
               </div>
 
@@ -1661,24 +1656,19 @@ export default function VehiclesPage() {
                     <label className="block text-xs font-medium text-slate-700 mb-1">
                       Ownership Type <span className="text-[#f16623]">*</span>
                     </label>
-                    <select
+                    <SearchableSelect
+                      options={OWNERSHIP_TYPES.map((ot) => ({ value: ot, label: ot }))}
                       value={ownershipType}
-                      onChange={(e) => {
-                        const val = e.target.value as "Owned" | "Vendor Attached" | "Leased";
-                        setOwnershipType(val);
-                        if (val === "Owned") {
+                      onChange={(val) => {
+                        const oVal = val as "Owned" | "Vendor Attached" | "Leased";
+                        setOwnershipType(oVal);
+                        if (oVal === "Owned") {
                           setSelectedVendorName("");
                           setCustomVendorName("");
                         }
                       }}
-                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] transition"
-                    >
-                      {OWNERSHIP_TYPES.map((ot) => (
-                        <option key={ot} value={ot}>
-                          {ot}
-                        </option>
-                      ))}
-                    </select>
+                      placeholder="Select Ownership Type..."
+                    />
                   </div>
 
                   {(ownershipType === "Vendor Attached" || ownershipType === "Leased") && (
@@ -1716,22 +1706,20 @@ export default function VehiclesPage() {
                           className="w-full h-[34px] max-h-[34px] px-3 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] transition"
                         />
                       ) : (
-                        <select
+                        <SearchableSelect
+                          options={vendorsList.map((vnd) => ({
+                            value: vnd.name,
+                            label: vnd.name,
+                            subLabel: `${vnd.mobile || ""} ${vnd.city ? `• ${vnd.city}` : ""}`,
+                          }))}
                           value={selectedVendorName}
-                          onChange={(e) => {
-                            setSelectedVendorName(e.target.value);
-                            const found = vendorsList.find((v) => v.name === e.target.value);
+                          onChange={(val) => {
+                            setSelectedVendorName(val);
+                            const found = vendorsList.find((v) => v.name === val);
                             setSelectedVendorId(found?.id || "");
                           }}
-                          className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] transition cursor-pointer"
-                        >
-                          <option value="">-- Select Car Vendor / Lease Member --</option>
-                          {vendorsList.map((vnd) => (
-                            <option key={vnd.id} value={vnd.name}>
-                              {vnd.name} {vnd.mobile ? `(${vnd.mobile})` : ""} {vnd.city ? `• ${vnd.city}` : ""}
-                            </option>
-                          ))}
-                        </select>
+                          placeholder="Select Car Vendor / Lease Member..."
+                        />
                       )}
                     </div>
                   )}
@@ -1887,12 +1875,10 @@ export default function VehiclesPage() {
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     Fitness Expiry Date <span className="text-[#f16623]">*</span>
                   </label>
-                  <input
-                    type="date"
-                    required
+                  <CustomDatePicker
                     value={fitnessExpiry}
-                    onChange={(e) => setFitnessExpiry(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] px-3 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition"
+                    onChange={setFitnessExpiry}
+                    placeholder="Select fitness expiry..."
                   />
                 </div>
 
@@ -1901,12 +1887,10 @@ export default function VehiclesPage() {
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     RC (Registration) Expiry Date <span className="text-[#f16623]">*</span>
                   </label>
-                  <input
-                    type="date"
-                    required
+                  <CustomDatePicker
                     value={rcExpiry}
-                    onChange={(e) => setRcExpiry(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] px-3 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition"
+                    onChange={setRcExpiry}
+                    placeholder="Select RC expiry..."
                   />
                 </div>
               </div>
@@ -1917,11 +1901,10 @@ export default function VehiclesPage() {
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     Insurance Expiry Date
                   </label>
-                  <input
-                    type="date"
+                  <CustomDatePicker
                     value={insuranceExpiry}
-                    onChange={(e) => setInsuranceExpiry(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] px-3 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition"
+                    onChange={setInsuranceExpiry}
+                    placeholder="Select insurance expiry..."
                   />
                 </div>
 
@@ -1946,12 +1929,10 @@ export default function VehiclesPage() {
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     PUC (Pollution) Expiry Date <span className="text-[#f16623]">*</span>
                   </label>
-                  <input
-                    type="date"
-                    required
+                  <CustomDatePicker
                     value={pucExpiry}
-                    onChange={(e) => setPucExpiry(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] px-3 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition"
+                    onChange={setPucExpiry}
+                    placeholder="Select PUC expiry..."
                   />
                 </div>
 
@@ -1960,11 +1941,10 @@ export default function VehiclesPage() {
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     Quarterly Tax Expiry Date
                   </label>
-                  <input
-                    type="date"
+                  <CustomDatePicker
                     value={quarterlyTaxExpiry}
-                    onChange={(e) => setQuarterlyTaxExpiry(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] px-3 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition"
+                    onChange={setQuarterlyTaxExpiry}
+                    placeholder="Select tax expiry..."
                   />
                 </div>
               </div>
@@ -1975,11 +1955,10 @@ export default function VehiclesPage() {
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     State Permit Expiry Date
                   </label>
-                  <input
-                    type="date"
+                  <CustomDatePicker
                     value={statePermitExpiry}
-                    onChange={(e) => setStatePermitExpiry(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] px-3 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition"
+                    onChange={setStatePermitExpiry}
+                    placeholder="Select state permit expiry..."
                   />
                 </div>
 
@@ -1988,11 +1967,10 @@ export default function VehiclesPage() {
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     National Permit Expiry Date
                   </label>
-                  <input
-                    type="date"
+                  <CustomDatePicker
                     value={nationalPermitExpiry}
-                    onChange={(e) => setNationalPermitExpiry(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] px-3 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition"
+                    onChange={setNationalPermitExpiry}
+                    placeholder="Select national permit expiry..."
                   />
                 </div>
               </div>
@@ -2003,17 +1981,15 @@ export default function VehiclesPage() {
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     Registration State List <span className="text-[#f16623]">*</span>
                   </label>
-                  <select
+                  <SearchableSelect
+                    options={INDIAN_STATES.map((st) => ({
+                      value: st.code,
+                      label: `${st.code} - ${st.name}`,
+                    }))}
                     value={registrationState}
-                    onChange={(e) => setRegistrationState(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition"
-                  >
-                    {INDIAN_STATES.map((st) => (
-                      <option key={st.code} value={st.code}>
-                        {st.code} - {st.name}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setRegistrationState}
+                    placeholder="Select Registration State..."
+                  />
                 </div>
 
                 {/* Registration City / RTO */}
@@ -2077,11 +2053,10 @@ export default function VehiclesPage() {
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     Last Service Date
                   </label>
-                  <input
-                    type="date"
+                  <CustomDatePicker
                     value={lastServiceDate}
-                    onChange={(e) => setLastServiceDate(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] px-3 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition"
+                    onChange={setLastServiceDate}
+                    placeholder="Select service date..."
                   />
                 </div>
               </div>
@@ -2224,11 +2199,10 @@ export default function VehiclesPage() {
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     Purchase Date
                   </label>
-                  <input
-                    type="date"
+                  <CustomDatePicker
                     value={purchaseDate}
-                    onChange={(e) => setPurchaseDate(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] px-3 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition"
+                    onChange={setPurchaseDate}
+                    placeholder="Select purchase date..."
                   />
                 </div>
 
@@ -2268,17 +2242,12 @@ export default function VehiclesPage() {
                   <label className="block text-xs font-medium text-slate-700 mb-1">
                     Depreciation Group
                   </label>
-                  <select
+                  <SearchableSelect
+                    options={DEPRECIATION_GROUPS.map((dg) => ({ value: dg, label: dg }))}
                     value={depreciationGroup}
-                    onChange={(e) => setDepreciationGroup(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition"
-                  >
-                    {DEPRECIATION_GROUPS.map((dg) => (
-                      <option key={dg} value={dg}>
-                        {dg}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={setDepreciationGroup}
+                    placeholder="Select Depreciation Group..."
+                  />
                 </div>
               </div>
 
@@ -2340,19 +2309,20 @@ export default function VehiclesPage() {
 
                 <div className="mt-2.5 pt-2 border-t border-slate-200/60 flex items-center justify-between">
                   <span className="text-xs text-slate-600 font-medium">Fleet Duty State:</span>
-                  <select
-                    value={status}
-                    onChange={(e) =>
-                      setStatus(e.target.value as "Active" | "In Service" | "Under Maintenance" | "Standby")
-                    }
-                    className="h-[30px] px-2 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623]"
-                  >
-                    {STATUS_OPTIONS.map((st) => (
-                      <option key={st} value={st}>
-                        {st}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="w-48">
+                    <SearchableSelect
+                      options={STATUS_OPTIONS.map((st) => ({
+                        value: st,
+                        label: st,
+                        badge: st,
+                        badgeColor: st === "Active" ? ("green" as const) : ("slate" as const),
+                      }))}
+                      value={status}
+                      onChange={(val) =>
+                        setStatus(val as "Active" | "In Service" | "Under Maintenance" | "Standby")
+                      }
+                    />
+                  </div>
                 </div>
               </div>
 

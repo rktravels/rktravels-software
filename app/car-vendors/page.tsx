@@ -43,6 +43,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { OffCanvas } from "@/components/OffCanvas";
+import { SearchableSelect } from "@/components/SearchableSelect";
 
 export interface CarVendorItem {
   id: string;
@@ -440,29 +441,34 @@ export default function CarVendorsPage() {
 
           <div className="flex items-center gap-2">
             {/* Status Filter */}
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as any)}
-              className="h-[30px] px-2.5 text-[11px] bg-white border border-slate-200 rounded-[6px] text-slate-700 font-normal focus:outline-none focus:border-[#f16623] cursor-pointer"
-            >
-              <option value="ALL">All Status</option>
-              <option value="ACTIVE">Active Only</option>
-              <option value="INACTIVE">Inactive Only</option>
-            </select>
+            <div className="w-36">
+              <SearchableSelect
+                options={[
+                  { value: "ALL", label: "All Status" },
+                  { value: "ACTIVE", label: "Active Only", badge: "Active", badgeColor: "green" },
+                  { value: "INACTIVE", label: "Inactive Only", badge: "Inactive", badgeColor: "slate" },
+                ]}
+                value={statusFilter}
+                onChange={(val) => setStatusFilter(val as any)}
+                placeholder="Filter status..."
+              />
+            </div>
 
-            {/* Rows Per Page Toggle (Default 2 as requested) */}
+            {/* Rows Per Page Toggle */}
             <div className="flex items-center gap-1 text-[11px] text-slate-500 font-normal">
               <span className="hidden sm:inline">Per page:</span>
-              <select
-                value={pageSize}
-                onChange={(e) => setPageSize(Number(e.target.value))}
-                className="h-[30px] px-2 text-[11px] bg-white border border-slate-200 rounded-[6px] text-slate-700 font-medium focus:outline-none focus:border-[#f16623] cursor-pointer"
-              >
-                <option value={2}>2</option>
-                <option value={5}>5</option>
-                <option value={10}>10</option>
-                <option value={24}>24</option>
-              </select>
+              <div className="w-20">
+                <SearchableSelect
+                  options={[
+                    { value: "2", label: "2" },
+                    { value: "5", label: "5" },
+                    { value: "10", label: "10" },
+                    { value: "24", label: "24" },
+                  ]}
+                  value={String(pageSize)}
+                  onChange={(val) => setPageSize(Number(val))}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -817,15 +823,16 @@ export default function CarVendorsPage() {
               <label className="block text-xs font-medium text-slate-700 mb-1">
                 Vendor Type
               </label>
-              <select
+              <SearchableSelect
+                options={[
+                  { value: "Car Vendor", label: "Attached Car Vendor" },
+                  { value: "Lease Member", label: "Lease Member / Partner" },
+                  { value: "Both", label: "Both Attached & Lease" },
+                ]}
                 value={vendorType}
-                onChange={(e) => setVendorType(e.target.value as any)}
-                className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition cursor-pointer"
-              >
-                <option value="Car Vendor">Attached Car Vendor</option>
-                <option value="Lease Member">Lease Member / Partner</option>
-                <option value="Both">Both Attached & Lease</option>
-              </select>
+                onChange={(val) => setVendorType(val as any)}
+                placeholder="Select Vendor Type..."
+              />
             </div>
           </div>
 

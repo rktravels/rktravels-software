@@ -38,6 +38,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { OffCanvas } from "@/components/OffCanvas";
+import { SearchableSelect } from "@/components/SearchableSelect";
 
 interface PaymentSplits {
   cash: number;
@@ -389,22 +390,23 @@ export default function DriverTripPlanPage() {
         {/* Driver Selector & Search */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
           {/* Driver Switcher Dropdown */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 w-60">
             <span className="text-xs text-slate-500 font-medium whitespace-nowrap">
               Driver:
             </span>
-            <select
+            <SearchableSelect
+              options={[
+                { value: "all", label: "-- All Assigned Drivers --" },
+                ...drivers.map((d) => ({
+                  value: d.id,
+                  label: d.name,
+                  subLabel: d.vehicleName ? `Vehicle: ${d.vehicleName}` : undefined,
+                })),
+              ]}
               value={selectedDriverId}
-              onChange={(e) => setSelectedDriverId(e.target.value)}
-              className="h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] font-medium"
-            >
-              <option value="all">-- All Assigned Drivers --</option>
-              {drivers.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name} {d.vehicleName ? `• ${d.vehicleName}` : ""}
-                </option>
-              ))}
-            </select>
+              onChange={setSelectedDriverId}
+              placeholder="Select Driver..."
+            />
           </div>
 
           {/* Search */}

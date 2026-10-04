@@ -50,6 +50,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { OffCanvas } from "@/components/OffCanvas";
+import { SearchableSelect } from "@/components/SearchableSelect";
 
 // Indian States with GST & State Codes
 export const INDIAN_STATES = [
@@ -1032,16 +1033,17 @@ export default function CompaniesPage() {
             />
           </div>
 
-          <div className="flex items-center gap-2">
-            <select
+          <div className="flex items-center gap-2 w-44">
+            <SearchableSelect
+              options={[
+                { value: "ALL", label: "All Status" },
+                { value: "ACTIVE", label: "Active Accounts", badge: "Active", badgeColor: "green" },
+                { value: "INACTIVE", label: "Inactive Accounts", badge: "Inactive", badgeColor: "slate" },
+              ]}
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as any)}
-              className="h-[30px] px-2.5 text-[11px] bg-white border border-slate-200 rounded-[6px] text-slate-700 font-normal focus:outline-none focus:border-[#f16623] cursor-pointer"
-            >
-              <option value="ALL">All Status</option>
-              <option value="ACTIVE">Active Accounts</option>
-              <option value="INACTIVE">Inactive Accounts</option>
-            </select>
+              onChange={(val) => setStatusFilter(val as any)}
+              placeholder="Filter status..."
+            />
           </div>
         </div>
 
@@ -1464,14 +1466,15 @@ export default function CompaniesPage() {
                     <label className="block text-xs font-medium text-slate-700 mb-1">
                       Customer Type <span className="text-[#f16623]">*</span>
                     </label>
-                    <select
+                    <SearchableSelect
+                      options={[
+                        { value: "Company", label: "Company (Corporate B2B)" },
+                        { value: "Individual", label: "Individual (Proprietorship / Direct)" },
+                      ]}
                       value={customerType}
-                      onChange={(e) => setCustomerType(e.target.value as any)}
-                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition cursor-pointer"
-                    >
-                      <option value="Company">Company (Corporate B2B)</option>
-                      <option value="Individual">Individual (Proprietorship / Direct)</option>
-                    </select>
+                      onChange={(val) => setCustomerType(val as any)}
+                      placeholder="Select Customer Type..."
+                    />
                   </div>
 
                   {/* PAN */}
@@ -1576,17 +1579,15 @@ export default function CompaniesPage() {
                     <label className="block text-xs font-medium text-slate-700 mb-1">
                       Billing State / Place of Supply <span className="text-[#f16623]">*</span>
                     </label>
-                    <select
+                    <SearchableSelect
+                      options={INDIAN_STATES.map((st) => ({
+                        value: st.code,
+                        label: `${st.code} - ${st.name}`,
+                      }))}
                       value={billingState}
-                      onChange={(e) => setBillingState(e.target.value)}
-                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition cursor-pointer"
-                    >
-                      {INDIAN_STATES.map((st) => (
-                        <option key={st.code} value={st.code}>
-                          {st.code} - {st.name}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setBillingState}
+                      placeholder="Select Billing State..."
+                    />
                   </div>
 
                   {/* GST Reverse Charge Toggle */}
@@ -1812,14 +1813,15 @@ export default function CompaniesPage() {
                     <label className="block text-xs font-medium text-slate-700 mb-1">
                       Invoice Default Mode <span className="text-[#f16623]">*</span>
                     </label>
-                    <select
+                    <SearchableSelect
+                      options={[
+                        { value: "Credit", label: "Credit (Post-Paid / Invoiced)" },
+                        { value: "Cash", label: "Cash (Immediate Settlement)" },
+                      ]}
                       value={invoiceDefaultMode}
-                      onChange={(e) => setInvoiceDefaultMode(e.target.value as any)}
-                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition cursor-pointer"
-                    >
-                      <option value="Credit">Credit (Post-Paid / Invoiced)</option>
-                      <option value="Cash">Cash (Immediate Settlement)</option>
-                    </select>
+                      onChange={(val) => setInvoiceDefaultMode(val as any)}
+                      placeholder="Select Default Mode..."
+                    />
                   </div>
 
                   {/* If Credit: Credit Terms */}
@@ -1828,17 +1830,18 @@ export default function CompaniesPage() {
                       <label className="block text-xs font-medium text-slate-700 mb-1">
                         Credit Terms <span className="text-[#f16623]">*</span>
                       </label>
-                      <select
+                      <SearchableSelect
+                        options={[
+                          { value: "7 Days", label: "7 Days" },
+                          { value: "15 Days", label: "15 Days" },
+                          { value: "30 Days", label: "30 Days" },
+                          { value: "Immediately", label: "Immediately" },
+                          { value: "Custom", label: "Custom Days" },
+                        ]}
                         value={creditTerms}
-                        onChange={(e) => setCreditTerms(e.target.value)}
-                        className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition cursor-pointer"
-                      >
-                        <option value="7 Days">7 Days</option>
-                        <option value="15 Days">15 Days</option>
-                        <option value="30 Days">30 Days</option>
-                        <option value="Immediately">Immediately</option>
-                        <option value="Custom">Custom Days</option>
-                      </select>
+                        onChange={setCreditTerms}
+                        placeholder="Select Credit Terms..."
+                      />
                     </div>
                   )}
 

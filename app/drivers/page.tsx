@@ -54,6 +54,8 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { OffCanvas } from "@/components/OffCanvas";
+import { SearchableSelect } from "@/components/SearchableSelect";
+import { CustomDatePicker } from "@/components/CustomDatePicker";
 
 export interface DriverItem {
   id: string;
@@ -1206,19 +1208,20 @@ export default function DriversPage() {
             />
           </div>
 
-          <div className="flex items-center gap-2">
-            <select
+          <div className="flex items-center gap-2 w-48">
+            <SearchableSelect
+              options={[
+                { value: "ALL", label: "All Status" },
+                { value: "ACTIVE", label: "Active Only", badge: "Active", badgeColor: "green" },
+                { value: "INACTIVE", label: "Inactive Only", badge: "Inactive", badgeColor: "slate" },
+                { value: "AVAILABLE", label: "Available (On Call)", badge: "Available", badgeColor: "green" },
+                { value: "ON_TRIP", label: "On Trip", badge: "In Trip", badgeColor: "amber" },
+                { value: "SUSPENDED", label: "Suspended Only", badge: "Suspended", badgeColor: "red" },
+              ]}
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="h-[30px] px-2.5 text-[11px] bg-white border border-slate-200 rounded-[6px] text-slate-700 font-normal focus:outline-none focus:border-[#f16623] cursor-pointer"
-            >
-              <option value="ALL">All Status</option>
-              <option value="ACTIVE">Active Only</option>
-              <option value="INACTIVE">Inactive Only</option>
-              <option value="AVAILABLE">Available (On Call)</option>
-              <option value="ON_TRIP">On Trip</option>
-              <option value="SUSPENDED">Suspended Only</option>
-            </select>
+              onChange={setStatusFilter}
+              placeholder="Filter status..."
+            />
           </div>
         </div>
 
@@ -1745,12 +1748,10 @@ export default function DriversPage() {
                     <label className="block text-xs font-medium text-slate-700 mb-1 uppercase tracking-wide text-[10px]">
                       DL Valid From <span className="text-[#f16623]">*</span>
                     </label>
-                    <input
-                      type="date"
-                      required
+                    <CustomDatePicker
                       value={dlValidFrom}
-                      onChange={(e) => setDlValidFrom(e.target.value)}
-                      className="w-full h-[34px] max-h-[34px] px-3 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition"
+                      onChange={setDlValidFrom}
+                      placeholder="Select DL valid from..."
                     />
                   </div>
 
@@ -1759,22 +1760,11 @@ export default function DriversPage() {
                     <label className="block text-xs font-medium text-slate-700 mb-1 uppercase tracking-wide text-[10px]">
                       DL Valid To (Expiry) <span className="text-[#f16623]">*</span>
                     </label>
-                    <div className="relative">
-                      <input
-                        type="date"
-                        required
-                        value={dlValidTo}
-                        onChange={(e) => setDlValidTo(e.target.value)}
-                        className={`w-full h-[34px] max-h-[34px] px-3 text-xs bg-slate-50 border rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition ${
-                          dlValidTo && isDateValid(dlValidTo)
-                            ? "border-emerald-400 pr-8"
-                            : "border-slate-200"
-                        }`}
-                      />
-                      {dlValidTo && isDateValid(dlValidTo) && (
-                        <Check className="w-4 h-4 text-emerald-600 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                      )}
-                    </div>
+                    <CustomDatePicker
+                      value={dlValidTo}
+                      onChange={setDlValidTo}
+                      placeholder="Select DL expiry..."
+                    />
                     {dlValidTo && isDateValid(dlValidTo) && (
                       <span className="text-[10px] text-emerald-600 font-medium block mt-1">
                         Document is valid
@@ -1801,21 +1791,11 @@ export default function DriversPage() {
                     <label className="block text-xs font-medium text-slate-700 mb-1 uppercase tracking-wide text-[10px]">
                       Badge Valid To
                     </label>
-                    <div className="relative">
-                      <input
-                        type="date"
-                        value={badgeValidTo}
-                        onChange={(e) => setBadgeValidTo(e.target.value)}
-                        className={`w-full h-[34px] max-h-[34px] px-3 text-xs bg-slate-50 border rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition ${
-                          badgeValidTo && isDateValid(badgeValidTo)
-                            ? "border-emerald-400 pr-8"
-                            : "border-slate-200"
-                        }`}
-                      />
-                      {badgeValidTo && isDateValid(badgeValidTo) && (
-                        <Check className="w-4 h-4 text-emerald-600 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                      )}
-                    </div>
+                    <CustomDatePicker
+                      value={badgeValidTo}
+                      onChange={setBadgeValidTo}
+                      placeholder="Select badge expiry..."
+                    />
                     {badgeValidTo && isDateValid(badgeValidTo) && (
                       <span className="text-[10px] text-emerald-600 font-medium block mt-1">
                         Document is valid
@@ -1885,17 +1865,12 @@ export default function DriversPage() {
                     <label className="block text-xs font-medium text-slate-700 mb-1 uppercase tracking-wide text-[10px]">
                       Ownership Type <span className="text-[#f16623]">*</span>
                     </label>
-                    <select
+                    <SearchableSelect
+                      options={OWNERSHIP_TYPES.map((ot) => ({ value: ot, label: ot }))}
                       value={ownershipType}
-                      onChange={(e) => setOwnershipType(e.target.value)}
-                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition cursor-pointer"
-                    >
-                      {OWNERSHIP_TYPES.map((ot) => (
-                        <option key={ot} value={ot}>
-                          {ot}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setOwnershipType}
+                      placeholder="Select Ownership..."
+                    />
                   </div>
 
                   {/* Availability Status */}
@@ -1903,17 +1878,22 @@ export default function DriversPage() {
                     <label className="block text-xs font-medium text-slate-700 mb-1 uppercase tracking-wide text-[10px]">
                       Availability Status <span className="text-[#f16623]">*</span>
                     </label>
-                    <select
+                    <SearchableSelect
+                      options={AVAILABILITY_STATUS_OPTIONS.map((as) => ({
+                        value: as,
+                        label: as,
+                        badge: as,
+                        badgeColor:
+                          as === "Available"
+                            ? ("green" as const)
+                            : as === "In Trip"
+                            ? ("amber" as const)
+                            : ("red" as const),
+                      }))}
                       value={availabilityStatus}
-                      onChange={(e) => setAvailabilityStatus(e.target.value)}
-                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition cursor-pointer"
-                    >
-                      {AVAILABILITY_STATUS_OPTIONS.map((as) => (
-                        <option key={as} value={as}>
-                          {as}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setAvailabilityStatus}
+                      placeholder="Select Availability..."
+                    />
                     <span className="text-[10px] text-slate-400 block mt-1">
                       System tracks driver status when assigned to bookings.
                     </span>
@@ -1924,11 +1904,10 @@ export default function DriversPage() {
                     <label className="block text-xs font-medium text-slate-700 mb-1 uppercase tracking-wide text-[10px]">
                       Last Verification Date
                     </label>
-                    <input
-                      type="date"
+                    <CustomDatePicker
                       value={lastVerificationDate}
-                      onChange={(e) => setLastVerificationDate(e.target.value)}
-                      className="w-full h-[34px] max-h-[34px] px-3 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition"
+                      onChange={setLastVerificationDate}
+                      placeholder="Select verification date..."
                     />
                     <span className="text-[10px] text-slate-400 block mt-1">
                       When documents were last manually verified.
@@ -1942,47 +1921,47 @@ export default function DriversPage() {
                     <label className="block text-xs font-medium text-slate-700 mb-1 uppercase tracking-wide text-[10px]">
                       Assigned Vehicle <span className="text-slate-400 font-normal lowercase">(optional pairing)</span>
                     </label>
-                    <select
+                    <SearchableSelect
+                      options={[
+                        { value: "", label: "-- No vehicle assigned --" },
+                        ...vehiclesList.map((veh) => ({
+                          value: veh.id,
+                          label: `${veh.regNumber} (${veh.vehicleName})`,
+                          subLabel: veh.vehicleName,
+                        })),
+                      ]}
                       value={selectedVehicleId}
-                      onChange={(e) => {
-                        const vId = e.target.value;
+                      onChange={(vId) => {
                         setSelectedVehicleId(vId);
                         const found = vehiclesList.find((v) => v.id === vId);
                         setSelectedVehicleName(found?.vehicleName || "");
                         setSelectedVehicleReg(found?.regNumber || "");
                       }}
-                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] transition cursor-pointer"
-                    >
-                      <option value="">-- No vehicle assigned --</option>
-                      {vehiclesList.map((veh) => (
-                        <option key={veh.id} value={veh.id}>
-                          {veh.regNumber} ({veh.vehicleName})
-                        </option>
-                      ))}
-                    </select>
+                      placeholder="Select Assigned Vehicle..."
+                    />
                   </div>
 
                   <div>
                     <label className="block text-xs font-medium text-slate-700 mb-1 uppercase tracking-wide text-[10px]">
                       Assigned Travel / Agency
                     </label>
-                    <select
+                    <SearchableSelect
+                      options={[
+                        { value: "", label: "-- In-House Staff --" },
+                        ...travelsList.map((tr) => ({
+                          value: tr.id,
+                          label: tr.travelName,
+                          subLabel: tr.mobileNumber,
+                        })),
+                      ]}
                       value={selectedTravelId}
-                      onChange={(e) => {
-                        const tId = e.target.value;
+                      onChange={(tId) => {
                         setSelectedTravelId(tId);
                         const found = travelsList.find((t) => t.id === tId);
                         setSelectedTravelName(found?.travelName || "");
                       }}
-                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] transition cursor-pointer"
-                    >
-                      <option value="">-- In-House Staff --</option>
-                      {travelsList.map((tr) => (
-                        <option key={tr.id} value={tr.id}>
-                          {tr.travelName}
-                        </option>
-                      ))}
-                    </select>
+                      placeholder="Select Travel / Agency..."
+                    />
                   </div>
                 </div>
 
@@ -1998,11 +1977,10 @@ export default function DriversPage() {
                     <label className="block text-xs font-medium text-slate-700 mb-1 uppercase tracking-wide text-[10px]">
                       Joining Date
                     </label>
-                    <input
-                      type="date"
+                    <CustomDatePicker
                       value={joiningDate}
-                      onChange={(e) => setJoiningDate(e.target.value)}
-                      className="w-full h-[34px] max-h-[34px] px-3 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition"
+                      onChange={setJoiningDate}
+                      placeholder="Select joining date..."
                     />
                   </div>
 
@@ -2027,11 +2005,11 @@ export default function DriversPage() {
                     <label className="block text-xs font-medium text-slate-700 mb-1 uppercase tracking-wide text-[10px]">
                       Ending Date (Deactivation)
                     </label>
-                    <input
-                      type="date"
+                    <CustomDatePicker
                       value={endingDateDeactivation}
-                      onChange={(e) => setEndingDateDeactivation(e.target.value)}
-                      className="w-full h-[34px] max-h-[34px] px-3 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white transition"
+                      onChange={setEndingDateDeactivation}
+                      placeholder="Select ending date..."
+                      minDate={joiningDate}
                     />
                     <span className="text-[10px] text-slate-400 block mt-1">
                       Setting this date auto-deactivates the driver.

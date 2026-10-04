@@ -54,6 +54,9 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { OffCanvas } from "@/components/OffCanvas";
+import { SearchableSelect } from "@/components/SearchableSelect";
+import { CustomDatePicker } from "@/components/CustomDatePicker";
+import { CustomTimePicker } from "@/components/CustomTimePicker";
 import { ALL_INDIA_STATES_DATA } from "@/app/locations/page";
 
 // --- Types & Data Models ---
@@ -1294,35 +1297,37 @@ export default function BookingsPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           {/* Status Filter */}
-          <div className="flex items-center gap-1 text-xs">
-            <span className="text-[11px] text-slate-400 font-normal">Status:</span>
-            <select
+          <div className="flex items-center gap-1.5 text-xs w-48">
+            <span className="text-[11px] text-slate-400 font-normal shrink-0">Status:</span>
+            <SearchableSelect
+              options={[
+                { value: "all", label: "All Trip Statuses" },
+                { value: "New", label: "New" },
+                { value: "Trip In Progress", label: "Trip In Progress" },
+                { value: "Trip Completed", label: "Trip Completed" },
+                { value: "Invoice Generated", label: "Invoice Generated" },
+                { value: "Invoice Sent", label: "Invoice Sent" },
+              ]}
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-700 focus:outline-none focus:border-[#f16623] font-normal cursor-pointer"
-            >
-              <option value="all">All Trip Statuses</option>
-              <option value="New">New</option>
-              <option value="Trip In Progress">Trip In Progress</option>
-              <option value="Trip Completed">Trip Completed</option>
-              <option value="Invoice Generated">Invoice Generated</option>
-              <option value="Invoice Sent">Invoice Sent</option>
-            </select>
+              onChange={setStatusFilter}
+              placeholder="Filter Status..."
+            />
           </div>
 
           {/* Payment Status Filter */}
-          <div className="flex items-center gap-1 text-xs">
-            <span className="text-[11px] text-slate-400 font-normal">Payment:</span>
-            <select
+          <div className="flex items-center gap-1.5 text-xs w-44">
+            <span className="text-[11px] text-slate-400 font-normal shrink-0">Payment:</span>
+            <SearchableSelect
+              options={[
+                { value: "all", label: "All Payments" },
+                { value: "Unpaid", label: "Unpaid", badge: "Unpaid", badgeColor: "red" },
+                { value: "Partial", label: "Partial", badge: "Partial", badgeColor: "amber" },
+                { value: "Paid", label: "Paid", badge: "Paid", badgeColor: "green" },
+              ]}
               value={paymentFilter}
-              onChange={(e) => setPaymentFilter(e.target.value)}
-              className="h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-700 focus:outline-none focus:border-[#f16623] font-normal cursor-pointer"
-            >
-              <option value="all">All Payments</option>
-              <option value="Unpaid">Unpaid</option>
-              <option value="Partial">Partial</option>
-              <option value="Paid">Paid</option>
-            </select>
+              onChange={setPaymentFilter}
+              placeholder="Filter Payment..."
+            />
           </div>
         </div>
       </div>
@@ -1582,44 +1587,41 @@ export default function BookingsPage() {
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
                     START DATE *
                   </label>
-                  <input
-                    type="date"
+                  <CustomDatePicker
                     value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal"
+                    onChange={setStartDate}
+                    placeholder="Select start date..."
                   />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
                     START TIME *
                   </label>
-                  <input
-                    type="time"
+                  <CustomTimePicker
                     value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal"
+                    onChange={setStartTime}
+                    placeholder="Select start time..."
                   />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
                     END DATE *
                   </label>
-                  <input
-                    type="date"
+                  <CustomDatePicker
                     value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal"
+                    onChange={setEndDate}
+                    placeholder="Select end date..."
+                    minDate={startDate}
                   />
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
                     END TIME *
                   </label>
-                  <input
-                    type="time"
+                  <CustomTimePicker
                     value={endTime}
-                    onChange={(e) => setEndTime(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal"
+                    onChange={setEndTime}
+                    placeholder="Select end time..."
                   />
                 </div>
               </div>
@@ -1665,31 +1667,35 @@ export default function BookingsPage() {
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
                     OPERATING ENTITY *
                   </label>
-                  <select
+                  <SearchableSelect
+                    options={entities.map((ent) => ({
+                      value: ent.id,
+                      label: ent.name,
+                    }))}
                     value={selectedEntityId}
-                    onChange={(e) => {
-                      setSelectedEntityId(e.target.value);
-                      const ent = entities.find((item) => item.id === e.target.value);
+                    onChange={(val) => {
+                      setSelectedEntityId(val);
+                      const ent = entities.find((item) => item.id === val);
                       setSelectedEntityName(ent?.name || "");
                     }}
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal cursor-pointer"
-                  >
-                    {entities.map((ent) => (
-                      <option key={ent.id} value={ent.id}>
-                        {ent.name}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Search & select operating entity..."
+                  />
                 </div>
 
                 <div className="space-y-1">
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
                     CUSTOMER (COMPANIES LIST) *
                   </label>
-                  <select
+                  <SearchableSelect
+                    options={companies.map((comp) => ({
+                      value: comp.id,
+                      label: comp.name,
+                      subLabel: comp.contactPerson
+                        ? `${comp.contactPerson} • ${comp.mobile || ""}`
+                        : comp.mobile,
+                    }))}
                     value={selectedCustomerId}
-                    onChange={(e) => {
-                      const cId = e.target.value;
+                    onChange={(cId) => {
                       setSelectedCustomerId(cId);
                       const comp = companies.find((c) => c.id === cId);
                       if (comp) {
@@ -1700,15 +1706,8 @@ export default function BookingsPage() {
                         setSelectedCustomerName("");
                       }
                     }}
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal cursor-pointer"
-                  >
-                    <option value="">Select Company...</option>
-                    {companies.map((comp) => (
-                      <option key={comp.id} value={comp.id}>
-                        {comp.name}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Search & select company..."
+                  />
                 </div>
               </div>
 
@@ -1734,22 +1733,20 @@ export default function BookingsPage() {
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
                     VEHICLE CATEGORY *
                   </label>
-                  <select
+                  <SearchableSelect
+                    options={availableTariffCategories.map((cat: string) => ({
+                      value: cat,
+                      label: cat,
+                    }))}
                     value={selectedVehicleCategory}
-                    onChange={(e) => setSelectedVehicleCategory(e.target.value)}
+                    onChange={(val) => setSelectedVehicleCategory(val)}
+                    placeholder={
+                      availableTariffCategories.length === 0
+                        ? "No categories in tariff"
+                        : "Select Category..."
+                    }
                     disabled={availableTariffCategories.length === 0}
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal cursor-pointer disabled:bg-slate-50 disabled:text-slate-400"
-                  >
-                    {availableTariffCategories.length === 0 ? (
-                      <option value="">No categories enabled in tariff</option>
-                    ) : (
-                      availableTariffCategories.map((cat: string) => (
-                        <option key={cat} value={cat}>
-                          {cat}
-                        </option>
-                      ))
-                    )}
-                  </select>
+                  />
                 </div>
 
                 {/* Tariff Type */}
@@ -1757,20 +1754,16 @@ export default function BookingsPage() {
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
                     TARIFF DUTY TYPE *
                   </label>
-                  <select
+                  <SearchableSelect
+                    options={availableTariffTypes.map((type) => ({
+                      value: type,
+                      label: type,
+                    }))}
                     value={selectedTariffType}
-                    onChange={(e) =>
-                      setSelectedTariffType(e.target.value as any)
-                    }
+                    onChange={(val) => setSelectedTariffType(val as any)}
+                    placeholder="Select Duty Type..."
                     disabled={availableTariffTypes.length === 0}
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal cursor-pointer"
-                  >
-                    {availableTariffTypes.map((type) => (
-                      <option key={type} value={type}>
-                        {type}
-                      </option>
-                    ))}
-                  </select>
+                  />
                 </div>
 
                 {/* Package / Slab */}
@@ -1778,23 +1771,21 @@ export default function BookingsPage() {
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
                     PACKAGE / SLAB *
                   </label>
-                  <select
+                  <SearchableSelect
+                    options={availablePackages.map((pkg: any) => ({
+                      value: pkg.id,
+                      label: pkg.name,
+                      subLabel: `Base: ₹${pkg.baseRate || 0} (${pkg.minKm || 0} KM / ${pkg.minHours || 0} Hrs)`,
+                    }))}
                     value={selectedPackageId}
-                    onChange={(e) => {
-                      setSelectedPackageId(e.target.value);
-                      const pkg = availablePackages.find(
-                        (p: any) => p.id === e.target.value
-                      );
+                    onChange={(val) => {
+                      setSelectedPackageId(val);
+                      const pkg = availablePackages.find((p: any) => p.id === val);
                       setSelectedPackageName(pkg?.name || "");
                     }}
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal cursor-pointer"
-                  >
-                    {availablePackages.map((pkg: any) => (
-                      <option key={pkg.id} value={pkg.id}>
-                        {pkg.name}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Select Package..."
+                    disabled={availablePackages.length === 0}
+                  />
                 </div>
               </div>
 
@@ -1875,28 +1866,26 @@ export default function BookingsPage() {
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
                     ASSIGN VEHICLE ({selectedVehicleCategory || "All"})
                   </label>
-                  <select
+                  <SearchableSelect
+                    options={filteredVehicles.map((v) => {
+                      const isOccupied = occupiedVehicleIds.has(v.id);
+                      return {
+                        value: v.id,
+                        label: `${v.regNumber} — ${v.vehicleName}`,
+                        subLabel: `${v.category || "Vehicle"} • ${v.fuelType || ""}`,
+                        badge: isOccupied ? "In Trip" : "Available",
+                        badgeColor: isOccupied ? "amber" : "green",
+                      };
+                    })}
                     value={selectedVehicleId}
-                    onChange={(e) => {
-                      const vId = e.target.value;
+                    onChange={(vId) => {
                       setSelectedVehicleId(vId);
                       const veh = vehicles.find((v) => v.id === vId);
                       setSelectedVehicleReg(veh?.regNumber || "");
                       setSelectedVehicleName(veh?.vehicleName || "");
                     }}
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal cursor-pointer"
-                  >
-                    <option value="">Select vehicle...</option>
-                    {filteredVehicles.map((v) => {
-                      const isOccupied = occupiedVehicleIds.has(v.id);
-                      return (
-                        <option key={v.id} value={v.id}>
-                          {v.regNumber} — {v.vehicleName} ({v.category}){" "}
-                          {isOccupied ? "● In Trip" : "● Available"}
-                        </option>
-                      );
-                    })}
-                  </select>
+                    placeholder="Search & select vehicle..."
+                  />
                 </div>
 
                 {/* Driver Selection */}
@@ -1904,19 +1893,8 @@ export default function BookingsPage() {
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
                     ASSIGN DRIVER
                   </label>
-                  <select
-                    value={selectedDriverId}
-                    onChange={(e) => {
-                      const dId = e.target.value;
-                      setSelectedDriverId(dId);
-                      const d = drivers.find((item) => item.id === dId);
-                      setSelectedDriverName(d?.fullName || d?.name || "");
-                      setSelectedDriverMobile(d?.mobileNumber || d?.mobile || "");
-                    }}
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal cursor-pointer"
-                  >
-                    <option value="">Select driver...</option>
-                    {drivers.map((d) => {
+                  <SearchableSelect
+                    options={drivers.map((d) => {
                       const isOccupied = occupiedDriverIds.has(d.id);
                       const onLeave = d.availabilityStatus === "On Leave";
                       const statusLabel = onLeave
@@ -1924,13 +1902,28 @@ export default function BookingsPage() {
                         : isOccupied
                         ? "In Trip"
                         : "Available";
-                      return (
-                        <option key={d.id} value={d.id}>
-                          {d.fullName || d.name} — ({statusLabel})
-                        </option>
-                      );
+                      const badgeColor: "red" | "amber" | "green" = onLeave
+                        ? "red"
+                        : isOccupied
+                        ? "amber"
+                        : "green";
+                      return {
+                        value: d.id,
+                        label: d.fullName || d.name,
+                        subLabel: d.mobileNumber || d.mobile,
+                        badge: statusLabel,
+                        badgeColor,
+                      };
                     })}
-                  </select>
+                    value={selectedDriverId}
+                    onChange={(dId) => {
+                      setSelectedDriverId(dId);
+                      const d = drivers.find((item) => item.id === dId);
+                      setSelectedDriverName(d?.fullName || d?.name || "");
+                      setSelectedDriverMobile(d?.mobileNumber || d?.mobile || "");
+                    }}
+                    placeholder="Search & select driver..."
+                  />
                 </div>
               </div>
 
@@ -2392,17 +2385,17 @@ export default function BookingsPage() {
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
                     BOOKING STATUS
                   </label>
-                  <select
+                  <SearchableSelect
+                    options={[
+                      { value: "New", label: "New" },
+                      { value: "Trip In Progress", label: "Trip In Progress" },
+                      { value: "Trip Completed", label: "Trip Completed" },
+                      { value: "Invoice Generated", label: "Invoice Generated" },
+                      { value: "Invoice Sent", label: "Invoice Sent" },
+                    ]}
                     value={bookingStatus}
-                    onChange={(e) => setBookingStatus(e.target.value as any)}
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal cursor-pointer"
-                  >
-                    <option value="New">New</option>
-                    <option value="Trip In Progress">Trip In Progress</option>
-                    <option value="Trip Completed">Trip Completed</option>
-                    <option value="Invoice Generated">Invoice Generated</option>
-                    <option value="Invoice Sent">Invoice Sent</option>
-                  </select>
+                    onChange={(val) => setBookingStatus(val as any)}
+                  />
                 </div>
 
                 {/* Payment Status */}
@@ -2410,17 +2403,15 @@ export default function BookingsPage() {
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
                     PAYMENT STATUS (AUTO / OVERRIDE)
                   </label>
-                  <select
+                  <SearchableSelect
+                    options={[
+                      { value: "Unpaid", label: "Unpaid", badge: "Unpaid", badgeColor: "red" },
+                      { value: "Partial", label: "Partial", badge: "Partial", badgeColor: "amber" },
+                      { value: "Paid", label: "Paid", badge: "Paid", badgeColor: "green" },
+                    ]}
                     value={autoPaymentStatus}
-                    onChange={(e) =>
-                      setOverridePaymentStatus(e.target.value as PaymentStatus)
-                    }
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal cursor-pointer"
-                  >
-                    <option value="Unpaid">Unpaid</option>
-                    <option value="Partial">Partial</option>
-                    <option value="Paid">Paid</option>
-                  </select>
+                    onChange={(val) => setOverridePaymentStatus(val as PaymentStatus)}
+                  />
                 </div>
               </div>
 

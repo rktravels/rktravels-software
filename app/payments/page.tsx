@@ -34,6 +34,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { OffCanvas } from "@/components/OffCanvas";
+import { SearchableSelect } from "@/components/SearchableSelect";
 
 export interface PaymentHistoryItem {
   id: string;
@@ -621,41 +622,48 @@ export default function PaymentsPage() {
 
         {/* Tab-specific Filters */}
         {activeTab === "pending" ? (
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] text-slate-400 font-medium">Status:</span>
-            <select
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] text-slate-400 font-medium shrink-0">Status:</span>
+            <SearchableSelect
+              options={[
+                { value: "all", label: `All Pending (${pendingBookings.length})` },
+                { value: "Unpaid", label: "Unpaid Only", badge: "Unpaid", badgeColor: "red" },
+                { value: "Partial", label: "Partial Only", badge: "Partial", badgeColor: "amber" },
+              ]}
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as any)}
-              className="h-[30px] px-2 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-700 focus:outline-none focus:border-[#f16623] cursor-pointer"
-            >
-              <option value="all">All Pending ({pendingBookings.length})</option>
-              <option value="Unpaid">Unpaid Only</option>
-              <option value="Partial">Partial Only</option>
-            </select>
+              onChange={(val) => setStatusFilter(val as any)}
+              className="w-40"
+            />
           </div>
         ) : (
           <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value as any)}
-              className="h-[30px] px-2 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-700 focus:outline-none focus:border-[#f16623] cursor-pointer"
-            >
-              <option value="all">All Dates</option>
-              <option value="today">Today</option>
-              <option value="yesterday">Yesterday</option>
-              <option value="this_month">This Month</option>
-            </select>
+            <div className="w-36">
+              <SearchableSelect
+                options={[
+                  { value: "all", label: "All Dates" },
+                  { value: "today", label: "Today" },
+                  { value: "yesterday", label: "Yesterday" },
+                  { value: "this_month", label: "This Month" },
+                ]}
+                value={dateFilter}
+                onChange={(val) => setDateFilter(val as any)}
+                placeholder="Filter date..."
+              />
+            </div>
 
-            <select
-              value={modeFilter}
-              onChange={(e) => setModeFilter(e.target.value)}
-              className="h-[30px] px-2 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-700 focus:outline-none focus:border-[#f16623] cursor-pointer"
-            >
-              <option value="all">All Payment Modes</option>
-              <option value="cash">Cash</option>
-              <option value="upi">UPI</option>
-              <option value="card">Card</option>
-            </select>
+            <div className="w-44">
+              <SearchableSelect
+                options={[
+                  { value: "all", label: "All Payment Modes" },
+                  { value: "cash", label: "Cash", badge: "Cash", badgeColor: "green" },
+                  { value: "upi", label: "UPI", badge: "UPI", badgeColor: "blue" },
+                  { value: "card", label: "Card", badge: "Card", badgeColor: "slate" },
+                ]}
+                value={modeFilter}
+                onChange={(val) => setModeFilter(val)}
+                placeholder="Filter mode..."
+              />
+            </div>
           </div>
         )}
       </div>

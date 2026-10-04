@@ -38,6 +38,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { OffCanvas } from "@/components/OffCanvas";
+import { SearchableSelect } from "@/components/SearchableSelect";
 
 interface EmployeeItem {
   id: string;
@@ -693,25 +694,21 @@ export default function EmployeesPage() {
               <Route className="w-3 h-3 text-[#f16623]" />
               Select Travels / Agency <span className="text-[#f16623]">*</span>
             </label>
-            <select
+            <SearchableSelect
               id="emp-travel"
-              required
+              options={travelsList.map((t) => ({
+                value: t.id,
+                label: t.travelName,
+                subLabel: t.mobileNumber,
+              }))}
               value={selectedTravelId}
-              onChange={(e) => {
-                const val = e.target.value;
+              onChange={(val) => {
                 setSelectedTravelId(val);
                 const found = travelsList.find((t) => t.id === val);
                 setSelectedTravelName(found ? found.travelName : "");
               }}
-              className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal transition"
-            >
-              <option value="">-- Select Travels / Agency --</option>
-              {travelsList.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.travelName} {t.mobileNumber ? `(${t.mobileNumber})` : ""}
-                </option>
-              ))}
-            </select>
+              placeholder="Select Travels / Agency..."
+            />
             {travelsList.length === 0 && (
               <p className="text-[10px] text-slate-400">
                 No entities registered yet. Add entities in the{" "}
