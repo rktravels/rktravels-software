@@ -54,7 +54,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { OffCanvas } from "@/components/OffCanvas";
-import { SearchableSelect } from "@/components/SearchableSelect";
+import { SearchableSelect, type SearchableSelectOption } from "@/components/SearchableSelect";
 import { CustomDatePicker } from "@/components/CustomDatePicker";
 import { CustomTimePicker } from "@/components/CustomTimePicker";
 import { ALL_INDIA_STATES_DATA } from "@/app/locations/page";
@@ -210,6 +210,9 @@ export default function BookingsPage() {
   const [endTime, setEndTime] = useState<string>("18:00");
   const [fromLocation, setFromLocation] = useState("");
   const [toLocation, setToLocation] = useState("");
+  const [dbLocations, setDbLocations] = useState<
+    { id: string; name: string; state?: string; stateCode?: string; isActive?: boolean }[]
+  >([]);
 
   const [selectedEntityId, setSelectedEntityId] = useState("");
   const [selectedEntityName, setSelectedEntityName] = useState("");
@@ -440,6 +443,135 @@ export default function BookingsPage() {
       if (unsubBookings) unsubBookings();
     };
   }, []);
+
+  // -------------------------------------------------------------------------
+  // 7. Subscribe to Locations
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    let unsubLocations: (() => void) | null = null;
+    try {
+      const q = query(collection(db, "locations"), orderBy("name", "asc"));
+      unsubLocations = onSnapshot(
+        q,
+        (snap) => {
+          const list = snap.docs.map((d) => {
+            const data = d.data();
+            return {
+              id: d.id,
+              name: data.name || data.cityName || "",
+              state: data.state || data.stateName || "",
+              stateCode: data.stateCode || "",
+              isActive: data.isActive !== false,
+            };
+          });
+          setDbLocations(list);
+        },
+        () => {
+          getDocs(collection(db, "locations"))
+            .then((snap) => {
+              const list = snap.docs.map((d) => {
+                const data = d.data();
+                return {
+                  id: d.id,
+                  name: data.name || data.cityName || "",
+                  state: data.state || data.stateName || "",
+                  stateCode: data.stateCode || "",
+                  isActive: data.isActive !== false,
+                };
+              });
+              setDbLocations(list);
+            })
+            .catch((err) => console.warn("Locations fallback notice:", err));
+        }
+      );
+    } catch (err) {
+      console.warn("Locations query error:", err);
+    }
+    return () => {
+      if (unsubLocations) unsubLocations();
+    };
+  }, []);
+
+  // -------------------------------------------------------------------------
+  // Location Options for Dropdowns (From & To)
+  // -------------------------------------------------------------------------
+  const locationOptions = useMemo<SearchableSelectOption[]>(() => {
+    const map = new Map<string, SearchableSelectOption>();
+
+    // 1. All-India standard state cities from master data
+    ALL_INDIA_STATES_DATA.forEach((st) => {
+      st.cities.forEach((cityName) => {
+        const key = cityName.toLowerCase().trim();
+        if (!map.has(key)) {
+          map.set(key, {
+            value: cityName,
+            label: cityName,
+            subLabel: st.name,
+            badge: st.code,
+            badgeColor: st.code === "TS" || st.code === "AP" ? "amber" : "slate",
+          });
+        }
+      });
+    });
+
+    // 2. Hub locations & popular local destinations (airports, stations, key hubs)
+    const hubs = [
+      { name: "RGIA Shamshabad Airport", sub: "Hyderabad, Telangana", code: "Airport" },
+      { name: "Secunderabad Railway Station", sub: "Hyderabad, Telangana", code: "Station" },
+      { name: "Hyderabad Deccan Nampally Station", sub: "Hyderabad, Telangana", code: "Station" },
+      { name: "Kacheguda Railway Station", sub: "Hyderabad, Telangana", code: "Station" },
+      { name: "Gachibowli Financial District", sub: "Hyderabad, Telangana", code: "IT Hub" },
+      { name: "Hitec City / Madhapur", sub: "Hyderabad, Telangana", code: "IT Hub" },
+      { name: "Banjara Hills", sub: "Hyderabad, Telangana", code: "City" },
+      { name: "Jubilee Hills", sub: "Hyderabad, Telangana", code: "City" },
+      { name: "Begumpet Airport", sub: "Hyderabad, Telangana", code: "Airport" },
+      { name: "Miyapur Metro Station", sub: "Hyderabad, Telangana", code: "Metro" },
+      { name: "LB Nagar Cross Roads", sub: "Hyderabad, Telangana", code: "Junction" },
+    ];
+    hubs.forEach((hub) => {
+      map.set(hub.name.toLowerCase().trim(), {
+        value: hub.name,
+        label: hub.name,
+        subLabel: hub.sub,
+        badge: hub.code,
+        badgeColor: "blue",
+      });
+    });
+
+    // 3. User master locations from database
+    dbLocations.forEach((loc) => {
+      if (loc.name && loc.isActive !== false) {
+        const key = loc.name.toLowerCase().trim();
+        map.set(key, {
+          value: loc.name,
+          label: loc.name,
+          subLabel: loc.state || undefined,
+          badge: loc.stateCode || undefined,
+          badgeColor: "green",
+        });
+      }
+    });
+
+    // 4. Preserve currently entered values if custom
+    if (fromLocation && !map.has(fromLocation.toLowerCase().trim())) {
+      map.set(fromLocation.toLowerCase().trim(), {
+        value: fromLocation,
+        label: fromLocation,
+        subLabel: "Custom Location",
+      });
+    }
+    if (toLocation && !map.has(toLocation.toLowerCase().trim())) {
+      map.set(toLocation.toLowerCase().trim(), {
+        value: toLocation,
+        label: toLocation,
+        subLabel: "Custom Location",
+      });
+    }
+
+    return Array.from(map.values()).sort((a, b) =>
+      a.label.localeCompare(b.label)
+    );
+  }, [dbLocations, fromLocation, toLocation]);
 
   // -------------------------------------------------------------------------
   // Auto-fill First Entity if None Selected
@@ -1551,7 +1683,7 @@ export default function BookingsPage() {
       >
         <div className="space-y-4">
           {/* Tab Navigation Headers */}
-          <div className="flex items-center border-b border-slate-200 gap-1 overflow-x-auto">
+          <div className="flex items-center gap-1.5 overflow-x-auto border-b border-slate-100 pb-2.5">
             {[
               { id: "details", label: "1. Details" },
               { id: "assignment", label: "2. Trip Assignment" },
@@ -1564,10 +1696,10 @@ export default function BookingsPage() {
                   key={tab.id}
                   type="button"
                   onClick={() => setActiveTab(tab.id as any)}
-                  className={`px-3 py-2 text-xs font-medium transition cursor-pointer border-b-2 select-none shrink-0 ${
+                  className={`px-3 py-1.5 text-xs font-medium rounded-[6px] transition cursor-pointer select-none shrink-0 ${
                     isActive
-                      ? "text-[#f16623] border-[#f16623] bg-orange-50/40 -mb-[1px]"
-                      : "text-slate-500 hover:text-slate-800 border-transparent hover:bg-slate-50 font-normal"
+                      ? "bg-orange-50 text-[#f16623] font-semibold shadow-xs"
+                      : "text-slate-500 hover:text-slate-800 hover:bg-slate-50 font-normal"
                   }`}
                 >
                   {tab.label}
@@ -1612,6 +1744,7 @@ export default function BookingsPage() {
                     onChange={setEndDate}
                     placeholder="Select end date..."
                     minDate={startDate}
+                    align="right"
                   />
                 </div>
                 <div className="space-y-1">
@@ -1622,6 +1755,7 @@ export default function BookingsPage() {
                     value={endTime}
                     onChange={setEndTime}
                     placeholder="Select end time..."
+                    align="right"
                   />
                 </div>
               </div>
@@ -1632,32 +1766,30 @@ export default function BookingsPage() {
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
                     FROM LOCATION *
                   </label>
-                  <div className="relative">
-                    <MapPin className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      placeholder="e.g. Hyderabad / Airport / Office"
-                      value={fromLocation}
-                      onChange={(e) => setFromLocation(e.target.value)}
-                      className="w-full h-[34px] max-h-[34px] pl-8 pr-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-normal"
-                    />
-                  </div>
+                  <SearchableSelect
+                    options={locationOptions}
+                    value={fromLocation}
+                    onChange={setFromLocation}
+                    placeholder="Search & select pickup location..."
+                    allowClear
+                    creatable
+                    icon={<MapPin className="w-3.5 h-3.5 text-slate-400" />}
+                  />
                 </div>
 
                 <div className="space-y-1">
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
                     TO LOCATION *
                   </label>
-                  <div className="relative">
-                    <Navigation className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      placeholder="e.g. Warangal / Shamshabad / City Center"
-                      value={toLocation}
-                      onChange={(e) => setToLocation(e.target.value)}
-                      className="w-full h-[34px] max-h-[34px] pl-8 pr-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-normal"
-                    />
-                  </div>
+                  <SearchableSelect
+                    options={locationOptions}
+                    value={toLocation}
+                    onChange={setToLocation}
+                    placeholder="Search & select drop location..."
+                    allowClear
+                    creatable
+                    icon={<Navigation className="w-3.5 h-3.5 text-slate-400" />}
+                  />
                 </div>
               </div>
 

@@ -5,6 +5,7 @@ import {
   Calendar as CalendarIcon,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   X,
   RotateCcw,
 } from "lucide-react";
@@ -18,6 +19,9 @@ interface CustomDatePickerProps {
   disabled?: boolean;
   className?: string;
   id?: string;
+  pastYearsCount?: number;
+  futureYearsCount?: number;
+  align?: "left" | "right" | "auto";
 }
 
 const MONTH_NAMES = [
@@ -46,9 +50,15 @@ export function CustomDatePicker({
   disabled = false,
   className = "",
   id,
+  pastYearsCount = 10,
+  futureYearsCount = 5,
+  align = "auto",
 }: CustomDatePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [popoverAlign, setPopoverAlign] = useState<"left" | "right">(
+    align === "right" ? "right" : "left"
+  );
 
   // Initialize calendar view year and month based on value or today
   const initialDate = useMemo(() => {
@@ -61,6 +71,19 @@ export function CustomDatePicker({
 
   const [viewYear, setViewYear] = useState(initialDate.getFullYear());
   const [viewMonth, setViewMonth] = useState(initialDate.getMonth());
+
+  const currentYear = useMemo(() => new Date().getFullYear(), []);
+
+  // Generate Year options: present year to 10 previous years + future years up to +5 (or viewYear)
+  const years = useMemo(() => {
+    const max = Math.max(currentYear + futureYearsCount, viewYear);
+    const min = Math.min(currentYear - pastYearsCount, viewYear);
+    const list: number[] = [];
+    for (let y = max; y >= min; y--) {
+      list.push(y);
+    }
+    return list;
+  }, [currentYear, viewYear, pastYearsCount, futureYearsCount]);
 
   // Update view when value changes externally
   useEffect(() => {
@@ -90,6 +113,29 @@ export function CustomDatePicker({
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [isOpen]);
+
+  // Adjust alignment dynamically to stay within screen/drawer bounds
+  useEffect(() => {
+    if (align === "right") {
+      setPopoverAlign("right");
+      return;
+    }
+    if (align === "left") {
+      setPopoverAlign("left");
+      return;
+    }
+    if (isOpen && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const popoverWidth = 295;
+      const parentDrawer = containerRef.current.closest(".max-w-3xl, [role='dialog'], .overflow-y-auto");
+      const boundRight = parentDrawer ? parentDrawer.getBoundingClientRect().right : window.innerWidth;
+      if (rect.left + popoverWidth > boundRight - 15) {
+        setPopoverAlign("right");
+      } else {
+        setPopoverAlign("left");
+      }
+    }
+  }, [isOpen, align]);
 
   // Generate calendar days for current viewMonth and viewYear
   const calendarDays = useMemo(() => {
@@ -269,26 +315,61 @@ export function CustomDatePicker({
 
       {/* Popover Calendar Card (z-[9999] guarantees top-level placement) */}
       {isOpen && (
-        <div className="absolute left-0 top-[calc(100%+4px)] z-[9999] w-64 bg-white border border-slate-200 rounded-[8px] shadow-2xl p-3 animate-in fade-in-50 zoom-in-95 duration-100">
-          {/* Header: Month/Year navigation */}
-          <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
+        <div
+          className={`absolute ${
+            popoverAlign === "right" ? "right-0" : "left-0"
+          } top-[calc(100%+4px)] z-[9999] w-72 bg-white border border-slate-200 rounded-[8px] shadow-2xl p-3 animate-in fade-in-50 zoom-in-95 duration-100`}
+        >
+          {/* Header: Month & Year Dropdown navigation */}
+          <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100 gap-1.5">
             <button
               type="button"
               onClick={handlePrevMonth}
-              className="p-1 rounded-[4px] hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition"
+              title="Previous month"
+              className="p-1 rounded-[4px] hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition shrink-0"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
 
-            <div className="font-medium text-xs text-slate-900 flex items-center gap-1">
-              <span>{MONTH_NAMES[viewMonth]}</span>
-              <span className="font-mono text-slate-500">{viewYear}</span>
+            <div className="flex items-center gap-1.5 flex-1 min-w-0">
+              {/* Month Dropdown */}
+              <div className="relative flex-1 min-w-0">
+                <select
+                  value={viewMonth}
+                  onChange={(e) => setViewMonth(Number(e.target.value))}
+                  className="w-full h-[28px] pl-2 pr-5 text-xs font-semibold text-slate-800 bg-slate-50 border border-slate-200 rounded-[5px] hover:border-slate-300 focus:outline-none focus:border-[#f16623] focus:ring-1 focus:ring-[#f16623]/20 cursor-pointer transition appearance-none truncate"
+                >
+                  {MONTH_NAMES.map((name, idx) => (
+                    <option key={name} value={idx}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="w-3 h-3 text-slate-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
+
+              {/* Year Dropdown */}
+              <div className="relative w-[76px] shrink-0">
+                <select
+                  value={viewYear}
+                  onChange={(e) => setViewYear(Number(e.target.value))}
+                  className="w-full h-[28px] pl-2 pr-5 text-xs font-semibold font-mono text-slate-800 bg-slate-50 border border-slate-200 rounded-[5px] hover:border-slate-300 focus:outline-none focus:border-[#f16623] focus:ring-1 focus:ring-[#f16623]/20 cursor-pointer transition appearance-none"
+                >
+                  {years.map((y) => (
+                    <option key={y} value={y} className="font-mono">
+                      {y}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="w-3 h-3 text-slate-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              </div>
             </div>
 
             <button
               type="button"
               onClick={handleNextMonth}
-              className="p-1 rounded-[4px] hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition"
+              title="Next month"
+              className="p-1 rounded-[4px] hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition shrink-0"
             >
               <ChevronRight className="w-4 h-4" />
             </button>

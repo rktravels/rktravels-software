@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useMemo } from "react";
-import { ChevronDown, Search, X, Check } from "lucide-react";
+import { ChevronDown, Search, X, Check, Plus } from "lucide-react";
 
 export interface SearchableSelectOption {
   value: string;
@@ -21,6 +21,8 @@ interface SearchableSelectProps {
   className?: string;
   id?: string;
   allowClear?: boolean;
+  creatable?: boolean;
+  icon?: React.ReactNode;
 }
 
 export function SearchableSelect({
@@ -32,6 +34,8 @@ export function SearchableSelect({
   className = "",
   id,
   allowClear = false,
+  creatable = false,
+  icon,
 }: SearchableSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -131,6 +135,7 @@ export function SearchableSelect({
         }`}
       >
         <div className="flex-1 truncate flex items-center gap-1.5 min-w-0">
+          {icon && <span className="shrink-0 text-slate-400">{icon}</span>}
           {selectedOption ? (
             <>
               <span className="truncate font-medium text-slate-800">
@@ -146,6 +151,10 @@ export function SearchableSelect({
                 </span>
               )}
             </>
+          ) : value ? (
+            <span className="truncate font-medium text-slate-800">
+              {value}
+            </span>
           ) : (
             <span className="text-slate-400 font-normal truncate">
               {placeholder}
@@ -154,7 +163,7 @@ export function SearchableSelect({
         </div>
 
         <div className="flex items-center gap-1 shrink-0 text-slate-400">
-          {allowClear && selectedOption && !disabled && (
+          {allowClear && (selectedOption || value) && !disabled && (
             <span
               onClick={handleClear}
               className="p-0.5 rounded-full hover:bg-slate-100 hover:text-slate-600 transition cursor-pointer"
@@ -182,6 +191,16 @@ export function SearchableSelect({
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    if (filteredOptions.length > 0) {
+                      handleSelect(filteredOptions[0].value);
+                    } else if (creatable && searchTerm.trim()) {
+                      handleSelect(searchTerm.trim());
+                    }
+                  }
+                }}
                 placeholder="Search..."
                 className="w-full h-[28px] max-h-[28px] pl-7 pr-6 text-xs bg-white border border-slate-200 rounded-[4px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623]"
               />
@@ -199,6 +218,26 @@ export function SearchableSelect({
 
           {/* Options List */}
           <div className="max-h-56 overflow-y-auto p-1 divide-y divide-slate-50">
+            {/* Creatable custom option if query not in list */}
+            {creatable &&
+              searchTerm.trim() &&
+              !options.some(
+                (o) =>
+                  o.value.toLowerCase() === searchTerm.trim().toLowerCase() ||
+                  o.label.toLowerCase() === searchTerm.trim().toLowerCase()
+              ) && (
+                <button
+                  type="button"
+                  onClick={() => handleSelect(searchTerm.trim())}
+                  className="w-full px-2 py-1.5 mb-1 rounded-[4px] text-xs text-left flex items-center gap-1.5 text-[#f16623] bg-orange-50/70 hover:bg-orange-100/70 font-medium transition cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5 text-[#f16623] shrink-0" />
+                  <span className="truncate">
+                    Use &quot;{searchTerm.trim()}&quot;
+                  </span>
+                </button>
+              )}
+
             {filteredOptions.length === 0 ? (
               <div className="py-4 text-center text-xs text-slate-400">
                 No matching options found

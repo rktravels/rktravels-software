@@ -10,6 +10,7 @@ interface CustomTimePickerProps {
   disabled?: boolean;
   className?: string;
   id?: string;
+  align?: "left" | "right" | "auto";
 }
 
 const HOURS_12 = Array.from({ length: 12 }, (_, i) => i + 1); // 1 to 12
@@ -35,9 +36,13 @@ export function CustomTimePicker({
   disabled = false,
   className = "",
   id,
+  align = "auto",
 }: CustomTimePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  const [popoverAlign, setPopoverAlign] = useState<"left" | "right">(
+    align === "right" ? "right" : "left"
+  );
 
   // Parse current value into 12-hour components
   const parsedTime = useMemo(() => {
@@ -81,6 +86,29 @@ export function CustomTimePicker({
       document.removeEventListener("mousedown", handleClickOutside);
     };
   }, [isOpen]);
+
+  // Adjust alignment dynamically to stay within screen/drawer bounds
+  useEffect(() => {
+    if (align === "right") {
+      setPopoverAlign("right");
+      return;
+    }
+    if (align === "left") {
+      setPopoverAlign("left");
+      return;
+    }
+    if (isOpen && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const popoverWidth = 265;
+      const parentDrawer = containerRef.current.closest(".max-w-3xl, [role='dialog'], .overflow-y-auto");
+      const boundRight = parentDrawer ? parentDrawer.getBoundingClientRect().right : window.innerWidth;
+      if (rect.left + popoverWidth > boundRight - 15) {
+        setPopoverAlign("right");
+      } else {
+        setPopoverAlign("left");
+      }
+    }
+  }, [isOpen, align]);
 
   // Format 12-hour values back into "HH:mm" 24-hour string
   const commitTime = (h12: number, min: string, period: "AM" | "PM") => {
@@ -173,7 +201,11 @@ export function CustomTimePicker({
 
       {/* Popover Card (Guaranteed on top with z-[9999]) */}
       {isOpen && (
-        <div className="absolute left-0 top-[calc(100%+4px)] z-[9999] w-64 bg-white border border-slate-200 rounded-[8px] shadow-2xl p-3 animate-in fade-in-50 zoom-in-95 duration-100">
+        <div
+          className={`absolute ${
+            popoverAlign === "right" ? "right-0" : "left-0"
+          } top-[calc(100%+4px)] z-[9999] w-64 bg-white border border-slate-200 rounded-[8px] shadow-2xl p-3 animate-in fade-in-50 zoom-in-95 duration-100`}
+        >
           {/* AM / PM Toggle Banner */}
           <div className="flex items-center justify-between pb-2 mb-2 border-b border-slate-100">
             <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider">
