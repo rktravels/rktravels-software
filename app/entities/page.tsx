@@ -95,9 +95,6 @@ export interface EntityFullRecord {
   tradeName?: string;
   pan?: string;
   cin?: string;
-  cgstRate: number | string;
-  sgstRate: number | string;
-  igstRate: number | string;
   emailForPrint?: string;
   phoneForPrint?: string;
   addressLine1: string;
@@ -195,9 +192,6 @@ export default function EntitiesPage() {
   const [tradeName, setTradeName] = useState("");
   const [pan, setPan] = useState("");
   const [cin, setCin] = useState("");
-  const [cgstRate, setCgstRate] = useState<number | string>("2.50");
-  const [sgstRate, setSgstRate] = useState<number | string>("2.50");
-  const [igstRate, setIgstRate] = useState<number | string>("5.00");
   const [emailForPrint, setEmailForPrint] = useState("");
   const [phoneForPrint, setPhoneForPrint] = useState("");
 
@@ -298,9 +292,6 @@ export default function EntitiesPage() {
                 tradeName: data.tradeName || "",
                 pan: data.pan || "",
                 cin: data.cin || "",
-                cgstRate: data.cgstRate ?? "2.50",
-                sgstRate: data.sgstRate ?? "2.50",
-                igstRate: data.igstRate ?? "5.00",
                 emailForPrint: data.emailForPrint || "",
                 phoneForPrint: data.phoneForPrint || data.mobileNumber || "",
                 addressLine1: data.addressLine1 || "",
@@ -342,9 +333,6 @@ export default function EntitiesPage() {
                   tradeName: data.tradeName || "",
                   pan: data.pan || "",
                   cin: data.cin || "",
-                  cgstRate: data.cgstRate ?? "2.50",
-                  sgstRate: data.sgstRate ?? "2.50",
-                  igstRate: data.igstRate ?? "5.00",
                   emailForPrint: data.emailForPrint || "",
                   phoneForPrint: data.phoneForPrint || data.mobileNumber || "",
                   addressLine1: data.addressLine1 || "",
@@ -394,9 +382,6 @@ export default function EntitiesPage() {
                   tradeName: data.tradeName || "",
                   pan: data.pan || "",
                   cin: data.cin || "",
-                  cgstRate: data.cgstRate ?? "2.50",
-                  sgstRate: data.sgstRate ?? "2.50",
-                  igstRate: data.igstRate ?? "5.00",
                   emailForPrint: data.emailForPrint || "",
                   phoneForPrint: data.mobileNumber || "",
                   addressLine1: data.addressLine1 || "",
@@ -482,9 +467,6 @@ export default function EntitiesPage() {
     setTradeName("");
     setPan("");
     setCin("");
-    setCgstRate("2.50");
-    setSgstRate("2.50");
-    setIgstRate("5.00");
     setEmailForPrint("");
     setPhoneForPrint("");
     setAddressLine1("");
@@ -516,9 +498,6 @@ export default function EntitiesPage() {
     setTradeName(entity.tradeName || "");
     setPan(entity.pan || "");
     setCin(entity.cin || "");
-    setCgstRate(entity.cgstRate ?? "2.50");
-    setSgstRate(entity.sgstRate ?? "2.50");
-    setIgstRate(entity.igstRate ?? "5.00");
     setEmailForPrint(entity.emailForPrint || "");
     setPhoneForPrint(entity.phoneForPrint || entity.mobileNumber || "");
 
@@ -815,9 +794,6 @@ export default function EntitiesPage() {
         tradeName: tradeName.trim(),
         pan: pan.trim().toUpperCase(),
         cin: cin.trim().toUpperCase(),
-        cgstRate: cgstRate || "2.50",
-        sgstRate: sgstRate || "2.50",
-        igstRate: igstRate || "5.00",
         emailForPrint: emailForPrint.trim(),
         phoneForPrint: phoneForPrint.trim(),
         addressLine1: addressLine1.trim(),
@@ -1300,12 +1276,6 @@ export default function EntitiesPage() {
                       <span className="font-mono text-slate-800">{viewingEntity.cin || "—"}</span>
                     </div>
                     <div className="p-2 bg-slate-50 rounded-[4px] border border-slate-100">
-                      <span className="text-[10px] text-slate-400 uppercase block">CGST / SGST / IGST</span>
-                      <span className="text-slate-800 font-medium">
-                        {viewingEntity.cgstRate}% / {viewingEntity.sgstRate}% / {viewingEntity.igstRate}%
-                      </span>
-                    </div>
-                    <div className="p-2 bg-slate-50 rounded-[4px] border border-slate-100">
                       <span className="text-[10px] text-slate-400 uppercase block">Print Email</span>
                       <span className="text-slate-800 truncate block">{viewingEntity.emailForPrint || "—"}</span>
                     </div>
@@ -1722,54 +1692,6 @@ export default function EntitiesPage() {
                     />
                   </div>
 
-                  {/* CGST Rate */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider">
-                      CGST RATE (%) <span className="text-[#f16623]">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      required
-                      placeholder="2.50"
-                      value={cgstRate}
-                      onChange={(e) => setCgstRate(e.target.value)}
-                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal transition [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    />
-                  </div>
-
-                  {/* SGST Rate */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider">
-                      SGST RATE (%) <span className="text-[#f16623]">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      required
-                      placeholder="2.50"
-                      value={sgstRate}
-                      onChange={(e) => setSgstRate(e.target.value)}
-                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal transition [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    />
-                  </div>
-
-                  {/* IGST Rate */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider">
-                      IGST RATE (%) <span className="text-[#f16623]">*</span>
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      required
-                      placeholder="5.00"
-                      value={igstRate}
-                      onChange={(e) => setIgstRate(e.target.value)}
-                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal transition [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    />
-                  </div>
-
                   {/* Email (for print) */}
                   <div className="space-y-1 md:col-span-2">
                     <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider">
@@ -1912,7 +1834,7 @@ export default function EntitiesPage() {
               <div className="flex items-start gap-2.5 p-3 rounded-[6px] bg-orange-50/70 border border-[#f16623]/25 text-xs text-slate-700">
                 <AlertCircle className="w-4 h-4 text-[#f16623] shrink-0 mt-0.5" />
                 <span>
-                  The <strong>default bank account</strong> prints automatically on GST tax invoices, billing vouchers, and client trip settlement manifests. You can add multiple banking profiles and toggle the default account at any time.
+                  The <strong>default bank account</strong> prints automatically on invoices, billing vouchers, and client trip settlement manifests. You can add multiple banking profiles and toggle the default account at any time.
                 </span>
               </div>
 

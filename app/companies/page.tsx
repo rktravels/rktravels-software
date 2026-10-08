@@ -52,7 +52,7 @@ import { db } from "@/lib/firebase";
 import { OffCanvas } from "@/components/OffCanvas";
 import { SearchableSelect } from "@/components/SearchableSelect";
 
-// Indian States with GST & State Codes
+// Indian States & State Codes
 export const INDIAN_STATES = [
   { code: "TS", name: "Telangana" },
   { code: "AP", name: "Andhra Pradesh" },
@@ -91,10 +91,8 @@ export interface CompanyItem {
   pan?: string | null;
   vendorCode?: string | null;
 
-  // Tab 2: GST & Place of Supply
-  hasGst: boolean;
-  gstNumber?: string | null;
-  isReverseCharge: boolean;
+  // Tab 2: Place of Supply
+  isReverseCharge?: boolean;
   billingState: string;
 
   // Tab 3: Address & Contact
@@ -123,7 +121,6 @@ export interface CompanyItem {
   invoiceDefaultMode: "Cash" | "Credit";
   creditTerms?: "7 Days" | "15 Days" | "30 Days" | "Immediately" | "Custom" | string;
   customCreditDays?: string | null;
-  showCustomerGstInInvoice: boolean;
   notesInstructions?: string | null;
 
   // Tab 5: Status
@@ -141,8 +138,6 @@ function generateSample50CompaniesCSV(): string {
     "Customer Type",
     "PAN",
     "Vendor Code",
-    "Has GST",
-    "GST Number",
     "Reverse Charge",
     "Billing State",
     "Address Line 1",
@@ -159,7 +154,6 @@ function generateSample50CompaniesCSV(): string {
     "Invoice Default Mode",
     "Credit Terms",
     "Custom Credit Days",
-    "Show GST In Invoice",
     "Notes",
     "Status",
   ];
@@ -192,8 +186,6 @@ function generateSample50CompaniesCSV(): string {
     const comp = companiesPool[(i - 1) % companiesPool.length];
     const off = officers[(i - 1) % officers.length];
     const legal = i > 10 ? `${comp.legal} - Branch ${Math.floor(i / 10) + 1}` : comp.legal;
-    const hasGst = i % 8 !== 0; // mostly yes
-    const gst = hasGst ? `36AAACB${String(1000 + i)}L1Z${(i % 9) + 1}` : "";
     const pan = `AAACB${String(1000 + i)}L`;
     const vcode = `RK-VND-${1000 + i}`;
     const mode = i % 4 === 0 ? "Cash" : "Credit";
@@ -206,8 +198,6 @@ function generateSample50CompaniesCSV(): string {
       comp.type,
       pan,
       vcode,
-      hasGst ? "Yes" : "No",
-      gst,
       i % 6 === 0 ? "Yes" : "No",
       comp.state,
       `Plot No ${i * 4}, Tech Enclave, Sector ${i % 5 + 1}`,
@@ -224,8 +214,7 @@ function generateSample50CompaniesCSV(): string {
       mode,
       term,
       customDays,
-      "Yes",
-      "Official corporate corporate transit account.",
+      "Official corporate transit account.",
       "Active",
     ]);
   }
@@ -262,10 +251,7 @@ export default function CompaniesPage() {
   const [pan, setPan] = useState("");
   const [vendorCode, setVendorCode] = useState("");
 
-  // Tab 2 Form States (GST & Place of Supply)
-  const [hasGst, setHasGst] = useState(true);
-  const [gstNumber, setGstNumber] = useState("");
-  const [isReverseCharge, setIsReverseCharge] = useState(false);
+  // Tab 2 Form States (Place of Supply)
   const [billingState, setBillingState] = useState("TS");
 
   // Tab 3 Form States (Address & Contact)
@@ -289,7 +275,6 @@ export default function CompaniesPage() {
   const [invoiceDefaultMode, setInvoiceDefaultMode] = useState<"Cash" | "Credit">("Credit");
   const [creditTerms, setCreditTerms] = useState<string>("30 Days");
   const [customCreditDays, setCustomCreditDays] = useState("");
-  const [showCustomerGstInInvoice, setShowCustomerGstInInvoice] = useState(true);
   const [notesInstructions, setNotesInstructions] = useState("");
 
   // Tab 5 Form States (Status)
@@ -364,8 +349,6 @@ export default function CompaniesPage() {
             customerType: d.customerType || "Company",
             pan: d.pan || d.panNumber || null,
             vendorCode: d.vendorCode || null,
-            hasGst: typeof d.hasGst === "boolean" ? d.hasGst : Boolean(d.gstNumber),
-            gstNumber: d.gstNumber || null,
             isReverseCharge: Boolean(d.isReverseCharge),
             billingState: d.billingState || "TS",
             addressLine1: d.addressLine1 || null,
@@ -386,7 +369,6 @@ export default function CompaniesPage() {
             invoiceDefaultMode: d.invoiceDefaultMode || "Credit",
             creditTerms: d.creditTerms || "30 Days",
             customCreditDays: d.customCreditDays || null,
-            showCustomerGstInInvoice: typeof d.showCustomerGstInInvoice === "boolean" ? d.showCustomerGstInInvoice : true,
             notesInstructions: d.notesInstructions || null,
             isActive: d.isActive !== false,
             createdAt: d.createdAt,
@@ -423,8 +405,6 @@ export default function CompaniesPage() {
           customerType: "Company",
           pan: null,
           vendorCode: null,
-          hasGst: Boolean(d.gstNumber),
-          gstNumber: d.gstNumber || null,
           isReverseCharge: false,
           billingState: "TS",
           city: d.city || null,
@@ -437,7 +417,6 @@ export default function CompaniesPage() {
           email: d.email || null,
           invoiceDefaultMode: "Credit",
           creditTerms: "30 Days",
-          showCustomerGstInInvoice: true,
           isActive: true,
           createdAt: d.createdAt,
         };
@@ -470,10 +449,6 @@ export default function CompaniesPage() {
     setCustomerType("Company");
     setPan("");
     setVendorCode("");
-
-    setHasGst(true);
-    setGstNumber("");
-    setIsReverseCharge(false);
     setBillingState("TS");
 
     setAddressLine1("");
@@ -491,9 +466,7 @@ export default function CompaniesPage() {
     setAccountsContactPhone("");
 
     setInvoiceDefaultMode("Credit");
-    setCreditTerms("30 Days");
     setCustomCreditDays("");
-    setShowCustomerGstInInvoice(true);
     setNotesInstructions("");
 
     setIsActive(true);
@@ -513,10 +486,6 @@ export default function CompaniesPage() {
     setCustomerType(comp.customerType || "Company");
     setPan(comp.pan || "");
     setVendorCode(comp.vendorCode || "");
-
-    setHasGst(comp.hasGst !== false);
-    setGstNumber(comp.gstNumber || "");
-    setIsReverseCharge(Boolean(comp.isReverseCharge));
     setBillingState(comp.billingState || "TS");
 
     setAddressLine1(comp.addressLine1 || "");
@@ -534,9 +503,7 @@ export default function CompaniesPage() {
     setAccountsContactPhone(comp.accountsContactPhone || "");
 
     setInvoiceDefaultMode(comp.invoiceDefaultMode || "Credit");
-    setCreditTerms(comp.creditTerms || "30 Days");
     setCustomCreditDays(comp.customCreditDays || "");
-    setShowCustomerGstInInvoice(comp.showCustomerGstInInvoice !== false);
     setNotesInstructions(comp.notesInstructions || "");
 
     setIsActive(comp.isActive !== false);
@@ -560,18 +527,8 @@ export default function CompaniesPage() {
       return true;
     }
 
-    // Tab 2: GST & Place of Supply
+    // Tab 2: Place of Supply
     if (tabIndex === 2) {
-      if (hasGst) {
-        if (!gstNumber.trim()) {
-          setTabError("GST Number is enabled. Please enter the valid GSTIN.");
-          return false;
-        }
-        if (gstNumber.trim().length < 15) {
-          setTabError("GST Number must be a valid 15-character alphanumeric format.");
-          return false;
-        }
-      }
       if (!billingState) {
         setTabError("Please select the Billing State.");
         return false;
@@ -645,9 +602,6 @@ export default function CompaniesPage() {
         pan: pan.trim().toUpperCase() || null,
         vendorCode: vendorCode.trim() || null,
 
-        hasGst,
-        gstNumber: hasGst ? gstNumber.trim().toUpperCase() : null,
-        isReverseCharge,
         billingState,
 
         addressLine1: addressLine1.trim() || null,
@@ -679,7 +633,6 @@ export default function CompaniesPage() {
           invoiceDefaultMode === "Credit" && creditTerms === "Custom"
             ? customCreditDays.trim()
             : null,
-        showCustomerGstInInvoice,
         notesInstructions: notesInstructions.trim() || null,
 
         isActive,
@@ -763,8 +716,7 @@ export default function CompaniesPage() {
         const cols = parseCSVLine(lines[i]);
         if (!cols[0]) continue;
 
-        const hasGstFlag = cols[5]?.toLowerCase() === "yes" || Boolean(cols[6]);
-        const mode = (cols[20] as any) === "Cash" ? "Cash" : "Credit";
+        const mode = (cols[18] as any) === "Cash" ? "Cash" : "Credit";
 
         parsed.push({
           legalName: cols[0],
@@ -773,32 +725,29 @@ export default function CompaniesPage() {
           customerType: (cols[2] as any) === "Individual" ? "Individual" : "Company",
           pan: cols[3]?.toUpperCase() || null,
           vendorCode: cols[4] || null,
-          hasGst: hasGstFlag,
-          gstNumber: hasGstFlag ? cols[6]?.toUpperCase() || null : null,
-          isReverseCharge: cols[7]?.toLowerCase() === "yes",
-          billingState: cols[8] || "TS",
-          addressLine1: cols[9] || null,
-          addressLine2: cols[10] || null,
-          city: cols[11] || null,
-          country: cols[12] || "India",
-          pinCode: cols[13] || null,
-          address: [cols[9], cols[10], cols[11]].filter(Boolean).join(", "),
-          officeContactName: cols[14] || "Corporate Desk",
-          officeContactEmail: cols[15] || "contact@corporate.com",
-          officeContactPhone: cols[16] || "9876543210",
-          contactPerson: cols[14] || "Corporate Desk",
-          name: cols[14] || "Corporate Desk",
-          mobile: cols[16] || "9876543210",
-          email: cols[15] || null,
-          accountsContactName: cols[17] || null,
-          accountsContactEmail: cols[18] || null,
-          accountsContactPhone: cols[19] || null,
+          isReverseCharge: cols[5]?.toLowerCase() === "yes",
+          billingState: cols[6] || "TS",
+          addressLine1: cols[7] || null,
+          addressLine2: cols[8] || null,
+          city: cols[9] || null,
+          country: cols[10] || "India",
+          pinCode: cols[11] || null,
+          address: [cols[7], cols[8], cols[9]].filter(Boolean).join(", "),
+          officeContactName: cols[12] || "Corporate Desk",
+          officeContactEmail: cols[13] || "contact@corporate.com",
+          officeContactPhone: cols[14] || "9876543210",
+          contactPerson: cols[12] || "Corporate Desk",
+          name: cols[12] || "Corporate Desk",
+          mobile: cols[14] || "9876543210",
+          email: cols[13] || null,
+          accountsContactName: cols[15] || null,
+          accountsContactEmail: cols[16] || null,
+          accountsContactPhone: cols[17] || null,
           invoiceDefaultMode: mode,
-          creditTerms: cols[21] || "30 Days",
-          customCreditDays: cols[22] || null,
-          showCustomerGstInInvoice: cols[23]?.toLowerCase() !== "no",
-          notesInstructions: cols[24] || null,
-          isActive: cols[25]?.toLowerCase() !== "inactive",
+          creditTerms: cols[19] || "30 Days",
+          customCreditDays: cols[20] || null,
+          notesInstructions: cols[21] || null,
+          isActive: cols[22]?.toLowerCase() !== "inactive",
         });
       }
 
@@ -882,7 +831,6 @@ export default function CompaniesPage() {
       c.officeContactName.toLowerCase().includes(q) ||
       c.officeContactPhone.toLowerCase().includes(q) ||
       (c.officeContactEmail && c.officeContactEmail.toLowerCase().includes(q)) ||
-      (c.gstNumber && c.gstNumber.toLowerCase().includes(q)) ||
       (c.city && c.city.toLowerCase().includes(q));
 
     const matchesStatus =
@@ -905,8 +853,8 @@ export default function CompaniesPage() {
   // Statistics
   const totalCount = companies.length;
   const activeCount = companies.filter((c) => c.isActive !== false).length;
-  const gstRegisteredCount = companies.filter((c) => Boolean(c.gstNumber)).length;
   const creditAccountsCount = companies.filter((c) => c.invoiceDefaultMode === "Credit").length;
+  const cashAccountsCount = companies.filter((c) => c.invoiceDefaultMode === "Cash").length;
 
   return (
     <div className="space-y-4">
@@ -948,7 +896,7 @@ export default function CompaniesPage() {
             </h1>
           </div>
           <p className="text-xs text-slate-500 font-normal mt-0.5 ml-9">
-            Manage corporate client accounts, B2B billing profiles, GST ledgers, and office/accounts contacts.
+            Manage corporate client accounts, B2B billing profiles, and office/accounts contacts.
           </p>
         </div>
 
@@ -999,21 +947,21 @@ export default function CompaniesPage() {
 
         <div className="bg-white p-3.5 rounded-[6px] border border-slate-200/80 shadow-2xs flex items-center gap-3">
           <div className="w-9 h-9 rounded-[6px] bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shrink-0">
-            <Receipt className="w-4 h-4" />
+            <CreditCard className="w-4 h-4" />
           </div>
           <div>
-            <span className="text-[11px] text-slate-400 font-normal block">GST Registered</span>
-            <span className="text-base font-semibold text-blue-600">{gstRegisteredCount}</span>
+            <span className="text-[11px] text-slate-400 font-normal block">Credit Accounts</span>
+            <span className="text-base font-semibold text-blue-600">{creditAccountsCount}</span>
           </div>
         </div>
 
         <div className="bg-white p-3.5 rounded-[6px] border border-slate-200/80 shadow-2xs flex items-center gap-3">
           <div className="w-9 h-9 rounded-[6px] bg-purple-50 border border-purple-100 flex items-center justify-center text-purple-600 shrink-0">
-            <CreditCard className="w-4 h-4" />
+            <Receipt className="w-4 h-4" />
           </div>
           <div>
-            <span className="text-[11px] text-slate-400 font-normal block">Credit Accounts</span>
-            <span className="text-base font-semibold text-purple-600">{creditAccountsCount}</span>
+            <span className="text-[11px] text-slate-400 font-normal block">Cash Accounts</span>
+            <span className="text-base font-semibold text-purple-600">{cashAccountsCount}</span>
           </div>
         </div>
       </div>
@@ -1028,7 +976,7 @@ export default function CompaniesPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search by legal name, trade name, contact, phone, GST..."
+              placeholder="Search by legal name, trade name, contact, phone, city..."
               className="w-full h-[32px] pl-8 pr-3 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] transition"
             />
           </div>
@@ -1065,8 +1013,8 @@ export default function CompaniesPage() {
             </h4>
             <p className="text-[11px] text-slate-400 max-w-sm mx-auto mt-0.5 font-normal">
               {searchQuery
-                ? "Try searching with a different legal name, representative name, or GST number."
-                : "Add corporate accounts to issue B2B GST invoices, track corporate bookings, and set credit limits."}
+                ? "Try searching with a different legal name, representative name, or phone number."
+                : "Add corporate accounts to track corporate bookings and set credit limits."}
             </p>
             <div className="mt-3.5 flex items-center justify-center gap-2">
               <button
@@ -1097,7 +1045,7 @@ export default function CompaniesPage() {
                   <th className="py-2.5 px-3">Company / Legal Name</th>
                   <th className="py-2.5 px-3">Type & Code</th>
                   <th className="py-2.5 px-3">Office Contact</th>
-                  <th className="py-2.5 px-3">GST & State</th>
+                  <th className="py-2.5 px-3">State / Location</th>
                   <th className="py-2.5 px-3">Billing Mode</th>
                   <th className="py-2.5 px-3 text-center">Status</th>
                   <th className="py-2.5 px-3 text-right">Actions</th>
@@ -1171,33 +1119,16 @@ export default function CompaniesPage() {
                       </div>
                     </td>
 
-                    {/* GST & State */}
+                    {/* State / Location */}
                     <td className="py-2.5 px-3">
-                      {comp.gstNumber ? (
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono text-[11px] bg-slate-100/90 text-slate-800 px-1.5 py-0.5 rounded border border-slate-200">
-                            {comp.gstNumber}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => handleCopy(comp.gstNumber!, `gst-${comp.id}`)}
-                            className="text-slate-400 hover:text-slate-600 p-0.5 rounded cursor-pointer"
-                            title="Copy GST Number"
-                          >
-                            {copiedId === `gst-${comp.id}` ? (
-                              <Check className="w-2.5 h-2.5 text-emerald-600" />
-                            ) : (
-                              <Copy className="w-2.5 h-2.5" />
-                            )}
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-[11px] text-slate-400 italic">No GST</span>
-                      )}
-                      <span className="text-[10px] text-slate-400 block mt-0.5">
-                        State: {comp.billingState || "TS"}
-                        {comp.isReverseCharge ? " • RCM" : ""}
+                      <span className="font-medium text-slate-800 text-xs">
+                        {comp.billingState || "TS"}
                       </span>
+                      {comp.city && (
+                        <span className="text-[10px] text-slate-400 block mt-0.5">
+                          {comp.city}
+                        </span>
+                      )}
                     </td>
 
                     {/* Invoicing Mode & Credit Terms */}
@@ -1361,7 +1292,7 @@ export default function CompaniesPage() {
         isOpen={isOffCanvasOpen}
         onClose={() => setIsOffCanvasOpen(false)}
         title={editingCompanyId ? "Edit Company Profile" : "Add New Corporate Company"}
-        subtitle="Configure profile, GST details, contacts, and invoicing defaults across 5 steps."
+        subtitle="Configure profile, place of supply, contacts, and invoicing defaults across 5 steps."
         size="2xl"
         widthClassName="max-w-3xl sm:max-w-4xl lg:max-w-5xl"
       >
@@ -1371,7 +1302,7 @@ export default function CompaniesPage() {
             <div className="grid grid-cols-5 gap-1.5 w-full">
               {[
                 { step: 1, label: "Profile", icon: Building2 },
-                { step: 2, label: "GST & Supply", icon: Receipt },
+                { step: 2, label: "Place of Supply", icon: MapPin },
                 { step: 3, label: "Address & Contact", icon: MapPin },
                 { step: 4, label: "Invoicing Defaults", icon: CreditCard },
                 { step: 5, label: "Status", icon: ShieldCheck },
@@ -1514,67 +1445,17 @@ export default function CompaniesPage() {
                     onClick={() => handleContinue(2)}
                     className="h-[34px] max-h-[34px] px-4 rounded-[6px] bg-[#f16623] text-white text-xs font-medium inline-flex items-center gap-1.5 shadow-xs shadow-[#f16623]/25 hover:bg-[#d95318] transition cursor-pointer"
                   >
-                    <span>Continue to GST & Supply</span>
+                    <span>Continue to Place of Supply</span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
             )}
 
-            {/* TAB 2: GST & PLACE OF SUPPLY */}
+            {/* TAB 2: PLACE OF SUPPLY */}
             {activeTab === 2 && (
               <div className="space-y-4 animate-in fade-in duration-150">
-                {/* GST Toggle Card */}
                 <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-[6px] space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="text-xs font-medium text-slate-800 block">
-                        Does this customer have a GST Number?
-                      </span>
-                      <span className="text-[11px] text-slate-400 font-normal">
-                        Enable if the company has a registered GSTIN for tax invoice generation.
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setHasGst(!hasGst);
-                        if (hasGst) setGstNumber("");
-                      }}
-                      className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-200 cursor-pointer ${
-                        hasGst ? "bg-[#f16623]" : "bg-slate-300"
-                      }`}
-                    >
-                      <div
-                        className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${
-                          hasGst ? "translate-x-5" : "translate-x-0"
-                        }`}
-                      />
-                    </button>
-                  </div>
-
-                  {/* GSTIN Input (Mandatory only if hasGst is true) */}
-                  {hasGst && (
-                    <div className="pt-2 border-t border-slate-200/80">
-                      <label className="block text-xs font-medium text-slate-700 mb-1">
-                        GSTIN (GST Identification Number) <span className="text-[#f16623]">*</span>
-                      </label>
-                      <input
-                        type="text"
-                        required={hasGst}
-                        maxLength={15}
-                        value={gstNumber}
-                        onChange={(e) => setGstNumber(e.target.value.toUpperCase())}
-                        placeholder="e.g. 36AAACB1234L1Z5"
-                        className="w-full h-[34px] max-h-[34px] px-3 text-xs font-mono uppercase bg-white border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] transition"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {/* Billing State */}
                   <div>
                     <label className="block text-xs font-medium text-slate-700 mb-1">
                       Billing State / Place of Supply <span className="text-[#f16623]">*</span>
@@ -1588,28 +1469,9 @@ export default function CompaniesPage() {
                       onChange={setBillingState}
                       placeholder="Select Billing State..."
                     />
-                  </div>
-
-                  {/* GST Reverse Charge Toggle */}
-                  <div className="flex flex-col justify-end">
-                    <div className="h-[34px] px-3 bg-slate-50 border border-slate-200 rounded-[6px] flex items-center justify-between">
-                      <span className="text-xs font-medium text-slate-700">
-                        Default Reverse Charge (RCM)?
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setIsReverseCharge(!isReverseCharge)}
-                        className={`w-9 h-5 flex items-center rounded-full p-0.5 transition-colors duration-200 cursor-pointer ${
-                          isReverseCharge ? "bg-[#f16623]" : "bg-slate-300"
-                        }`}
-                      >
-                        <div
-                          className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${
-                            isReverseCharge ? "translate-x-4" : "translate-x-0"
-                          }`}
-                        />
-                      </button>
-                    </div>
+                    <span className="text-[11px] text-slate-400 mt-1 block">
+                      Select the primary state of operation for invoices and billing purposes.
+                    </span>
                   </div>
                 </div>
 
@@ -1866,31 +1728,6 @@ export default function CompaniesPage() {
                   )}
                 </div>
 
-                {/* Show customer GST in invoice toggle */}
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-[6px] flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-medium text-slate-800 block">
-                      Show Customer GST in Invoice
-                    </span>
-                    <span className="text-[11px] text-slate-400 font-normal">
-                      Include client's GSTIN and state code on trip invoices & B2B statements.
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowCustomerGstInInvoice(!showCustomerGstInInvoice)}
-                    className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors duration-200 cursor-pointer ${
-                      showCustomerGstInInvoice ? "bg-[#f16623]" : "bg-slate-300"
-                    }`}
-                  >
-                    <div
-                      className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform duration-200 ${
-                        showCustomerGstInInvoice ? "translate-x-5" : "translate-x-0"
-                      }`}
-                    />
-                  </button>
-                </div>
-
                 {/* Notes and Instructions */}
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
@@ -1968,12 +1805,6 @@ export default function CompaniesPage() {
                     <div>
                       <span className="text-slate-400 block">Type:</span>
                       <span className="font-medium text-slate-800">{customerType}</span>
-                    </div>
-                    <div>
-                      <span className="text-slate-400 block">GST Status:</span>
-                      <span className="font-medium text-slate-800">
-                        {hasGst ? gstNumber || "Pending" : "Unregistered"}
-                      </span>
                     </div>
                     <div>
                       <span className="text-slate-400 block">Invoicing:</span>
@@ -2080,19 +1911,13 @@ export default function CompaniesPage() {
               </div>
             </div>
 
-            {/* Tax & GST Profile */}
+            {/* Place of Supply */}
             <div className="p-3 bg-white border border-slate-200 rounded-[6px] space-y-2.5 text-xs">
               <span className="font-medium text-slate-800 block text-xs">
-                Tax & Place of Supply
+                Billing & Place of Supply
               </span>
 
               <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100 text-[11px]">
-                <div>
-                  <span className="text-[10px] text-slate-400 block">GSTIN</span>
-                  <span className="font-mono font-medium text-slate-800">
-                    {viewingCompany.gstNumber || "Not Registered"}
-                  </span>
-                </div>
                 <div>
                   <span className="text-[10px] text-slate-400 block">PAN</span>
                   <span className="font-mono font-medium text-slate-800">
@@ -2103,12 +1928,6 @@ export default function CompaniesPage() {
                   <span className="text-[10px] text-slate-400 block">Billing State</span>
                   <span className="font-medium text-slate-800">
                     {viewingCompany.billingState || "TS"}
-                  </span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-slate-400 block">Reverse Charge (RCM)</span>
-                  <span className="font-medium text-slate-800">
-                    {viewingCompany.isReverseCharge ? "Yes" : "No"}
                   </span>
                 </div>
               </div>
@@ -2214,7 +2033,7 @@ export default function CompaniesPage() {
                   Need a pre-filled Excel/CSV template?
                 </span>
                 <span className="text-[11px] text-slate-500 font-normal">
-                  Includes 50 realistic Indian corporate accounts with GST, contacts & credit terms.
+                  Includes 50 realistic Indian corporate accounts with contacts & credit terms.
                 </span>
               </div>
               <button
@@ -2266,7 +2085,7 @@ export default function CompaniesPage() {
                       <tr>
                         <th className="py-1.5 px-2">Legal Name</th>
                         <th className="py-1.5 px-2">Type</th>
-                        <th className="py-1.5 px-2">GSTIN</th>
+                        <th className="py-1.5 px-2">State</th>
                         <th className="py-1.5 px-2">Office Contact</th>
                         <th className="py-1.5 px-2">Mode</th>
                       </tr>
@@ -2276,7 +2095,7 @@ export default function CompaniesPage() {
                         <tr key={idx} className="hover:bg-slate-50">
                           <td className="py-1.5 px-2 font-medium">{pc.legalName}</td>
                           <td className="py-1.5 px-2">{pc.customerType}</td>
-                          <td className="py-1.5 px-2 font-mono text-[10px]">{pc.gstNumber || "—"}</td>
+                          <td className="py-1.5 px-2 font-mono text-[10px]">{pc.billingState || "TS"}</td>
                           <td className="py-1.5 px-2">{pc.officeContactName}</td>
                           <td className="py-1.5 px-2">{pc.invoiceDefaultMode}</td>
                         </tr>

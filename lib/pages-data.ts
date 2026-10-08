@@ -124,7 +124,7 @@ export const NAV_ITEMS: PageModuleInfo[] = [
     plannedFeatures: [
       "Comprehensive trip history, frequent route preferences & rating records",
       "Loyalty rewards, promotional discount tiers & referral tracking",
-      "Corporate billing profiles with customized tax & GST invoices",
+      "Corporate billing profiles with customized tax invoices",
     ],
   },
   {
@@ -134,11 +134,11 @@ export const NAV_ITEMS: PageModuleInfo[] = [
     category: "CRM & CLIENTS",
     icon: Building2,
     description:
-      "B2B corporate clients, corporate booking accounts, tax billing ledgers, GST identification, and credit agreements.",
+      "B2B corporate clients, corporate booking accounts, billing ledgers, and credit agreements.",
     primaryAction: "Add Company",
     secondaryAction: "Companies Directory",
     plannedFeatures: [
-      "Corporate client profiles with custom GST invoicing & PAN validation",
+      "Corporate client profiles with custom invoicing & PAN validation",
       "Authorized corporate booking contacts & travel approval desks",
       "B2B credit limits, billing cycles & aging account balances",
     ],
