@@ -53,6 +53,8 @@ export interface CarVendorItem {
   city?: string | null;
   address?: string | null;
   vendorType?: "Car Vendor" | "Lease Member" | "Both" | string;
+  paymentMode?: "Trip wise" | "Daily" | "Monthly" | string;
+  amount?: number | string | null;
   isActive: boolean;
   createdAt?: Timestamp | any;
   updatedAt?: Timestamp | any;
@@ -79,6 +81,8 @@ export default function CarVendorsPage() {
   const [city, setCity] = useState("");
   const [address, setAddress] = useState("");
   const [vendorType, setVendorType] = useState<"Car Vendor" | "Lease Member" | "Both">("Car Vendor");
+  const [paymentMode, setPaymentMode] = useState<"Trip wise" | "Daily" | "Monthly">("Trip wise");
+  const [amount, setAmount] = useState("");
   const [isActive, setIsActive] = useState(true);
 
   // View Drawer state
@@ -190,6 +194,8 @@ export default function CarVendorsPage() {
     setCity("");
     setAddress("");
     setVendorType("Car Vendor");
+    setPaymentMode("Trip wise");
+    setAmount("");
     setIsActive(true);
     setFormError(null);
     setIsOffCanvasOpen(true);
@@ -204,6 +210,12 @@ export default function CarVendorsPage() {
     setCity(vendor.city || "");
     setAddress(vendor.address || "");
     setVendorType((vendor.vendorType as any) || "Car Vendor");
+    setPaymentMode((vendor.paymentMode as any) || "Trip wise");
+    setAmount(
+      vendor.amount !== undefined && vendor.amount !== null && vendor.amount !== ""
+        ? String(vendor.amount)
+        : ""
+    );
     setIsActive(vendor.isActive !== false);
     setFormError(null);
     setIsOffCanvasOpen(true);
@@ -240,6 +252,8 @@ export default function CarVendorsPage() {
         city: city.trim() || null,
         address: address.trim() || null,
         vendorType,
+        paymentMode,
+        amount: amount.trim() ? Number(amount.trim()) : null,
         isActive,
         updatedAt: serverTimestamp(),
       };
@@ -513,6 +527,7 @@ export default function CarVendorsPage() {
                   <th className="py-2.5 px-3 w-10 text-center">#</th>
                   <th className="py-2.5 px-3">Vendor / Member Name</th>
                   <th className="py-2.5 px-3">Mobile Contact</th>
+                  <th className="py-2.5 px-3">Payment Terms</th>
                   <th className="py-2.5 px-3">Email</th>
                   <th className="py-2.5 px-3">City & Location</th>
                   <th className="py-2.5 px-3 text-center">Status</th>
@@ -571,6 +586,18 @@ export default function CarVendorsPage() {
                           )}
                         </button>
                       </div>
+                    </td>
+
+                    {/* Payment Terms */}
+                    <td className="py-2.5 px-3">
+                      <span className="font-medium text-slate-800 block text-xs">
+                        {vendor.amount !== undefined && vendor.amount !== null && vendor.amount !== ""
+                          ? `₹${Number(vendor.amount).toLocaleString("en-IN")}`
+                          : "—"}
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-normal block mt-0.5">
+                        {vendor.paymentMode || "Trip wise"}
+                      </span>
                     </td>
 
                     {/* Email */}
@@ -836,6 +863,45 @@ export default function CarVendorsPage() {
             </div>
           </div>
 
+          {/* Payment Mode & Amount in Rupees */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                Payment Mode <span className="text-[#f16623]">*</span>
+              </label>
+              <SearchableSelect
+                options={[
+                  { value: "Trip wise", label: "Trip wise" },
+                  { value: "Daily", label: "Daily" },
+                  { value: "Monthly", label: "Monthly" },
+                ]}
+                value={paymentMode}
+                onChange={(val) => setPaymentMode(val as any)}
+                placeholder="Select Payment Mode..."
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                Amount (in ₹ Rupees) <span className="text-slate-400 font-normal">(Optional)</span>
+              </label>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-medium">
+                  ₹
+                </span>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                  placeholder="e.g. 1500"
+                  className="w-full h-[34px] max-h-[34px] pl-7 pr-3 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white transition"
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Address */}
           <div>
             <label className="block text-xs font-medium text-slate-700 mb-1">
@@ -967,6 +1033,25 @@ export default function CarVendorsPage() {
                   <span>{viewingVendor.address}</span>
                 </div>
               )}
+            </div>
+
+            {/* Payment Terms */}
+            <div className="p-3 bg-white border border-slate-200 rounded-[6px] space-y-2 text-xs">
+              <span className="font-medium text-slate-800 block text-xs">Payment Terms</span>
+              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100 text-[11px]">
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-normal">Payment Mode</span>
+                  <span className="font-medium text-slate-800">{viewingVendor.paymentMode || "Trip wise"}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 block font-normal">Amount</span>
+                  <span className="font-medium text-[#f16623]">
+                    {viewingVendor.amount !== undefined && viewingVendor.amount !== null && viewingVendor.amount !== ""
+                      ? `₹${Number(viewingVendor.amount).toLocaleString("en-IN")}`
+                      : "—"}
+                  </span>
+                </div>
+              </div>
             </div>
 
             {/* Linked Fleet Vehicles */}
