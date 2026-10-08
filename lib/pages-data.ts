@@ -160,6 +160,22 @@ export const NAV_ITEMS: PageModuleInfo[] = [
     ],
   },
   {
+    id: "customer-tariffs",
+    name: "Customer Tariff",
+    href: "/customer-tariffs",
+    category: "COMMERCIAL",
+    icon: Tags,
+    description:
+      "Common default customer tariff rate card applicable to all retail/individual customers. Configure Local, Pickup & Drop, Day Rent, and Outstation rate matrices.",
+    primaryAction: "Edit Tariff Rates",
+    secondaryAction: "View Rate Matrix",
+    plannedFeatures: [
+      "Common default rate card automatically applied to all individual customer trips",
+      "Dynamic rate calculation matching customer bookings",
+      "Retail package pricing and seasonal discount slabs",
+    ],
+  },
+  {
     id: "drivers",
     name: "Drivers",
     href: "/drivers",

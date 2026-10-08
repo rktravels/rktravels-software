@@ -85,6 +85,10 @@ export interface BookingRecord {
   id: string;
   bookingNumber: string;
 
+  // Client Type
+  clientType?: "Company" | "Individual Customer";
+  customerType?: "Company" | "Individual Customer";
+
   // Tab 1: Details
   startDate: string;
   startTime: string;
@@ -94,8 +98,8 @@ export interface BookingRecord {
   toLocation: string;
   entityId: string;
   entityName: string;
-  customerId: string; // Company Id
-  customerName: string; // Company Name
+  customerId: string; // Company Id or Customer Id
+  customerName: string; // Company Name or Customer Name
   vehicleCategory: string;
   tariffType: "Local" | "Pickup & Drop" | "Day Rent" | "Outstation";
   tariffPackageId?: string;
@@ -121,7 +125,7 @@ export interface BookingRecord {
   travelledPlaces: string[];
   notes?: string;
 
-  // Tab 3: Charges (Pass-through + Advance)
+  // Tab 3: Charges (Pass-through + Advance + Discount)
   tolls: number;
   parking: number;
   statePermit: number;
@@ -130,6 +134,7 @@ export interface BookingRecord {
   nightHalt: number;
   totalPassThrough: number;
   customerAdvance: number;
+  discount?: number;
 
   // Tab 4: Invoice / Price Breakdown
   baseFare: number;
@@ -168,7 +173,11 @@ export default function BookingsPage() {
   const [companies, setCompanies] = useState<
     { id: string; name: string; contactPerson?: string; mobile?: string }[]
   >([]);
+  const [individualCustomers, setIndividualCustomers] = useState<
+    { id: string; name: string; mobile?: string; email?: string }[]
+  >([]);
   const [tariffs, setTariffs] = useState<any[]>([]);
+  const [customerTariffs, setCustomerTariffs] = useState<any[]>([]);
   const [vehicles, setVehicles] = useState<any[]>([]);
   const [drivers, setDrivers] = useState<any[]>([]);
   const [bookings, setBookings] = useState<BookingRecord[]>([]);
@@ -178,6 +187,7 @@ export default function BookingsPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [paymentFilter, setPaymentFilter] = useState<string>("all");
+  const [clientTypeFilter, setClientTypeFilter] = useState<string>("all");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
@@ -186,6 +196,9 @@ export default function BookingsPage() {
 
   // View Details Modal
   const [viewingBooking, setViewingBooking] = useState<BookingRecord | null>(null);
+
+  // Invoice Modal
+  const [invoiceBooking, setInvoiceBooking] = useState<BookingRecord | null>(null);
 
   // Collect Payment Modal
   const [collectingBooking, setCollectingBooking] = useState<BookingRecord | null>(
@@ -200,6 +213,7 @@ export default function BookingsPage() {
   // =========================================================================
   // TAB 1: DETAILS STATE
   // =========================================================================
+  const [clientType, setClientType] = useState<"Company" | "Individual Customer">("Company");
   const [startDate, setStartDate] = useState<string>(() =>
     new Date().toISOString().split("T")[0]
   );
@@ -260,6 +274,7 @@ export default function BookingsPage() {
   const [interstateEntryTax, setInterstateEntryTax] = useState<string>("");
   const [nightHalt, setNightHalt] = useState<string>("");
   const [customerAdvance, setCustomerAdvance] = useState<string>("");
+  const [discount, setDiscount] = useState<string>("");
 
   // =========================================================================
   // TAB 4: INVOICE / STATUS
@@ -367,6 +382,38 @@ export default function BookingsPage() {
     }
     return () => {
       if (unsubTariffs) unsubTariffs();
+    };
+  }, []);
+
+  // -------------------------------------------------------------------------
+  // 3B. Subscribe to Individual Customers & Customer Tariffs
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    let unsubCustomers: (() => void) | null = null;
+    let unsubCustTariffs: (() => void) | null = null;
+    try {
+      unsubCustomers = onSnapshot(collection(db, "customers"), (snap) => {
+        const list = snap.docs.map((d) => {
+          const data = d.data();
+          return {
+            id: d.id,
+            name: data.name || data.customerName || "Customer",
+            mobile: data.mobile || data.phone || "",
+            email: data.email || "",
+          };
+        });
+        setIndividualCustomers(list);
+      });
+
+      unsubCustTariffs = onSnapshot(collection(db, "customer_tariffs"), (snap) => {
+        setCustomerTariffs(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      });
+    } catch (err) {
+      console.warn("Customer data listeners notice:", err);
+    }
+    return () => {
+      if (unsubCustomers) unsubCustomers();
+      if (unsubCustTariffs) unsubCustTariffs();
     };
   }, []);
 
@@ -584,10 +631,32 @@ export default function BookingsPage() {
   }, [entities, selectedEntityId]);
 
   // -------------------------------------------------------------------------
-  // Find Active Tariff for Selected Company
+  // Find Active Tariff for Selected Company or Individual Customer
   // -------------------------------------------------------------------------
   const activeCompanyTariff = useMemo(() => {
     if (!selectedCustomerName) return null;
+
+    if (clientType === "Individual Customer") {
+      // Common default customer tariff for ALL individual customers!
+      const defaultCust =
+        customerTariffs.find(
+          (t) =>
+            t.id === "default_customer_tariff" ||
+            t.isDefault === true ||
+            t.customerName?.toLowerCase().includes("default") ||
+            t.tariffName?.toLowerCase().includes("default")
+        ) ||
+        customerTariffs.find((t) => t.status === "Active") ||
+        customerTariffs[0];
+      if (defaultCust) return defaultCust;
+
+      // Fallback to standard tariff if customer tariffs collection not yet seeded
+      const stdFallback = tariffs.find(
+        (t) => t.customerName?.toLowerCase().includes("standard") && t.status === "Active"
+      );
+      return stdFallback || tariffs[0] || null;
+    }
+
     // 1. Look for specific company tariff
     const matched = tariffs.find(
       (t) =>
@@ -602,7 +671,7 @@ export default function BookingsPage() {
         t.customerName?.toLowerCase() === "standard" && t.status === "Active"
     );
     return standard || null;
-  }, [selectedCustomerName, tariffs]);
+  }, [selectedCustomerName, clientType, tariffs, customerTariffs]);
 
   // Vehicle Categories enabled in that Tariff
   const availableTariffCategories = useMemo(() => {
@@ -928,8 +997,9 @@ export default function BookingsPage() {
     const totalPassThrough =
       tollVal + parkVal + statePermitVal + mealsVal + interstateTaxVal + nightHaltVal;
 
-    // Customer Advance
+    // Customer Advance & Discount
     const advanceVal = Math.max(0, Number(customerAdvance) || 0);
+    const discountVal = Math.max(0, Number(discount) || 0);
 
     const grossAmount =
       baseFare +
@@ -939,7 +1009,8 @@ export default function BookingsPage() {
       nightHaltCost +
       totalPassThrough;
 
-    const netAmount = Math.max(0, grossAmount - advanceVal);
+    const netBilled = Math.max(0, grossAmount - discountVal);
+    const netAmount = Math.max(0, netBilled - advanceVal);
 
     return {
       baseFare,
@@ -955,6 +1026,7 @@ export default function BookingsPage() {
       nightHaltCost,
       totalPassThrough,
       grossAmount,
+      discount: discountVal,
       customerAdvance: advanceVal,
       netAmount,
     };
@@ -973,18 +1045,19 @@ export default function BookingsPage() {
     interstateEntryTax,
     nightHalt,
     customerAdvance,
+    discount,
   ]);
 
   // Derived Payment Status
   const autoPaymentStatus: PaymentStatus = useMemo(() => {
     if (overridePaymentStatus) return overridePaymentStatus;
     const advance = pricingBreakdown.customerAdvance;
-    const gross = pricingBreakdown.grossAmount;
-    if (gross === 0 && advance === 0) return "Unpaid";
+    const billedTotal = Math.max(0, pricingBreakdown.grossAmount - (pricingBreakdown.discount || 0));
+    if (billedTotal === 0 && advance === 0) return "Unpaid";
     if (advance === 0) return "Unpaid";
-    if (advance >= gross && gross > 0) return "Paid";
+    if (advance >= billedTotal && billedTotal > 0) return "Paid";
     return "Partial";
-  }, [overridePaymentStatus, pricingBreakdown.customerAdvance, pricingBreakdown.grossAmount]);
+  }, [overridePaymentStatus, pricingBreakdown.customerAdvance, pricingBreakdown.grossAmount, pricingBreakdown.discount]);
 
   // -------------------------------------------------------------------------
   // Handle Open Add Booking OffCanvas
@@ -998,6 +1071,7 @@ export default function BookingsPage() {
     setEndTime("18:00");
     setFromLocation("");
     setToLocation("");
+    setClientType("Company");
     if (companies.length > 0) {
       setSelectedCustomerId(companies[0].id);
       setSelectedCustomerName(companies[0].name);
@@ -1026,6 +1100,7 @@ export default function BookingsPage() {
     setInterstateEntryTax("");
     setNightHalt("");
     setCustomerAdvance("");
+    setDiscount("");
     setBookingStatus("New");
     setOverridePaymentStatus(null);
     setIsOffCanvasOpen(true);
@@ -1040,7 +1115,7 @@ export default function BookingsPage() {
       return;
     }
     if (!selectedCustomerName) {
-      alert("Please select a customer company.");
+      alert(`Please select a ${clientType === "Individual Customer" ? "individual customer" : "company"}.`);
       return;
     }
     if (!fromLocation.trim() || !toLocation.trim()) {
@@ -1076,6 +1151,8 @@ export default function BookingsPage() {
 
       const bookingPayload: Omit<BookingRecord, "id"> = {
         bookingNumber,
+        clientType,
+        customerType: clientType,
         startDate,
         startTime,
         endDate,
@@ -1118,6 +1195,7 @@ export default function BookingsPage() {
         nightHalt: Math.max(0, Number(nightHalt) || 0),
         totalPassThrough: pricingBreakdown.totalPassThrough,
         customerAdvance: advanceNum,
+        discount: pricingBreakdown.discount,
 
         baseFare: pricingBreakdown.baseFare,
         extraKmRate: pricingBreakdown.extraKmRate,
@@ -1331,9 +1409,18 @@ export default function BookingsPage() {
       const matchPayment =
         paymentFilter === "all" || b.paymentStatus === paymentFilter;
 
-      return matchSearch && matchStatus && matchPayment;
+      // Client Type filter
+      const isIndiv =
+        b.clientType === "Individual Customer" ||
+        b.customerType === "Individual Customer";
+      const matchClientType =
+        clientTypeFilter === "all" ||
+        (clientTypeFilter === "Individual Customer" && isIndiv) ||
+        (clientTypeFilter === "Company" && !isIndiv);
+
+      return matchSearch && matchStatus && matchPayment && matchClientType;
     });
-  }, [bookings, searchQuery, statusFilter, paymentFilter]);
+  }, [bookings, searchQuery, statusFilter, paymentFilter, clientTypeFilter]);
 
   return (
     <div className="space-y-4 max-w-[1400px] mx-auto pb-16 font-sans">
@@ -1362,7 +1449,7 @@ export default function BookingsPage() {
               </span>
             </div>
             <p className="text-[11px] text-slate-400 font-normal">
-              Corporate contracts, trip assignment, pass-through charges &amp; live invoice tracking
+              Corporate contracts, Individual retail bookings, pass-through charges &amp; live invoice tracking
             </p>
           </div>
         </div>
@@ -1428,6 +1515,21 @@ export default function BookingsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Client Type Filter (Company vs Individual Customer) */}
+          <div className="flex items-center gap-1.5 text-xs w-48">
+            <span className="text-[11px] text-slate-400 font-normal shrink-0">Client:</span>
+            <SearchableSelect
+              options={[
+                { value: "all", label: "All Client Types" },
+                { value: "Company", label: "Company", badge: "Corporate", badgeColor: "blue" },
+                { value: "Individual Customer", label: "Individual Customer", badge: "Retail", badgeColor: "green" },
+              ]}
+              value={clientTypeFilter}
+              onChange={setClientTypeFilter}
+              placeholder="Filter Client..."
+            />
+          </div>
+
           {/* Status Filter */}
           <div className="flex items-center gap-1.5 text-xs w-48">
             <span className="text-[11px] text-slate-400 font-normal shrink-0">Status:</span>
@@ -1471,7 +1573,7 @@ export default function BookingsPage() {
             <thead>
               <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-medium text-slate-600">
                 <th className="py-2.5 px-3">Booking #</th>
-                <th className="py-2.5 px-3">Company &amp; Traveler</th>
+                <th className="py-2.5 px-3">Client &amp; Traveler</th>
                 <th className="py-2.5 px-3">Trip Dates &amp; Duration</th>
                 <th className="py-2.5 px-3">Vehicle &amp; Category</th>
                 <th className="py-2.5 px-3">Driver</th>
@@ -1501,6 +1603,10 @@ export default function BookingsPage() {
                 </tr>
               ) : (
                 filteredBookings.map((b) => {
+                  const isIndiv =
+                    b.clientType === "Individual Customer" ||
+                    b.customerType === "Individual Customer";
+
                   return (
                     <tr
                       key={b.id}
@@ -1523,16 +1629,29 @@ export default function BookingsPage() {
                         )}
                       </td>
 
-                      {/* Company & Traveler */}
+                      {/* Client (Company vs Individual) & Traveler */}
                       <td className="py-2.5 px-3">
-                        <div className="font-medium text-slate-900 flex items-center gap-1">
-                          <Building2 className="w-3 h-3 text-[#f16623] shrink-0" />
-                          <span className="truncate max-w-[140px]">
+                        <div className="font-medium text-slate-900 flex items-center gap-1.5">
+                          {isIndiv ? (
+                            <User className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          ) : (
+                            <Building2 className="w-3.5 h-3.5 text-[#f16623] shrink-0" />
+                          )}
+                          <span className="truncate max-w-[130px]">
                             {b.customerName}
+                          </span>
+                          <span
+                            className={`text-[9px] px-1.5 py-0.2 rounded font-medium border ${
+                              isIndiv
+                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                : "bg-blue-50 text-blue-700 border-blue-200"
+                            }`}
+                          >
+                            {isIndiv ? "Individual" : "Company"}
                           </span>
                         </div>
                         <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
-                          <User className="w-2.5 h-2.5 text-slate-400" />
+                          <span className="text-slate-400 text-[10px]">Pax:</span>
                           <span>{b.travelerName}</span>
                           {b.travelerMobile && (
                             <span className="text-[10px] text-slate-400">
@@ -1597,6 +1716,11 @@ export default function BookingsPage() {
                         <div className="font-medium text-slate-900 font-mono">
                           ₹{(b.grossAmount || 0).toLocaleString("en-IN")}
                         </div>
+                        {b.discount && b.discount > 0 ? (
+                          <div className="text-[10px] text-rose-600 font-mono">
+                            Disc: − ₹{b.discount.toLocaleString("en-IN")}
+                          </div>
+                        ) : null}
                         {b.customerAdvance > 0 && (
                           <div className="text-[10px] text-emerald-600 font-mono">
                             Adv: ₹{b.customerAdvance.toLocaleString("en-IN")}
@@ -1648,6 +1772,15 @@ export default function BookingsPage() {
                             title="View details & charges"
                           >
                             <Eye className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setInvoiceBooking(b)}
+                            className="p-1 rounded text-slate-400 hover:text-[#f16623] hover:bg-orange-50 transition cursor-pointer"
+                            title="View / Print Tax Invoice"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
                           </button>
 
                           <button
@@ -1793,8 +1926,8 @@ export default function BookingsPage() {
                 </div>
               </div>
 
-              {/* Entity & Customer (Company) Selection */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {/* Entity, Client Type & Customer Selection */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 <div className="space-y-1">
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
                     OPERATING ENTITY *
@@ -1816,30 +1949,99 @@ export default function BookingsPage() {
 
                 <div className="space-y-1">
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
-                    CUSTOMER (COMPANIES LIST) *
+                    CLIENT TYPE *
                   </label>
                   <SearchableSelect
-                    options={companies.map((comp) => ({
-                      value: comp.id,
-                      label: comp.name,
-                      subLabel: comp.contactPerson
-                        ? `${comp.contactPerson} • ${comp.mobile || ""}`
-                        : comp.mobile,
-                    }))}
-                    value={selectedCustomerId}
-                    onChange={(cId) => {
-                      setSelectedCustomerId(cId);
-                      const comp = companies.find((c) => c.id === cId);
-                      if (comp) {
-                        setSelectedCustomerName(comp.name);
-                        setTravelerName(comp.contactPerson || comp.name);
-                        setTravelerMobile(comp.mobile || "");
+                    options={[
+                      { value: "Company", label: "Company (Corporate)", badge: "Company", badgeColor: "blue" },
+                      { value: "Individual Customer", label: "Individual Customer", badge: "Retail", badgeColor: "green" },
+                    ]}
+                    value={clientType}
+                    onChange={(val) => {
+                      const newType = val as "Company" | "Individual Customer";
+                      setClientType(newType);
+                      if (newType === "Company") {
+                        if (companies.length > 0) {
+                          setSelectedCustomerId(companies[0].id);
+                          setSelectedCustomerName(companies[0].name);
+                          setTravelerName(companies[0].contactPerson || companies[0].name);
+                          setTravelerMobile(companies[0].mobile || "");
+                        } else {
+                          setSelectedCustomerId("");
+                          setSelectedCustomerName("");
+                        }
                       } else {
-                        setSelectedCustomerName("");
+                        if (individualCustomers.length > 0) {
+                          setSelectedCustomerId(individualCustomers[0].id);
+                          setSelectedCustomerName(individualCustomers[0].name);
+                          setTravelerName(individualCustomers[0].name);
+                          setTravelerMobile(individualCustomers[0].mobile || "");
+                        } else {
+                          setSelectedCustomerId("");
+                          setSelectedCustomerName("");
+                        }
                       }
                     }}
-                    placeholder="Search & select company..."
+                    placeholder="Select Client Type..."
                   />
+                </div>
+
+                <div className="space-y-1">
+                  {clientType === "Company" ? (
+                    <>
+                      <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                        COMPANY (CORPORATE CLIENT) *
+                      </label>
+                      <SearchableSelect
+                        options={companies.map((comp) => ({
+                          value: comp.id,
+                          label: comp.name,
+                          subLabel: comp.contactPerson
+                            ? `${comp.contactPerson} • ${comp.mobile || ""}`
+                            : comp.mobile,
+                        }))}
+                        value={selectedCustomerId}
+                        onChange={(cId) => {
+                          setSelectedCustomerId(cId);
+                          const comp = companies.find((c) => c.id === cId);
+                          if (comp) {
+                            setSelectedCustomerName(comp.name);
+                            setTravelerName(comp.contactPerson || comp.name);
+                            setTravelerMobile(comp.mobile || "");
+                          } else {
+                            setSelectedCustomerName("");
+                          }
+                        }}
+                        placeholder="Search & select company..."
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                        INDIVIDUAL CUSTOMER *
+                      </label>
+                      <SearchableSelect
+                        options={individualCustomers.map((cust) => ({
+                          value: cust.id,
+                          label: cust.name,
+                          subLabel: cust.mobile ? `Phone: ${cust.mobile} ${cust.email ? "• " + cust.email : ""}` : cust.email,
+                        }))}
+                        value={selectedCustomerId}
+                        onChange={(cId) => {
+                          setSelectedCustomerId(cId);
+                          const cust = individualCustomers.find((c) => c.id === cId);
+                          if (cust) {
+                            setSelectedCustomerName(cust.name);
+                            setTravelerName(cust.name);
+                            setTravelerMobile(cust.mobile || "");
+                          } else {
+                            setSelectedCustomerName("");
+                          }
+                        }}
+                        placeholder="Search & select individual customer..."
+                      />
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -1848,12 +2050,26 @@ export default function BookingsPage() {
                 <div className="flex items-center gap-2 p-2 rounded-[6px] bg-slate-50 border border-slate-200 text-slate-700 text-xs font-normal">
                   <Info className="w-3.5 h-3.5 text-[#f16623] shrink-0" />
                   <span>
-                    Contract Rate Plan:{" "}
-                    <strong className="font-medium text-slate-900">
-                      {activeCompanyTariff
-                        ? activeCompanyTariff.tariffName || activeCompanyTariff.customerName
-                        : "No active tariff found (using standard fallback)"}
-                    </strong>
+                    {clientType === "Individual Customer" ? (
+                      <>
+                        Applied Rate Card:{" "}
+                        <strong className="font-medium text-slate-900">
+                          {activeCompanyTariff?.tariffName || "Default Customer Tariff"}
+                        </strong>{" "}
+                        <span className="text-slate-400 font-normal">
+                          (Common default rate card for all individual customers)
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        Company Contract Rate Plan:{" "}
+                        <strong className="font-medium text-slate-900">
+                          {activeCompanyTariff
+                            ? activeCompanyTariff.tariffName || activeCompanyTariff.customerName
+                            : "No company tariff found (using standard fallback)"}
+                        </strong>
+                      </>
+                    )}
                   </span>
                 </div>
               )}
@@ -2340,7 +2556,46 @@ export default function BookingsPage() {
                 </div>
               </div>
 
-              {/* Card 2: Customer Advance (Image Requirement) */}
+              {/* Card 2: Discount / Special Concession */}
+              <div className="bg-white p-3.5 rounded-[6px] border border-slate-200/80 shadow-2xs space-y-3">
+                <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
+                  <div className="w-5 h-5 rounded-[4px] bg-rose-50 text-rose-600 flex items-center justify-center">
+                    <Receipt className="w-3.5 h-3.5" />
+                  </div>
+                  <h3 className="text-xs font-semibold text-slate-900">
+                    Discount / Special Concession (₹)
+                  </h3>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                      DISCOUNT (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="0.00"
+                      value={discount}
+                      onChange={(e) => setDiscount(e.target.value)}
+                      className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50/50 border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white font-mono"
+                    />
+                    <p className="text-[11px] text-slate-400 font-normal">
+                      Special discount or concession deducted directly from gross trip charges.
+                    </p>
+                  </div>
+
+                  <div className="p-3 rounded-[6px] bg-slate-50 border border-slate-200 text-slate-600 text-xs font-normal flex items-start gap-2 mt-0.5">
+                    <Info className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
+                    <span>
+                      Discounts are deducted from the gross fare before customer advance and final bill settlement.
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Card 3: Customer Advance (Image Requirement) */}
               <div className="bg-white p-3.5 rounded-[6px] border border-slate-200/80 shadow-2xs space-y-3">
                 <div className="flex items-center gap-2 border-b border-slate-100 pb-2">
                   <div className="w-5 h-5 rounded-[4px] bg-orange-50 text-[#f16623] flex items-center justify-center">
@@ -2421,6 +2676,38 @@ export default function BookingsPage() {
                   </span>
                 </div>
 
+                {/* Billed To Client Header */}
+                <div className="p-3 bg-orange-50/40 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-medium block">
+                      BILLED TO ({clientType === "Individual Customer" ? "INDIVIDUAL CUSTOMER" : "COMPANY"})
+                    </span>
+                    <span className="font-semibold text-slate-900 text-xs flex items-center gap-1.5 mt-0.5">
+                      {clientType === "Individual Customer" ? (
+                        <User className="w-3.5 h-3.5 text-emerald-600" />
+                      ) : (
+                        <Building2 className="w-3.5 h-3.5 text-[#f16623]" />
+                      )}
+                      {selectedCustomerName || "Not Selected"}
+                    </span>
+                    <span className="text-[11px] text-slate-500 block mt-0.5">
+                      Traveler / Contact: {travelerName || selectedCustomerName} {travelerMobile ? `(${travelerMobile})` : ""}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] text-slate-400 uppercase font-medium block">
+                      CLIENT BILLING MODE
+                    </span>
+                    <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium border mt-0.5 ${
+                      clientType === "Individual Customer"
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        : "bg-blue-50 text-blue-700 border-blue-200"
+                    }`}>
+                      {clientType}
+                    </span>
+                  </div>
+                </div>
+
                 <div className="p-3.5 divide-y divide-slate-100 text-xs font-normal space-y-2">
                   {/* Base Package Rate */}
                   <div className="flex items-center justify-between pt-1">
@@ -2488,6 +2775,17 @@ export default function BookingsPage() {
                       ₹{pricingBreakdown.grossAmount.toLocaleString("en-IN")}
                     </span>
                   </div>
+
+                  {/* Special Discount */}
+                  {pricingBreakdown.discount > 0 && (
+                    <div className="flex items-center justify-between pt-2 text-rose-600">
+                      <span>Less: Special Concession / Discount</span>
+                      <span className="font-mono font-medium">
+                        − ₹
+                        {pricingBreakdown.discount.toLocaleString("en-IN")}
+                      </span>
+                    </div>
+                  )}
 
                   {/* Customer Advance */}
                   {pricingBreakdown.customerAdvance > 0 && (
@@ -2667,12 +2965,30 @@ export default function BookingsPage() {
             <div className="grid grid-cols-2 gap-3 p-3 rounded-[6px] border border-slate-200 bg-white">
               <div>
                 <span className="text-[10px] text-slate-400 uppercase font-medium block">
-                  CUSTOMER COMPANY
+                  {viewingBooking.clientType === "Individual Customer" ||
+                  viewingBooking.customerType === "Individual Customer"
+                    ? "INDIVIDUAL CUSTOMER"
+                    : "CUSTOMER COMPANY"}
                 </span>
-                <span className="font-medium text-slate-900 block">
-                  {viewingBooking.customerName}
-                </span>
-                <span className="text-[11px] text-slate-500">
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="font-medium text-slate-900 block">
+                    {viewingBooking.customerName}
+                  </span>
+                  <span
+                    className={`text-[9px] px-1.5 py-0.2 rounded font-medium border ${
+                      viewingBooking.clientType === "Individual Customer" ||
+                      viewingBooking.customerType === "Individual Customer"
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        : "bg-blue-50 text-blue-700 border-blue-200"
+                    }`}
+                  >
+                    {viewingBooking.clientType === "Individual Customer" ||
+                    viewingBooking.customerType === "Individual Customer"
+                      ? "Individual"
+                      : "Company"}
+                  </span>
+                </div>
+                <span className="text-[11px] text-slate-500 block mt-0.5">
                   Traveler: {viewingBooking.travelerName} (
                   {viewingBooking.travelerMobile})
                 </span>
@@ -2783,6 +3099,16 @@ export default function BookingsPage() {
                     ₹{viewingBooking.nightHalt || 0}
                   </span>
                 </div>
+                {viewingBooking.discount && viewingBooking.discount > 0 ? (
+                  <div>
+                    <span className="text-slate-400 text-[10px] block">
+                      DISCOUNT
+                    </span>
+                    <span className="font-mono text-rose-600">
+                      − ₹{viewingBooking.discount}
+                    </span>
+                  </div>
+                ) : null}
               </div>
             </div>
 
@@ -2845,8 +3171,17 @@ export default function BookingsPage() {
               )}
             </div>
 
-            {/* Close Button */}
-            <div className="pt-2 border-t border-slate-100 flex justify-end">
+            {/* Bottom Actions */}
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setInvoiceBooking(viewingBooking)}
+                className="h-[34px] max-h-[34px] px-3.5 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] text-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>View / Print Invoice</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setViewingBooking(null)}
@@ -2880,6 +3215,14 @@ export default function BookingsPage() {
                   ₹{(collectingBooking.grossAmount || 0).toLocaleString("en-IN")}
                 </span>
               </div>
+              {collectingBooking.discount && collectingBooking.discount > 0 ? (
+                <div className="flex justify-between text-rose-600">
+                  <span>Less: Special Discount:</span>
+                  <span className="font-mono font-medium">
+                    − ₹{collectingBooking.discount.toLocaleString("en-IN")}
+                  </span>
+                </div>
+              ) : null}
               <div className="flex justify-between">
                 <span className="text-slate-500">Total Received So Far:</span>
                 <span className="font-mono font-medium text-emerald-700">
@@ -3007,6 +3350,312 @@ export default function BookingsPage() {
                     <span>Record Payment</span>
                   </>
                 )}
+              </button>
+            </div>
+          </div>
+        )}
+      </OffCanvas>
+
+      {/* ===================================================================== */}
+      {/* INVOICE / BILL OF SUPPLY MODAL */}
+      {/* ===================================================================== */}
+      <OffCanvas
+        isOpen={!!invoiceBooking}
+        onClose={() => setInvoiceBooking(null)}
+        title={`Invoice: ${invoiceBooking?.bookingNumber || ""}`}
+        subtitle="Printable tax invoice & duty voucher with passenger particulars"
+        size="2xl"
+        widthClassName="max-w-3xl"
+      >
+        {invoiceBooking && (
+          <div className="space-y-4 text-xs font-normal text-slate-800">
+            {/* Printable Invoice Container */}
+            <div className="border border-slate-200 rounded-[6px] p-5 bg-white shadow-xs space-y-4 print:border-none print:p-0">
+              {/* Header: Company / Entity Brand & Invoice Info */}
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-slate-200 pb-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-[6px] bg-[#f16623] flex items-center justify-center text-white font-bold text-sm shadow-xs">
+                      RK
+                    </div>
+                    <div>
+                      <h2 className="text-base font-bold text-slate-900 leading-tight">
+                        {invoiceBooking.entityName || "RK Travels"}
+                      </h2>
+                      <p className="text-[10px] text-slate-500 font-normal">
+                        Fleet &amp; Executive Passenger Transit Services
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="text-left sm:text-right space-y-0.5">
+                  <div className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-orange-50 text-[#f16623] border border-[#f16623]/20 uppercase tracking-wider">
+                    TAX INVOICE / TRIP BILL
+                  </div>
+                  <div className="text-xs font-mono font-bold text-slate-900">
+                    #{invoiceBooking.bookingNumber}
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    Date: {invoiceBooking.startDate || new Date().toISOString().split("T")[0]}
+                  </div>
+                </div>
+              </div>
+
+              {/* Billed To Section - Prominently displays Company or Individual Customer */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-[6px] bg-slate-50 border border-slate-200">
+                <div className="space-y-1">
+                  <span className="text-[10px] text-slate-400 uppercase font-medium block tracking-wider">
+                    BILLED TO (
+                    {invoiceBooking.clientType === "Individual Customer" ||
+                    invoiceBooking.customerType === "Individual Customer"
+                      ? "INDIVIDUAL CUSTOMER"
+                      : "CORPORATE CLIENT"}
+                    )
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {invoiceBooking.clientType === "Individual Customer" ||
+                    invoiceBooking.customerType === "Individual Customer" ? (
+                      <User className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    ) : (
+                      <Building2 className="w-3.5 h-3.5 text-[#f16623] shrink-0" />
+                    )}
+                    <span className="font-semibold text-slate-900 text-xs">
+                      {invoiceBooking.customerName}
+                    </span>
+                    <span
+                      className={`text-[9px] px-1.5 py-0.2 rounded font-medium border ${
+                        invoiceBooking.clientType === "Individual Customer" ||
+                        invoiceBooking.customerType === "Individual Customer"
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : "bg-blue-50 text-blue-700 border-blue-200"
+                      }`}
+                    >
+                      {invoiceBooking.clientType === "Individual Customer" ||
+                      invoiceBooking.customerType === "Individual Customer"
+                        ? "Individual Customer"
+                        : "Company Account"}
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-600 space-y-0.5">
+                    <p>
+                      Passenger: <strong className="font-medium text-slate-800">{invoiceBooking.travelerName}</strong>
+                    </p>
+                    {invoiceBooking.travelerMobile && (
+                      <p>Mobile: <span className="font-mono">{invoiceBooking.travelerMobile}</span></p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-[10px] text-slate-400 uppercase font-medium block tracking-wider">
+                    DUTY / TRIP PARTICULARS
+                  </span>
+                  <div className="text-[11px] text-slate-700 space-y-0.5">
+                    <p>
+                      Route:{" "}
+                      <strong className="font-medium text-slate-900">
+                        {invoiceBooking.fromLocation} → {invoiceBooking.toLocation}
+                      </strong>
+                    </p>
+                    <p>
+                      Dates: {invoiceBooking.startDate} ({invoiceBooking.startTime || "09:00"}) to {invoiceBooking.endDate} ({invoiceBooking.endTime || "18:00"})
+                    </p>
+                    <p>
+                      Vehicle:{" "}
+                      <span className="font-mono font-medium">
+                        {invoiceBooking.vehicleRegNumber || "Standard"} ({invoiceBooking.vehicleCategory})
+                      </span>
+                    </p>
+                    {invoiceBooking.driverName && (
+                      <p>Driver: {invoiceBooking.driverName} ({invoiceBooking.driverMobile || "On duty"})</p>
+                    )}
+                    {invoiceBooking.totalKm > 0 && (
+                      <p>Total Run: <span className="font-mono">{invoiceBooking.totalKm} KM</span> • {invoiceBooking.durationText}</p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Itemized Charges Table */}
+              <div className="border border-slate-200 rounded-[6px] overflow-hidden">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-[10px] uppercase font-semibold text-slate-600 border-b border-slate-200">
+                    <tr>
+                      <th className="py-2 px-3">Description</th>
+                      <th className="py-2 px-3 text-center">Qty / Slab</th>
+                      <th className="py-2 px-3 text-right">Amount (₹)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-normal">
+                    <tr>
+                      <td className="py-2 px-3 font-medium text-slate-800">
+                        Base Fare ({invoiceBooking.tariffType} Duty {invoiceBooking.tariffPackageName ? `— ${invoiceBooking.tariffPackageName}` : ""})
+                      </td>
+                      <td className="py-2 px-3 text-center text-slate-500 font-mono">1</td>
+                      <td className="py-2 px-3 text-right font-mono font-medium text-slate-900">
+                        ₹{(invoiceBooking.baseFare || 0).toLocaleString("en-IN")}
+                      </td>
+                    </tr>
+
+                    {invoiceBooking.extraKmCost > 0 && (
+                      <tr>
+                        <td className="py-2 px-3 text-slate-700">
+                          Extra Distance Run (@ ₹{invoiceBooking.extraKmRate}/KM)
+                        </td>
+                        <td className="py-2 px-3 text-center text-slate-500 font-mono">
+                          {Math.round(invoiceBooking.extraKmCost / (invoiceBooking.extraKmRate || 1))} KM
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono text-slate-900">
+                          ₹{invoiceBooking.extraKmCost.toLocaleString("en-IN")}
+                        </td>
+                      </tr>
+                    )}
+
+                    {invoiceBooking.extraHoursCost > 0 && (
+                      <tr>
+                        <td className="py-2 px-3 text-slate-700">
+                          Extra Duty Hours (@ ₹{invoiceBooking.extraHoursRate}/Hr)
+                        </td>
+                        <td className="py-2 px-3 text-center text-slate-500 font-mono">
+                          {Math.round(invoiceBooking.extraHoursCost / (invoiceBooking.extraHoursRate || 1))} Hrs
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono text-slate-900">
+                          ₹{invoiceBooking.extraHoursCost.toLocaleString("en-IN")}
+                        </td>
+                      </tr>
+                    )}
+
+                    {invoiceBooking.driverBataCost > 0 && (
+                      <tr>
+                        <td className="py-2 px-3 text-slate-700">Driver Bata Allowance</td>
+                        <td className="py-2 px-3 text-center text-slate-500 font-mono">—</td>
+                        <td className="py-2 px-3 text-right font-mono text-slate-900">
+                          ₹{invoiceBooking.driverBataCost.toLocaleString("en-IN")}
+                        </td>
+                      </tr>
+                    )}
+
+                    {invoiceBooking.nightHaltCost > 0 && (
+                      <tr>
+                        <td className="py-2 px-3 text-slate-700">Night Halt Charges</td>
+                        <td className="py-2 px-3 text-center text-slate-500 font-mono">—</td>
+                        <td className="py-2 px-3 text-right font-mono text-slate-900">
+                          ₹{invoiceBooking.nightHaltCost.toLocaleString("en-IN")}
+                        </td>
+                      </tr>
+                    )}
+
+                    {/* Pass-through charges breakdown if any */}
+                    {invoiceBooking.totalPassThrough > 0 && (
+                      <tr>
+                        <td className="py-2 px-3 text-slate-700">
+                          Pass-through Expenses (Tolls: ₹{invoiceBooking.tolls || 0}, Parking: ₹{invoiceBooking.parking || 0}, Permits: ₹{invoiceBooking.statePermit || 0}, Meals: ₹{invoiceBooking.meals || 0}, Tax: ₹{invoiceBooking.interstateEntryTax || 0})
+                        </td>
+                        <td className="py-2 px-3 text-center text-slate-500 font-mono">Actuals</td>
+                        <td className="py-2 px-3 text-right font-mono text-slate-900">
+                          ₹{invoiceBooking.totalPassThrough.toLocaleString("en-IN")}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                  <tfoot className="bg-slate-50/80 border-t border-slate-200">
+                    <tr>
+                      <td colSpan={2} className="py-2 px-3 text-right font-semibold text-slate-800">
+                        Gross Total:
+                      </td>
+                      <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">
+                        ₹{(invoiceBooking.grossAmount || 0).toLocaleString("en-IN")}
+                      </td>
+                    </tr>
+                    {invoiceBooking.discount && invoiceBooking.discount > 0 ? (
+                      <tr className="text-rose-600">
+                        <td colSpan={2} className="py-1.5 px-3 text-right font-medium">
+                          Less: Special Concession / Discount:
+                        </td>
+                        <td className="py-1.5 px-3 text-right font-mono font-semibold">
+                          − ₹{invoiceBooking.discount.toLocaleString("en-IN")}
+                        </td>
+                      </tr>
+                    ) : null}
+                    {invoiceBooking.customerAdvance > 0 && (
+                      <tr className="text-emerald-700">
+                        <td colSpan={2} className="py-1.5 px-3 text-right font-medium">
+                          Less: Advance Received on Booking:
+                        </td>
+                        <td className="py-1.5 px-3 text-right font-mono font-semibold">
+                          − ₹{invoiceBooking.customerAdvance.toLocaleString("en-IN")}
+                        </td>
+                      </tr>
+                    )}
+                    {invoiceBooking.receivedAmount > invoiceBooking.customerAdvance && (
+                      <tr className="text-emerald-700">
+                        <td colSpan={2} className="py-1.5 px-3 text-right font-medium">
+                          Additional Amount Collected:
+                        </td>
+                        <td className="py-1.5 px-3 text-right font-mono font-semibold">
+                          − ₹{(invoiceBooking.receivedAmount - invoiceBooking.customerAdvance).toLocaleString("en-IN")}
+                        </td>
+                      </tr>
+                    )}
+                    <tr className="border-t-2 border-slate-300">
+                      <td colSpan={2} className="py-2.5 px-3 text-right font-bold text-slate-900 text-sm">
+                        Net Balance Payable:
+                      </td>
+                      <td className="py-2.5 px-3 text-right font-mono font-bold text-[#f16623] text-sm">
+                        ₹{(invoiceBooking.balanceAmount ?? invoiceBooking.netAmount ?? 0).toLocaleString("en-IN")}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Status and Notes */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-[6px] bg-slate-50 border border-slate-200 text-xs">
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-medium block">
+                    PAYMENT STATUS
+                  </span>
+                  <span
+                    className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium border mt-0.5 ${
+                      invoiceBooking.paymentStatus === "Paid"
+                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                        : invoiceBooking.paymentStatus === "Partial"
+                        ? "bg-amber-50 text-amber-700 border-amber-200"
+                        : "bg-rose-50 text-rose-700 border-rose-200"
+                    }`}
+                  >
+                    {invoiceBooking.paymentStatus}
+                  </span>
+                </div>
+                <div className="text-left sm:text-right">
+                  <span className="text-[10px] text-slate-400 uppercase font-medium block">
+                    TOTAL RECEIVED
+                  </span>
+                  <span className="font-mono font-semibold text-emerald-700">
+                    ₹{(invoiceBooking.receivedAmount || 0).toLocaleString("en-IN")}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Print & Close Actions */}
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="h-[34px] max-h-[34px] px-4 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] text-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Print Invoice</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setInvoiceBooking(null)}
+                className="h-[34px] max-h-[34px] px-4 rounded-[6px] border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-normal transition cursor-pointer"
+              >
+                Close
               </button>
             </div>
           </div>
