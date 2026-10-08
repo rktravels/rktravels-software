@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import {
   Briefcase,
@@ -25,6 +25,17 @@ import {
   PhoneCall,
   UserCheck,
   MessageSquare,
+  IndianRupee,
+  Calendar,
+  CalendarDays,
+  Receipt,
+  CreditCard,
+  TrendingUp,
+  Wallet,
+  Clock,
+  ArrowRight,
+  Layers,
+  FileText,
 } from "lucide-react";
 import {
   collection,
@@ -60,6 +71,17 @@ export interface CarVendorItem {
   updatedAt?: Timestamp | any;
 }
 
+export interface AttachedVehicleItem {
+  id: string;
+  regNumber: string;
+  vehicleName: string;
+  category: string;
+  seatingCapacity?: string;
+  fuelType?: string;
+  ownershipType?: string;
+  isActive?: boolean;
+}
+
 export default function CarVendorsPage() {
   const [vendors, setVendors] = useState<CarVendorItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -85,10 +107,17 @@ export default function CarVendorsPage() {
   const [amount, setAmount] = useState("");
   const [isActive, setIsActive] = useState(true);
 
-  // View Drawer state
+  // View Details Drawer states (Tabs: General | Vehicles | Financial)
   const [viewingVendor, setViewingVendor] = useState<CarVendorItem | null>(null);
-  const [attachedVehicles, setAttachedVehicles] = useState<{ id: string; regNumber: string; vehicleName: string; category: string }[]>([]);
+  const [viewTab, setViewTab] = useState<"general" | "vehicles" | "financial">("general");
+  const [attachedVehicles, setAttachedVehicles] = useState<AttachedVehicleItem[]>([]);
   const [loadingVehicles, setLoadingVehicles] = useState(false);
+  const [vendorBookings, setVendorBookings] = useState<any[]>([]);
+  const [loadingBookings, setLoadingBookings] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
 
   // Delete modal state
   const [deletingVendor, setDeletingVendor] = useState<CarVendorItem | null>(null);
@@ -147,38 +176,178 @@ export default function CarVendorsPage() {
     }
   }, [currentPage, pageSize]);
 
-  // Load attached vehicles when viewing vendor
+  // Load attached fleet vehicles and bookings when viewing vendor
   useEffect(() => {
     if (!viewingVendor) {
       setAttachedVehicles([]);
+      setVendorBookings([]);
       return;
     }
 
-    const fetchAttached = async () => {
+    const fetchVendorFleetAndBookings = async () => {
       setLoadingVehicles(true);
+      setLoadingBookings(true);
       try {
-        const vQ = query(
-          collection(db, "vehicles"),
-          where("vendorName", "==", viewingVendor.name),
-          limit(20)
-        );
-        const snap = await getDocs(vQ);
-        const vList = snap.docs.map((d) => ({
-          id: d.id,
-          regNumber: d.data().regNumber || "—",
-          vehicleName: d.data().vehicleName || "",
-          category: d.data().category || "",
-        }));
+        // 1. Fetch all vehicles belonging to this vendor
+        const vehSnap = await getDocs(collection(db, "vehicles"));
+        const vList: AttachedVehicleItem[] = [];
+        const vendorVehicleIds = new Set<string>();
+        const vendorVehicleRegs = new Set<string>();
+
+        vehSnap.docs.forEach((docSnap) => {
+          const d = docSnap.data();
+          const matchesId = d.vendorId && d.vendorId === viewingVendor.id;
+          const matchesName =
+            d.vendorName &&
+            d.vendorName.trim().toLowerCase() === viewingVendor.name.trim().toLowerCase();
+
+          if (matchesId || matchesName) {
+            vList.push({
+              id: docSnap.id,
+              regNumber: d.regNumber || "—",
+              vehicleName: d.vehicleName || `${d.manufacturer || ""} ${d.model || ""}`.trim() || "Vehicle",
+              category: d.category || "General",
+              seatingCapacity: d.seatingCapacity,
+              fuelType: d.fuelType,
+              ownershipType: d.ownershipType || "Vendor Attached",
+              isActive: d.isActive !== false,
+            });
+            vendorVehicleIds.add(docSnap.id);
+            if (d.regNumber) {
+              vendorVehicleRegs.add(d.regNumber.trim().toUpperCase());
+            }
+          }
+        });
         setAttachedVehicles(vList);
+        setLoadingVehicles(false);
+
+        // 2. Fetch all bookings related to this vendor's vehicles or vendor
+        const bookSnap = await getDocs(collection(db, "bookings"));
+        const bList: any[] = [];
+
+        bookSnap.docs.forEach((docSnap) => {
+          const b = docSnap.data();
+          const matchesVehId = b.vehicleId && vendorVehicleIds.has(b.vehicleId);
+          const matchesReg =
+            b.vehicleRegNumber && vendorVehicleRegs.has(b.vehicleRegNumber.trim().toUpperCase());
+          const matchesVenId = b.vendorId && b.vendorId === viewingVendor.id;
+          const matchesVenName =
+            b.vendorName &&
+            b.vendorName.trim().toLowerCase() === viewingVendor.name.trim().toLowerCase();
+
+          if (matchesVehId || matchesReg || matchesVenId || matchesVenName) {
+            bList.push({
+              id: docSnap.id,
+              ...b,
+            });
+          }
+        });
+
+        // Sort bookings by date descending
+        bList.sort((a, b) => {
+          const dateA = new Date(a.startDate || a.createdAt?.toDate?.() || 0).getTime();
+          const dateB = new Date(b.startDate || b.createdAt?.toDate?.() || 0).getTime();
+          return dateB - dateA;
+        });
+
+        setVendorBookings(bList);
       } catch (err) {
-        console.error("Error fetching attached vehicles:", err);
+        console.error("Error fetching vendor fleet & bookings:", err);
       } finally {
         setLoadingVehicles(false);
+        setLoadingBookings(false);
       }
     };
 
-    fetchAttached();
+    fetchVendorFleetAndBookings();
   }, [viewingVendor]);
+
+  // Last 12 months for month-wise filter tab
+  const availableMonths = useMemo(() => {
+    const list: { key: string; label: string; year: number; month: number }[] = [];
+    const now = new Date();
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const label = d.toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+      list.push({ key, label, year: d.getFullYear(), month: d.getMonth() + 1 });
+    }
+    return list;
+  }, []);
+
+  // Filter bookings for the selected month
+  const monthBookings = useMemo(() => {
+    if (!selectedMonth) return vendorBookings;
+    return vendorBookings.filter((b) => {
+      const start = b.startDate ? String(b.startDate) : "";
+      if (start.startsWith(selectedMonth)) return true;
+      const end = b.endDate ? String(b.endDate) : "";
+      if (end.startsWith(selectedMonth)) return true;
+      if (b.createdAt?.toDate) {
+        const cDate = b.createdAt.toDate().toISOString();
+        if (cDate.startsWith(selectedMonth)) return true;
+      }
+      return false;
+    });
+  }, [vendorBookings, selectedMonth]);
+
+  // Financial calculations based on paymentMode
+  const financialSummary = useMemo(() => {
+    if (!viewingVendor) {
+      return {
+        paymentMode: "Trip wise",
+        unitRate: 0,
+        totalPayable: 0,
+        totalTrips: 0,
+        totalDutyDays: 0,
+        activeVehiclesCount: 0,
+        formulaText: "",
+      };
+    }
+
+    const mode = viewingVendor.paymentMode || "Trip wise";
+    const unitRate = Number(viewingVendor.amount) || 0;
+    const totalTrips = monthBookings.length;
+
+    // Distinct vehicles deployed in this month
+    const activeVehicles = new Set(
+      monthBookings.map((b) => b.vehicleRegNumber || b.vehicleId).filter(Boolean)
+    );
+    const activeVehiclesCount = activeVehicles.size;
+
+    // Sum of duty days across trips
+    const totalDutyDays = monthBookings.reduce((acc, b) => {
+      const days = Math.max(1, Math.round(Number(b.totalDays) || 1));
+      return acc + days;
+    }, 0);
+
+    let totalPayable = 0;
+    let formulaText = "";
+
+    if (mode === "Monthly") {
+      // Monthly fixed contract
+      totalPayable = unitRate;
+      formulaText = `Fixed Monthly Plan: ₹${unitRate.toLocaleString("en-IN")}`;
+    } else if (mode === "Daily") {
+      // Daily rate * total duty days
+      totalPayable = totalDutyDays * unitRate;
+      formulaText = `${totalDutyDays} duty day${totalDutyDays === 1 ? "" : "s"} × ₹${unitRate.toLocaleString("en-IN")}/day`;
+    } else {
+      // Trip wise: trips count * trip rate
+      totalPayable = totalTrips * unitRate;
+      formulaText = `${totalTrips} trip${totalTrips === 1 ? "" : "s"} × ₹${unitRate.toLocaleString("en-IN")}/trip`;
+    }
+
+    return {
+      paymentMode: mode,
+      unitRate,
+      totalPayable,
+      totalTrips,
+      totalDutyDays,
+      activeVehiclesCount,
+      formulaText,
+    };
+  }, [viewingVendor, monthBookings]);
 
   // Reset page when search or filter changes
   useEffect(() => {
@@ -538,7 +707,11 @@ export default function CarVendorsPage() {
                 {paginatedVendors.map((vendor, idx) => (
                   <tr
                     key={vendor.id}
-                    className="hover:bg-slate-50/80 transition-colors group"
+                    onClick={() => {
+                      setViewingVendor(vendor);
+                      setViewTab("general");
+                    }}
+                    className="hover:bg-orange-50/40 transition-colors group cursor-pointer"
                   >
                     {/* Index */}
                     <td className="py-2.5 px-3 text-center text-slate-400 text-[11px] font-mono">
@@ -548,11 +721,11 @@ export default function CarVendorsPage() {
                     {/* Name & Type */}
                     <td className="py-2.5 px-3">
                       <div className="flex items-center gap-2">
-                        <div className="w-7 h-7 rounded-[4px] bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 font-medium text-xs shrink-0">
+                        <div className="w-7 h-7 rounded-[4px] bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 font-medium text-xs shrink-0 group-hover:border-[#f16623]/30 group-hover:text-[#f16623]">
                           {vendor.name.charAt(0).toUpperCase()}
                         </div>
                         <div>
-                          <span className="font-medium text-slate-900 block leading-tight text-xs">
+                          <span className="font-medium text-slate-900 group-hover:text-[#f16623] block leading-tight text-xs transition-colors">
                             {vendor.name}
                           </span>
                           <span className="text-[10px] text-slate-400 font-normal">
@@ -564,7 +737,7 @@ export default function CarVendorsPage() {
 
                     {/* Mobile Number with Copy */}
                     <td className="py-2.5 px-3">
-                      <div className="flex items-center gap-1.5">
+                      <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                         <a
                           href={`tel:${vendor.mobile}`}
                           className="font-mono text-slate-800 hover:text-[#f16623] transition-colors font-medium flex items-center gap-1 text-[11px] cursor-pointer"
@@ -575,7 +748,10 @@ export default function CarVendorsPage() {
 
                         <button
                           type="button"
-                          onClick={() => handleCopyPhone(vendor.mobile, vendor.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCopyPhone(vendor.mobile, vendor.id);
+                          }}
                           className="text-slate-400 hover:text-slate-700 transition cursor-pointer p-0.5 rounded hover:bg-slate-100"
                           title="Copy phone number"
                         >
@@ -590,7 +766,7 @@ export default function CarVendorsPage() {
 
                     {/* Payment Terms */}
                     <td className="py-2.5 px-3">
-                      <span className="font-medium text-slate-800 block text-xs">
+                      <span className="font-semibold text-slate-800 block text-xs">
                         {vendor.amount !== undefined && vendor.amount !== null && vendor.amount !== ""
                           ? `₹${Number(vendor.amount).toLocaleString("en-IN")}`
                           : "—"}
@@ -605,6 +781,7 @@ export default function CarVendorsPage() {
                       {vendor.email ? (
                         <a
                           href={`mailto:${vendor.email}`}
+                          onClick={(e) => e.stopPropagation()}
                           className="text-slate-600 hover:text-[#f16623] inline-flex items-center gap-1 text-[11px] font-normal cursor-pointer"
                         >
                           <Mail className="w-3 h-3 text-slate-400" />
@@ -648,11 +825,14 @@ export default function CarVendorsPage() {
 
                     {/* Action Buttons */}
                     <td className="py-2.5 px-3 text-right">
-                      <div className="inline-flex items-center gap-1">
+                      <div className="inline-flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                         <button
                           type="button"
-                          onClick={() => setViewingVendor(vendor)}
-                          className="h-[28px] px-2 rounded-[4px] text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200/70 inline-flex items-center gap-1 text-[11px] font-normal transition cursor-pointer"
+                          onClick={() => {
+                            setViewingVendor(vendor);
+                            setViewTab("general");
+                          }}
+                          className="h-[28px] px-2 rounded-[4px] text-slate-600 hover:text-[#f16623] hover:bg-orange-50 border border-slate-200/70 inline-flex items-center gap-1 text-[11px] font-normal transition cursor-pointer"
                           title="View Details"
                         >
                           <Eye className="w-3 h-3 text-slate-500" />
@@ -960,169 +1140,686 @@ export default function CarVendorsPage() {
         </form>
       </OffCanvas>
 
-      {/* OffCanvas Drawer for View Details */}
+      {/* OffCanvas Drawer for View Details (Tab-based: General | Vehicles | Financial) */}
       <OffCanvas
         isOpen={Boolean(viewingVendor)}
         onClose={() => setViewingVendor(null)}
-        title="Vendor Profile & Linked Fleet"
-        subtitle="Contact details and vehicles currently attached to this member."
-        size="md"
+        title={viewingVendor?.name || "Vendor Details"}
+        subtitle={`Vendor Profile, Attached Fleet & Financial Payouts • ${viewingVendor?.vendorType || "Car Vendor"}`}
+        size="2xl"
+        widthClassName="max-w-3xl sm:max-w-4xl lg:max-w-5xl"
       >
         {viewingVendor && (
           <div className="space-y-4">
-            {/* Vendor Card Header */}
-            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-[6px]">
-              <div className="flex items-center justify-between">
-                <span className="font-semibold text-sm text-slate-900">
-                  {viewingVendor.name}
-                </span>
-                <span
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${
-                    viewingVendor.isActive !== false
-                      ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                      : "bg-slate-100 text-slate-600 border-slate-200"
-                  }`}
-                >
-                  {viewingVendor.isActive !== false ? "Active" : "Inactive"}
-                </span>
-              </div>
-              <span className="text-[11px] text-slate-500 font-normal block mt-0.5">
-                {viewingVendor.vendorType || "Car Vendor"}
-              </span>
-
-              {/* Quick Contacts */}
-              <div className="mt-3 pt-3 border-t border-slate-200/80 grid grid-cols-2 gap-2 text-xs">
-                <a
-                  href={`tel:${viewingVendor.mobile}`}
-                  className="p-2 rounded bg-white border border-slate-200 text-slate-700 hover:text-[#f16623] hover:border-[#f16623]/30 inline-flex items-center gap-1.5 transition cursor-pointer"
-                >
-                  <PhoneCall className="w-3.5 h-3.5 text-[#f16623]" />
-                  <span className="font-mono text-[11px] font-medium">{viewingVendor.mobile}</span>
-                </a>
-
-                {viewingVendor.email ? (
-                  <a
-                    href={`mailto:${viewingVendor.email}`}
-                    className="p-2 rounded bg-white border border-slate-200 text-slate-700 hover:text-[#f16623] hover:border-[#f16623]/30 inline-flex items-center gap-1.5 transition cursor-pointer truncate"
-                  >
-                    <Mail className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    <span className="text-[11px] truncate">{viewingVendor.email}</span>
-                  </a>
-                ) : (
-                  <div className="p-2 rounded bg-slate-100/60 border border-slate-200/60 text-slate-400 text-[11px] inline-flex items-center gap-1.5">
-                    <Mail className="w-3.5 h-3.5 text-slate-300" />
-                    <span>No email added</span>
+            {/* Top Vendor Mini Banner */}
+            <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-[6px] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-[6px] bg-orange-50 border border-[#f16623]/25 flex items-center justify-center text-[#f16623] font-bold text-sm shrink-0">
+                  {viewingVendor.name.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-sm font-semibold text-slate-900 leading-tight">
+                      {viewingVendor.name}
+                    </h3>
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${
+                        viewingVendor.isActive !== false
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : "bg-slate-100 text-slate-600 border-slate-200"
+                      }`}
+                    >
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          viewingVendor.isActive !== false ? "bg-emerald-500" : "bg-slate-400"
+                        }`}
+                      />
+                      {viewingVendor.isActive !== false ? "Active" : "Inactive"}
+                    </span>
                   </div>
-                )}
-              </div>
-            </div>
-
-            {/* City & Address info */}
-            <div className="p-3 bg-white border border-slate-200 rounded-[6px] space-y-2 text-xs">
-              <div className="flex items-start gap-2">
-                <MapPin className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
-                <div>
-                  <span className="text-[11px] text-slate-400 block font-normal">City & Base</span>
-                  <span className="font-medium text-slate-800">{viewingVendor.city || "Not specified"}</span>
-                </div>
-              </div>
-
-              {viewingVendor.address && (
-                <div className="pt-2 border-t border-slate-100 text-slate-600 text-[11px]">
-                  <span className="text-slate-400 block font-normal">Address</span>
-                  <span>{viewingVendor.address}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Payment Terms */}
-            <div className="p-3 bg-white border border-slate-200 rounded-[6px] space-y-2 text-xs">
-              <span className="font-medium text-slate-800 block text-xs">Payment Terms</span>
-              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100 text-[11px]">
-                <div>
-                  <span className="text-[10px] text-slate-400 block font-normal">Payment Mode</span>
-                  <span className="font-medium text-slate-800">{viewingVendor.paymentMode || "Trip wise"}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-slate-400 block font-normal">Amount</span>
-                  <span className="font-medium text-[#f16623]">
-                    {viewingVendor.amount !== undefined && viewingVendor.amount !== null && viewingVendor.amount !== ""
-                      ? `₹${Number(viewingVendor.amount).toLocaleString("en-IN")}`
-                      : "—"}
+                  <span className="text-[11px] text-slate-500 font-normal">
+                    {viewingVendor.vendorType || "Car Vendor"} • Base: {viewingVendor.city || "—"}
                   </span>
                 </div>
               </div>
+
+              {/* Quick Contact & Action Buttons */}
+              <div className="flex items-center gap-2">
+                <a
+                  href={`tel:${viewingVendor.mobile}`}
+                  className="h-[30px] px-2.5 rounded-[6px] bg-white border border-slate-200 text-slate-700 hover:text-[#f16623] hover:border-[#f16623]/30 inline-flex items-center gap-1.5 text-xs font-mono transition cursor-pointer"
+                >
+                  <PhoneCall className="w-3.5 h-3.5 text-[#f16623]" />
+                  <span>{viewingVendor.mobile}</span>
+                </a>
+
+                {viewingVendor.email && (
+                  <a
+                    href={`mailto:${viewingVendor.email}`}
+                    className="h-[30px] px-2.5 rounded-[6px] bg-white border border-slate-200 text-slate-700 hover:text-blue-600 inline-flex items-center gap-1.5 text-xs transition cursor-pointer"
+                    title={viewingVendor.email}
+                  >
+                    <Mail className="w-3.5 h-3.5 text-blue-600" />
+                    <span className="hidden sm:inline text-[11px] truncate max-w-[120px]">
+                      {viewingVendor.email}
+                    </span>
+                  </a>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = viewingVendor;
+                    setViewingVendor(null);
+                    handleOpenEditDrawer(target);
+                  }}
+                  className="h-[30px] px-2.5 rounded-[6px] bg-[#f16623] text-white text-xs font-medium inline-flex items-center gap-1 hover:bg-[#d95318] transition cursor-pointer shadow-xs shadow-[#f16623]/25"
+                >
+                  <Edit2 className="w-3 h-3" />
+                  <span>Edit</span>
+                </button>
+              </div>
             </div>
 
-            {/* Linked Fleet Vehicles */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-slate-700">
-                  Attached Fleet Vehicles ({attachedVehicles.length})
-                </span>
-                <Link
-                  href="/vehicles"
-                  className="text-[10px] text-[#f16623] hover:underline inline-flex items-center gap-0.5 cursor-pointer"
-                >
-                  <span>Go to Fleet</span>
-                  <ExternalLink className="w-2.5 h-2.5" />
-                </Link>
-              </div>
+            {/* TAB NAVIGATION HEADER (Active: bg-orange-50 text-[#f16623], no underline) */}
+            <div className="flex items-center gap-1 border-b border-slate-200 pb-2">
+              <button
+                type="button"
+                onClick={() => setViewTab("general")}
+                className={`px-3.5 py-1.5 rounded-[6px] text-xs font-medium inline-flex items-center gap-1.5 transition cursor-pointer ${
+                  viewTab === "general"
+                    ? "bg-orange-50 text-[#f16623]"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                }`}
+              >
+                <UserCheck className="w-3.5 h-3.5" />
+                <span>General</span>
+              </button>
 
-              {loadingVehicles ? (
-                <div className="py-4 flex items-center justify-center text-slate-400 gap-1.5 text-xs">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[#f16623]" />
-                  <span>Checking attached vehicles...</span>
-                </div>
-              ) : attachedVehicles.length === 0 ? (
-                <div className="p-3 bg-slate-50 border border-slate-200/70 rounded-[6px] text-center text-xs text-slate-400">
-                  No vehicles currently attached under this vendor name.
-                </div>
-              ) : (
-                <div className="divide-y divide-slate-100 border border-slate-200 rounded-[6px] overflow-hidden">
-                  {attachedVehicles.map((veh) => (
-                    <div key={veh.id} className="p-2.5 bg-white flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <Car className="w-3.5 h-3.5 text-slate-500" />
-                        <div>
-                          <span className="font-mono font-medium text-slate-900 block text-[11px]">
-                            {veh.regNumber}
-                          </span>
-                          <span className="text-[10px] text-slate-400 font-normal">
-                            {veh.vehicleName || veh.category}
-                          </span>
-                        </div>
+              <button
+                type="button"
+                onClick={() => setViewTab("vehicles")}
+                className={`px-3.5 py-1.5 rounded-[6px] text-xs font-medium inline-flex items-center gap-1.5 transition cursor-pointer ${
+                  viewTab === "vehicles"
+                    ? "bg-orange-50 text-[#f16623]"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                }`}
+              >
+                <Car className="w-3.5 h-3.5" />
+                <span>Vehicles</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                    viewTab === "vehicles" ? "bg-[#f16623] text-white" : "bg-slate-200 text-slate-700"
+                  }`}
+                >
+                  {attachedVehicles.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setViewTab("financial")}
+                className={`px-3.5 py-1.5 rounded-[6px] text-xs font-medium inline-flex items-center gap-1.5 transition cursor-pointer ${
+                  viewTab === "financial"
+                    ? "bg-orange-50 text-[#f16623]"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                }`}
+              >
+                <IndianRupee className="w-3.5 h-3.5" />
+                <span>Financial</span>
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
+                    viewTab === "financial" ? "bg-[#f16623] text-white" : "bg-slate-200 text-slate-700"
+                  }`}
+                >
+                  {financialSummary.totalTrips > 0
+                    ? `₹${financialSummary.totalPayable.toLocaleString("en-IN")}`
+                    : "0 Trips"}
+                </span>
+              </button>
+            </div>
+
+            {/* TAB 1: GENERAL DETAILS */}
+            {viewTab === "general" && (
+              <div className="space-y-3.5 animate-in fade-in duration-150">
+                {/* Profile Grid */}
+                <div className="bg-white border border-slate-200 rounded-[6px] p-3.5 space-y-3">
+                  <span className="text-xs font-medium text-slate-800 block border-b border-slate-100 pb-1.5">
+                    Vendor Contact & Registration Profile
+                  </span>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-normal">Legal / Trade Name</span>
+                      <span className="font-medium text-slate-800 text-xs">{viewingVendor.name}</span>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-normal">Vendor Category</span>
+                      <span className="font-medium text-slate-800 text-xs">{viewingVendor.vendorType || "Car Vendor"}</span>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-normal">Primary Mobile Number</span>
+                      <div className="flex items-center gap-1 mt-0.5">
+                        <span className="font-mono font-medium text-slate-800">{viewingVendor.mobile}</span>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyPhone(viewingVendor.mobile, `view-${viewingVendor.id}`)}
+                          className="text-slate-400 hover:text-slate-700 p-0.5 rounded cursor-pointer"
+                          title="Copy phone"
+                        >
+                          {copiedId === `view-${viewingVendor.id}` ? (
+                            <Check className="w-3 h-3 text-emerald-600" />
+                          ) : (
+                            <Copy className="w-3 h-3" />
+                          )}
+                        </button>
                       </div>
-                      <span className="text-[10px] bg-slate-100 px-1.5 py-0.5 rounded text-slate-600">
-                        {veh.category}
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-normal">Official Email</span>
+                      <span className="font-medium text-slate-800 text-xs">{viewingVendor.email || "—"}</span>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-normal">Operational City</span>
+                      <span className="font-medium text-slate-800 text-xs">{viewingVendor.city || "Not Specified"}</span>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-normal">Account Status</span>
+                      <span className="font-medium text-slate-800 text-xs">
+                        {viewingVendor.isActive !== false ? "Active & Verified" : "Inactive"}
                       </span>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
 
-            {/* Drawer Close / Edit */}
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setViewingVendor(null)}
-                className="h-[32px] px-3 rounded-[6px] border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs font-normal transition cursor-pointer"
-              >
-                Close
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const target = viewingVendor;
-                  setViewingVendor(null);
-                  handleOpenEditDrawer(target);
-                }}
-                className="h-[32px] px-3 rounded-[6px] bg-[#f16623] text-white text-xs font-medium inline-flex items-center gap-1 hover:bg-[#d95318] transition cursor-pointer"
-              >
-                <Edit2 className="w-3 h-3" />
-                <span>Edit Vendor</span>
-              </button>
+                    <div className="sm:col-span-2">
+                      <span className="text-[10px] text-slate-400 block font-normal">Base Office Address</span>
+                      <p className="font-normal text-slate-700 text-xs mt-0.5">
+                        {viewingVendor.address || "No office address recorded."}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Payment Plan & Compensation Terms */}
+                <div className="bg-white border border-slate-200 rounded-[6px] p-3.5 space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <Wallet className="w-3.5 h-3.5 text-[#f16623]" />
+                      <span className="text-xs font-medium text-slate-800">
+                        Configured Payment Terms
+                      </span>
+                    </div>
+                    <span className="text-[11px] text-[#f16623] font-medium">
+                      {viewingVendor.paymentMode || "Trip wise"}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div className="p-2.5 rounded-[6px] bg-slate-50 border border-slate-100">
+                      <span className="text-[10px] text-slate-400 block font-normal">Agreed Rate / Base Amount</span>
+                      <span className="text-base font-semibold text-[#f16623]">
+                        {viewingVendor.amount
+                          ? `₹${Number(viewingVendor.amount).toLocaleString("en-IN")}`
+                          : "Not Configured (₹0)"}
+                      </span>
+                      <span className="text-[10px] text-slate-400 block mt-0.5">
+                        {viewingVendor.paymentMode === "Monthly"
+                          ? "Per month fixed contract payout"
+                          : viewingVendor.paymentMode === "Daily"
+                          ? "Per operational duty day deployed"
+                          : "Per completed trip assignment"}
+                      </span>
+                    </div>
+
+                    <div className="p-2.5 rounded-[6px] bg-slate-50 border border-slate-100">
+                      <span className="text-[10px] text-slate-400 block font-normal">Payout Settlement Type</span>
+                      <span className="font-medium text-slate-800 text-xs mt-0.5 block">
+                        {viewingVendor.paymentMode === "Monthly"
+                          ? "Monthly Retainer Settlement"
+                          : viewingVendor.paymentMode === "Daily"
+                          ? "Daily Deployed Days Payout"
+                          : "Trip-by-Trip Payout"}
+                      </span>
+                      <span className="text-[10px] text-slate-400 block mt-0.5">
+                        Settled via accounts voucher ledger. View detailed monthly payouts in the Financial tab.
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Fleet & Lifetime Metrics */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  <div className="p-3 rounded-[6px] bg-slate-50 border border-slate-200">
+                    <span className="text-[10px] text-slate-400 block font-normal">Attached Fleet</span>
+                    <span className="text-sm font-semibold text-slate-900 mt-0.5 block">
+                      {attachedVehicles.length} Vehicles
+                    </span>
+                  </div>
+
+                  <div className="p-3 rounded-[6px] bg-slate-50 border border-slate-200">
+                    <span className="text-[10px] text-slate-400 block font-normal">Lifetime Bookings</span>
+                    <span className="text-sm font-semibold text-slate-900 mt-0.5 block">
+                      {vendorBookings.length} Trips
+                    </span>
+                  </div>
+
+                  <div className="col-span-2 sm:col-span-1 p-3 rounded-[6px] bg-orange-50/70 border border-[#f16623]/25">
+                    <span className="text-[10px] text-slate-500 block font-normal">Current Month Payout</span>
+                    <span className="text-sm font-semibold text-[#f16623] mt-0.5 block">
+                      ₹{financialSummary.totalPayable.toLocaleString("en-IN")}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 2: ATTACHED VEHICLES */}
+            {viewTab === "vehicles" && (
+              <div className="space-y-3 animate-in fade-in duration-150">
+                <div className="flex items-center justify-between pb-1">
+                  <div>
+                    <span className="text-xs font-medium text-slate-800 block">
+                      Vehicles Assigned to this Vendor ({attachedVehicles.length})
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-normal">
+                      Cars currently registered with vendor name "{viewingVendor.name}".
+                    </span>
+                  </div>
+                  <Link
+                    href="/vehicles"
+                    className="text-xs text-[#f16623] hover:underline inline-flex items-center gap-1 font-medium cursor-pointer"
+                  >
+                    <span>Open Fleet Directory</span>
+                    <ExternalLink className="w-3 h-3" />
+                  </Link>
+                </div>
+
+                {loadingVehicles ? (
+                  <div className="py-8 flex flex-col items-center justify-center text-slate-400 gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-[#f16623]" />
+                    <span className="text-xs font-normal">Loading attached fleet...</span>
+                  </div>
+                ) : attachedVehicles.length === 0 ? (
+                  <div className="py-10 px-4 text-center bg-slate-50 border border-dashed border-slate-200 rounded-[6px] space-y-2">
+                    <Car className="w-7 h-7 text-slate-300 mx-auto" />
+                    <h5 className="text-xs font-medium text-slate-700">No Vehicles Attached Yet</h5>
+                    <p className="text-[11px] text-slate-400 max-w-sm mx-auto font-normal">
+                      When adding or editing vehicles in the Fleet page, set Ownership to "Vendor Attached" or "Leased" and select "{viewingVendor.name}".
+                    </p>
+                    <Link
+                      href="/vehicles"
+                      className="mt-2 inline-flex items-center gap-1 px-3 py-1.5 rounded-[6px] bg-[#f16623] text-white text-xs font-medium hover:bg-[#d95318] transition cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>Add Vehicle to Fleet</span>
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="border border-slate-200 rounded-[6px] overflow-hidden">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-medium text-slate-500 uppercase tracking-wider">
+                          <th className="py-2 px-3">Reg. Number</th>
+                          <th className="py-2 px-3">Vehicle / Model</th>
+                          <th className="py-2 px-3">Category</th>
+                          <th className="py-2 px-3">Fuel & Seats</th>
+                          <th className="py-2 px-3">Ownership</th>
+                          <th className="py-2 px-3 text-center">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {attachedVehicles.map((veh) => (
+                          <tr key={veh.id} className="hover:bg-slate-50 transition-colors">
+                            <td className="py-2.5 px-3">
+                              <span className="font-mono font-medium text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded text-[11px]">
+                                {veh.regNumber}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <span className="font-medium text-slate-800 block text-xs">
+                                {veh.vehicleName}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <span className="text-slate-600 text-xs">{veh.category}</span>
+                            </td>
+                            <td className="py-2.5 px-3 text-[11px] text-slate-500">
+                              {veh.fuelType || "—"} • {veh.seatingCapacity || "—"}
+                            </td>
+                            <td className="py-2.5 px-3">
+                              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                                {veh.ownershipType || "Vendor Attached"}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-3 text-center">
+                              <span
+                                className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium ${
+                                  veh.isActive !== false
+                                    ? "bg-emerald-50 text-emerald-700"
+                                    : "bg-slate-100 text-slate-600"
+                                }`}
+                              >
+                                {veh.isActive !== false ? "Active" : "Inactive"}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* TAB 3: FINANCIAL (MONTH-WISE FILTERS & ACCURATE PAYOUT CALCULATIONS) */}
+            {viewTab === "financial" && (
+              <div className="space-y-3.5 animate-in fade-in duration-150">
+                {/* Month-wise Filter Tabs Header */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-slate-800 flex items-center gap-1.5">
+                      <CalendarDays className="w-3.5 h-3.5 text-[#f16623]" />
+                      <span>Select Billing / Payout Month</span>
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-normal">
+                      Showing trips deployed in selected month
+                    </span>
+                  </div>
+
+                  {/* Horizontal Scrollable Month Pills */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                    {availableMonths.map((m) => {
+                      const isSelected = selectedMonth === m.key;
+                      // Count trips in this month
+                      const count = vendorBookings.filter((b) => {
+                        const start = b.startDate ? String(b.startDate) : "";
+                        if (start.startsWith(m.key)) return true;
+                        const end = b.endDate ? String(b.endDate) : "";
+                        if (end.startsWith(m.key)) return true;
+                        if (b.createdAt?.toDate) {
+                          return b.createdAt.toDate().toISOString().startsWith(m.key);
+                        }
+                        return false;
+                      }).length;
+
+                      return (
+                        <button
+                          key={m.key}
+                          type="button"
+                          onClick={() => setSelectedMonth(m.key)}
+                          className={`px-3 py-1.5 rounded-[6px] text-xs font-medium whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 ${
+                            isSelected
+                              ? "bg-[#f16623] text-white shadow-xs shadow-[#f16623]/25"
+                              : "bg-slate-100 text-slate-600 hover:bg-slate-200/70"
+                          }`}
+                        >
+                          <span>{m.label}</span>
+                          <span
+                            className={`text-[10px] px-1 py-0.2 rounded-full font-mono ${
+                              isSelected
+                                ? "bg-white/20 text-white"
+                                : count > 0
+                                ? "bg-slate-200 text-slate-700"
+                                : "text-slate-400"
+                            }`}
+                          >
+                            {count}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* KPI Financial Breakdown Banner */}
+                <div className="p-4 bg-gradient-to-r from-orange-50/80 via-white to-amber-50/40 border border-[#f16623]/20 rounded-[8px] space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">
+                        Net Amount Payable to Vendor ({availableMonths.find((m) => m.key === selectedMonth)?.label || selectedMonth})
+                      </span>
+                      <div className="flex items-baseline gap-2 mt-0.5">
+                        <span className="text-2xl font-bold text-slate-900 tracking-tight">
+                          ₹{financialSummary.totalPayable.toLocaleString("en-IN")}
+                        </span>
+                        <span className="text-xs font-normal text-slate-500">
+                          {financialSummary.formulaText}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-start sm:self-auto">
+                      <div className="px-3 py-1.5 rounded-[6px] bg-white border border-slate-200 text-right shadow-2xs">
+                        <span className="text-[10px] text-slate-400 block font-normal">Terms Mode</span>
+                        <span className="text-xs font-semibold text-[#f16623]">
+                          {financialSummary.paymentMode}
+                        </span>
+                      </div>
+
+                      <div className="px-3 py-1.5 rounded-[6px] bg-white border border-slate-200 text-right shadow-2xs">
+                        <span className="text-[10px] text-slate-400 block font-normal">Agreed Rate</span>
+                        <span className="text-xs font-semibold text-slate-800">
+                          {financialSummary.unitRate ? `₹${financialSummary.unitRate.toLocaleString("en-IN")}` : "₹0"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Summary Metric Chips */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-slate-200/60 text-xs">
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">Deployments in Month</span>
+                      <span className="font-semibold text-slate-800">
+                        {financialSummary.totalTrips} Booking{financialSummary.totalTrips === 1 ? "" : "s"}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">Total Duty Days</span>
+                      <span className="font-semibold text-slate-800">
+                        {financialSummary.totalDutyDays} Day{financialSummary.totalDutyDays === 1 ? "" : "s"}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">Active Vehicles</span>
+                      <span className="font-semibold text-slate-800">
+                        {financialSummary.activeVehiclesCount} Car{financialSummary.activeVehiclesCount === 1 ? "" : "s"} Deployed
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-[10px] text-slate-400 block">Calculation Method</span>
+                      <span className="font-semibold text-slate-800">
+                        {financialSummary.paymentMode === "Monthly"
+                          ? "Fixed Retainer Fee"
+                          : financialSummary.paymentMode === "Daily"
+                          ? "Duty Days × Daily Rate"
+                          : "Trips × Per-Trip Rate"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Trips / Bookings Table for this Month */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium text-slate-800">
+                      Deployed Trip Bookings in Month ({monthBookings.length})
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-normal">
+                      Detailed trip assignments & vendor cost breakdown
+                    </span>
+                  </div>
+
+                  {loadingBookings ? (
+                    <div className="py-8 flex flex-col items-center justify-center text-slate-400 gap-1.5">
+                      <Loader2 className="w-4 h-4 animate-spin text-[#f16623]" />
+                      <span className="text-xs font-normal">Calculating month trips...</span>
+                    </div>
+                  ) : monthBookings.length === 0 ? (
+                    <div className="py-8 px-4 text-center bg-slate-50 border border-slate-200/80 rounded-[6px] space-y-1.5">
+                      <Receipt className="w-6 h-6 text-slate-300 mx-auto" />
+                      <h5 className="text-xs font-medium text-slate-700">
+                        No Bookings in {availableMonths.find((m) => m.key === selectedMonth)?.label || selectedMonth}
+                      </h5>
+                      <p className="text-[11px] text-slate-400 max-w-sm mx-auto font-normal">
+                        {financialSummary.paymentMode === "Monthly"
+                          ? `No trips were logged for this vendor's fleet during this month, but the fixed monthly retainer of ₹${financialSummary.unitRate.toLocaleString("en-IN")} remains applicable.`
+                          : `No trips were allocated to this vendor's vehicles during this month. Total payable is ₹0.`}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="border border-slate-200 rounded-[6px] overflow-hidden">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-medium text-slate-500 uppercase tracking-wider">
+                            <th className="py-2 px-3">Booking #</th>
+                            <th className="py-2 px-3">Trip Dates</th>
+                            <th className="py-2 px-3">Route (From - To)</th>
+                            <th className="py-2 px-3">Vehicle Assigned</th>
+                            <th className="py-2 px-3">Client / Traveler</th>
+                            <th className="py-2 px-3 text-center">Status</th>
+                            <th className="py-2 px-3 text-right">Vendor Payout</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {monthBookings.map((b) => {
+                            const days = Math.max(1, Math.round(Number(b.totalDays) || 1));
+                            let tripPayoutText = "";
+                            let tripAmount = 0;
+
+                            if (financialSummary.paymentMode === "Monthly") {
+                              tripPayoutText = "Covered under Monthly Plan";
+                              tripAmount = 0;
+                            } else if (financialSummary.paymentMode === "Daily") {
+                              tripAmount = days * financialSummary.unitRate;
+                              tripPayoutText = `${days}d × ₹${financialSummary.unitRate.toLocaleString("en-IN")}`;
+                            } else {
+                              tripAmount = financialSummary.unitRate;
+                              tripPayoutText = `1 trip × ₹${financialSummary.unitRate.toLocaleString("en-IN")}`;
+                            }
+
+                            return (
+                              <tr key={b.id} className="hover:bg-slate-50 transition-colors">
+                                <td className="py-2.5 px-3">
+                                  <span className="font-mono font-medium text-slate-900 bg-slate-100 px-1.5 py-0.5 rounded text-[11px]">
+                                    {b.bookingNumber || b.id.slice(0, 8)}
+                                  </span>
+                                </td>
+
+                                <td className="py-2.5 px-3">
+                                  <span className="font-medium text-slate-800 block text-xs">
+                                    {b.startDate || "—"}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 block font-normal">
+                                    {days} Duty Day{days === 1 ? "" : "s"}
+                                  </span>
+                                </td>
+
+                                <td className="py-2.5 px-3">
+                                  <span className="font-medium text-slate-800 block text-xs truncate max-w-[150px]">
+                                    {b.fromLocation || "—"}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 block truncate max-w-[150px]">
+                                    → {b.toLocation || "—"}
+                                  </span>
+                                </td>
+
+                                <td className="py-2.5 px-3">
+                                  <span className="font-mono font-medium text-slate-900 text-xs block">
+                                    {b.vehicleRegNumber || "—"}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 block truncate max-w-[120px]">
+                                    {b.vehicleName || "Vehicle"}
+                                  </span>
+                                </td>
+
+                                <td className="py-2.5 px-3">
+                                  <span className="text-slate-800 font-medium block text-xs">
+                                    {b.customerName || b.travelerName || "—"}
+                                  </span>
+                                  {b.travelerMobile && (
+                                    <span className="text-[10px] text-slate-400 block font-mono">
+                                      {b.travelerMobile}
+                                    </span>
+                                  )}
+                                </td>
+
+                                <td className="py-2.5 px-3 text-center">
+                                  <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                                    {b.bookingStatus || "Confirmed"}
+                                  </span>
+                                </td>
+
+                                <td className="py-2.5 px-3 text-right">
+                                  {financialSummary.paymentMode === "Monthly" ? (
+                                    <span className="text-[10px] text-slate-500 font-medium bg-orange-50 border border-[#f16623]/25 text-[#f16623] px-1.5 py-0.5 rounded">
+                                      Monthly Retainer
+                                    </span>
+                                  ) : (
+                                    <div>
+                                      <span className="font-semibold text-slate-900 text-xs block">
+                                        ₹{tripAmount.toLocaleString("en-IN")}
+                                      </span>
+                                      <span className="text-[10px] text-slate-400 block font-normal">
+                                        {tripPayoutText}
+                                      </span>
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        <tfoot className="bg-slate-50 border-t border-slate-200 font-medium text-xs">
+                          <tr>
+                            <td colSpan={6} className="py-2.5 px-3 text-right text-slate-600">
+                              Total Month Payable to Vendor ({financialSummary.paymentMode}):
+                            </td>
+                            <td className="py-2.5 px-3 text-right font-bold text-slate-900 text-sm">
+                              ₹{financialSummary.totalPayable.toLocaleString("en-IN")}
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Bottom Actions */}
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+              <span className="text-[11px] text-slate-400 font-normal">
+                Vendor ID: <span className="font-mono text-slate-600">{viewingVendor.id}</span>
+              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setViewingVendor(null)}
+                  className="h-[32px] px-3.5 rounded-[6px] border border-slate-200 text-slate-600 hover:bg-slate-100 text-xs font-normal transition cursor-pointer"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = viewingVendor;
+                    setViewingVendor(null);
+                    handleOpenEditDrawer(target);
+                  }}
+                  className="h-[32px] px-3.5 rounded-[6px] bg-[#f16623] text-white text-xs font-medium inline-flex items-center gap-1 hover:bg-[#d95318] transition cursor-pointer"
+                >
+                  <Edit2 className="w-3 h-3" />
+                  <span>Edit Vendor</span>
+                </button>
+              </div>
             </div>
           </div>
         )}
