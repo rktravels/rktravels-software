@@ -1239,17 +1239,32 @@ export default function BookingsPage() {
   // Save Booking Submission
   // -------------------------------------------------------------------------
   const handleSaveBookingSubmit = async () => {
+    // Step 1: Mandatory core details validation
     if (!startDate || !endDate) {
+      setActiveTab("details");
       alert("Please enter trip start and end dates.");
       return;
     }
     if (!selectedCustomerName) {
+      setActiveTab("details");
       alert(`Please select a ${clientType === "Individual Customer" ? "individual customer" : "company"}.`);
       return;
     }
     if (!fromLocation.trim() || !toLocation.trim()) {
-      alert("Please enter From and To locations.");
+      setActiveTab("details");
+      alert("Please enter From (pickup) and To (drop) locations.");
       return;
+    }
+
+    // Step 2: Validate odometer only if both starting and ending KM are provided
+    if (startingKm && endingKm) {
+      const sKm = Number(startingKm);
+      const eKm = Number(endingKm);
+      if (!isNaN(sKm) && !isNaN(eKm) && eKm < sKm) {
+        setActiveTab("assignment");
+        alert("Ending KM cannot be less than Starting KM.");
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -2529,16 +2544,52 @@ export default function BookingsPage() {
                 </div>
               </div>
 
-              {/* Next Step Action */}
-              <div className="pt-3 border-t border-slate-100 flex justify-end">
+              {/* Step 1 Actions */}
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
                 <button
                   type="button"
-                  onClick={() => setActiveTab("assignment")}
-                  className="h-[34px] max-h-[34px] px-4 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] text-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  onClick={() => setIsOffCanvasOpen(false)}
+                  className="h-[34px] max-h-[34px] px-3.5 rounded-[6px] border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-normal transition cursor-pointer"
                 >
-                  <span>Next: Trip Assignment</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
+                  Cancel
                 </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={handleSaveBookingSubmit}
+                    className="h-[34px] max-h-[34px] px-4 rounded-[6px] border border-[#f16623] bg-orange-50 hover:bg-orange-100 text-[#f16623] text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50"
+                  >
+                    {isSubmitting ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                    )}
+                    <span>{editingBookingId ? "Update Booking" : "Save Booking"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!startDate || !endDate) {
+                        alert("Please enter trip start and end dates before proceeding.");
+                        return;
+                      }
+                      if (!selectedCustomerName) {
+                        alert(`Please select a ${clientType === "Individual Customer" ? "individual customer" : "company"}.`);
+                        return;
+                      }
+                      if (!fromLocation.trim() || !toLocation.trim()) {
+                        alert("Please enter From and To locations.");
+                        return;
+                      }
+                      setActiveTab("assignment");
+                    }}
+                    className="h-[34px] max-h-[34px] px-4 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] text-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    <span>Next: Trip Assignment</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -2790,7 +2841,7 @@ export default function BookingsPage() {
                 />
               </div>
 
-              {/* Action Buttons */}
+              {/* Step 2 Actions */}
               <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
                 <button
                   type="button"
@@ -2799,14 +2850,29 @@ export default function BookingsPage() {
                 >
                   Back
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("charges")}
-                  className="h-[34px] max-h-[34px] px-4 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] text-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                >
-                  <span>Next: Charges</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={handleSaveBookingSubmit}
+                    className="h-[34px] max-h-[34px] px-4 rounded-[6px] border border-[#f16623] bg-orange-50 hover:bg-orange-100 text-[#f16623] text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50"
+                  >
+                    {isSubmitting ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                    )}
+                    <span>{editingBookingId ? "Update Booking" : "Save Booking"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("charges")}
+                    className="h-[34px] max-h-[34px] px-4 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] text-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    <span>Next: Charges</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -3000,7 +3066,7 @@ export default function BookingsPage() {
                 </div>
               </div>
 
-              {/* Action Buttons */}
+              {/* Step 3 Actions */}
               <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
                 <button
                   type="button"
@@ -3009,14 +3075,29 @@ export default function BookingsPage() {
                 >
                   Back
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab("invoice")}
-                  className="h-[34px] max-h-[34px] px-4 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] text-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                >
-                  <span>Next: Invoice Preview</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={handleSaveBookingSubmit}
+                    className="h-[34px] max-h-[34px] px-4 rounded-[6px] border border-[#f16623] bg-orange-50 hover:bg-orange-100 text-[#f16623] text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shadow-2xs disabled:opacity-50"
+                  >
+                    {isSubmitting ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                    )}
+                    <span>{editingBookingId ? "Update Booking" : "Save Booking"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("invoice")}
+                    className="h-[34px] max-h-[34px] px-4 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] text-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    <span>Next: Invoice Preview</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             </div>
           )}
