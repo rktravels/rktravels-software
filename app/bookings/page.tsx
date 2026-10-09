@@ -2049,7 +2049,7 @@ export default function BookingsPage() {
                           {/* Action Popover Menu (Triggered on Click or Hover) */}
                           <div
                             onClick={(e) => e.stopPropagation()}
-                            className={`absolute right-0 z-40 w-52 bg-white rounded-[8px] border border-slate-200 shadow-xl py-1 text-xs divide-y divide-slate-100 text-left transition-all ${
+                            className={`absolute right-0 z-40 w-44 bg-white rounded-[8px] border border-slate-200/90 shadow-lg p-1 text-xs text-left transition-all ${
                               isNearBottom
                                 ? "bottom-full mb-1.5 origin-bottom-right"
                                 : "top-full mt-1.5 origin-top-right"
@@ -2059,7 +2059,7 @@ export default function BookingsPage() {
                                 : "hidden group-hover/action:block"
                             }`}
                           >
-                            <div className="py-1">
+                            <div className="space-y-0.5">
                               {/* 1. View Details */}
                               <button
                                 type="button"
@@ -2067,15 +2067,10 @@ export default function BookingsPage() {
                                   setActiveActionMenuId(null);
                                   setViewingBooking(b);
                                 }}
-                                className="w-full px-3 py-2 flex items-center gap-2.5 text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition cursor-pointer"
+                                className="w-full px-2.5 py-1.5 rounded-[5px] flex items-center gap-2.5 text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition cursor-pointer"
                               >
                                 <Eye className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                <div>
-                                  <span className="font-medium block leading-tight">View Details</span>
-                                  <span className="text-[10px] text-slate-400 block leading-tight">
-                                    Itinerary &amp; particulars
-                                  </span>
-                                </div>
+                                <span>View Details</span>
                               </button>
 
                               {/* 2. Edit Booking */}
@@ -2085,15 +2080,10 @@ export default function BookingsPage() {
                                   setActiveActionMenuId(null);
                                   handleOpenEditBooking(b);
                                 }}
-                                className="w-full px-3 py-2 flex items-center gap-2.5 text-slate-700 hover:bg-orange-50/70 hover:text-[#f16623] transition cursor-pointer"
+                                className="w-full px-2.5 py-1.5 rounded-[5px] flex items-center gap-2.5 text-slate-700 hover:bg-orange-50 hover:text-[#f16623] transition cursor-pointer"
                               >
                                 <Pencil className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                                <div>
-                                  <span className="font-medium block leading-tight">Edit Booking</span>
-                                  <span className="text-[10px] text-slate-400 block leading-tight">
-                                    Modify trip &amp; rates
-                                  </span>
-                                </div>
+                                <span>Edit Booking</span>
                               </button>
 
                               {/* 3. Invoice View / Generate */}
@@ -2104,17 +2094,10 @@ export default function BookingsPage() {
                                     setActiveActionMenuId(null);
                                     setInvoiceBooking(b);
                                   }}
-                                  className="w-full px-3 py-2 flex items-center gap-2.5 text-slate-700 hover:bg-orange-50/70 hover:text-[#f16623] transition cursor-pointer"
+                                  className="w-full px-2.5 py-1.5 rounded-[5px] flex items-center gap-2.5 text-slate-700 hover:bg-orange-50 hover:text-[#f16623] transition cursor-pointer"
                                 >
                                   <FileText className="w-3.5 h-3.5 text-[#f16623] shrink-0" />
-                                  <div>
-                                    <span className="font-medium block leading-tight">
-                                      View Invoice
-                                    </span>
-                                    <span className="text-[10px] font-mono text-[#f16623] block leading-tight">
-                                      {b.invoiceNumber}
-                                    </span>
-                                  </div>
+                                  <span>View Invoice</span>
                                 </button>
                               ) : (
                                 <button
@@ -2124,17 +2107,10 @@ export default function BookingsPage() {
                                     setActiveActionMenuId(null);
                                     handleGenerateInvoice(b);
                                   }}
-                                  className="w-full px-3 py-2 flex items-center gap-2.5 text-slate-700 hover:bg-orange-50/70 hover:text-[#f16623] disabled:opacity-50 transition cursor-pointer"
+                                  className="w-full px-2.5 py-1.5 rounded-[5px] flex items-center gap-2.5 text-slate-700 hover:bg-orange-50 hover:text-[#f16623] disabled:opacity-50 transition cursor-pointer"
                                 >
                                   <Sparkles className="w-3.5 h-3.5 text-[#f16623] shrink-0" />
-                                  <div>
-                                    <span className="font-medium block leading-tight">
-                                      Generate Invoice
-                                    </span>
-                                    <span className="text-[10px] text-slate-400 block leading-tight">
-                                      Create invoice number
-                                    </span>
-                                  </div>
+                                  <span>Generate Invoice</span>
                                 </button>
                               )}
 
@@ -2145,37 +2121,25 @@ export default function BookingsPage() {
                                   setActiveActionMenuId(null);
                                   handleOpenCollectPayment(b);
                                 }}
-                                className="w-full px-3 py-2 flex items-center gap-2.5 text-slate-700 hover:bg-emerald-50/70 hover:text-emerald-700 transition cursor-pointer"
+                                className="w-full px-2.5 py-1.5 rounded-[5px] flex items-center gap-2.5 text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition cursor-pointer"
                               >
                                 <Banknote className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                <div>
-                                  <span className="font-medium block leading-tight">
-                                    Collect Payment
-                                  </span>
-                                  <span className="text-[10px] text-slate-400 block leading-tight">
-                                    Record cash, card or UPI
-                                  </span>
-                                </div>
+                                <span>Collect Payment</span>
                               </button>
                             </div>
 
                             {/* 5. Delete Action */}
-                            <div className="py-1">
+                            <div className="pt-1 mt-1 border-t border-slate-100">
                               <button
                                 type="button"
                                 onClick={() => {
                                   setActiveActionMenuId(null);
                                   handleDeleteBooking(b);
                                 }}
-                                className="w-full px-3 py-2 flex items-center gap-2.5 text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                                className="w-full px-2.5 py-1.5 rounded-[5px] flex items-center gap-2.5 text-rose-600 hover:bg-rose-50 transition cursor-pointer"
                               >
-                                <Trash2 className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                                <div>
-                                  <span className="font-medium block leading-tight">Delete Booking</span>
-                                  <span className="text-[10px] text-rose-400 block leading-tight">
-                                    Remove trip permanently
-                                  </span>
-                                </div>
+                                <Trash2 className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                                <span>Delete Booking</span>
                               </button>
                             </div>
                           </div>
