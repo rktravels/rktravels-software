@@ -187,16 +187,32 @@ export function TaxInvoiceModal({
       ? "Unregistered"
       : "08AAMFH6950L1ZR");
 
-  // --- Trip Route String ---
-  const routePoints: string[] = [];
-  if (booking.fromLocation) routePoints.push(booking.fromLocation);
+  // --- Clean Location Helper (no state code, no state name) ---
+  const cleanLocationName = (loc?: string): string => {
+    if (!loc) return "";
+    let s = loc.split(" — ")[0].split(" - ")[0].split(",")[0].trim();
+    return s || loc.trim();
+  };
+
+  // --- Travelled Places List (From location -> travelled places -> To location) ---
+  const travelledPoints: string[] = [];
+  if (booking.fromLocation) {
+    const fromClean = cleanLocationName(booking.fromLocation);
+    if (fromClean) travelledPoints.push(fromClean);
+  }
   if (booking.travelledPlaces && booking.travelledPlaces.length > 0) {
     booking.travelledPlaces.forEach((p) => {
-      if (!routePoints.includes(p)) routePoints.push(p);
+      const cleanP = cleanLocationName(p);
+      if (cleanP && !travelledPoints.includes(cleanP)) {
+        travelledPoints.push(cleanP);
+      }
     });
   }
-  if (booking.toLocation && !routePoints.includes(booking.toLocation)) {
-    routePoints.push(booking.toLocation);
+  if (booking.toLocation) {
+    const toClean = cleanLocationName(booking.toLocation);
+    if (toClean && !travelledPoints.includes(toClean)) {
+      travelledPoints.push(toClean);
+    }
   }
 
   // Duty period string
@@ -545,25 +561,6 @@ export function TaxInvoiceModal({
                   </div>
                 </div>
 
-                {/* Route */}
-                <div>
-                  <span className="text-[9px] text-slate-400 uppercase font-semibold block">
-                    ROUTE
-                  </span>
-                  <div className="text-[11px] text-slate-800 font-medium space-y-0.5 mt-0.5 leading-tight">
-                    {routePoints.map((pt, idx) => (
-                      <div key={idx} className="flex items-center gap-1.5 truncate">
-                        <span className="text-[#f16623]">
-                          {idx === 0 ? "•" : "→"}
-                        </span>
-                        <span className="truncate">
-                          {pt} — {supplierState}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
                 {/* Metric Badges: Total KM, Hours, Day */}
                 <div className="grid grid-cols-3 gap-1.5 pt-1">
                   <div className="border border-slate-200 rounded p-1.5 text-center bg-slate-50">
@@ -597,6 +594,33 @@ export function TaxInvoiceModal({
                   Odometer <strong className="text-slate-800">{startKm}</strong> →{" "}
                   <strong className="text-slate-800">{endKm}</strong>
                 </div>
+              </div>
+            </div>
+
+            {/* 2b. Card 3: TRAVELLED PLACES (Full-width box below BILL TO and TRIP DETAILS) */}
+            <div className="border border-slate-300 rounded-[4px] p-2.5 bg-white space-y-1">
+              <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider block">
+                TRAVELLED PLACES
+              </span>
+              <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-900 font-medium leading-relaxed">
+                {travelledPoints.length > 0 ? (
+                  travelledPoints.map((pt, idx) => (
+                    <React.Fragment key={idx}>
+                      {idx > 0 && (
+                        <span className="text-[#f16623] font-bold px-0.5 select-none">
+                          →
+                        </span>
+                      )}
+                      <span className="bg-slate-50 border border-slate-200 px-2 py-0.5 rounded text-[11px] font-medium text-slate-800">
+                        {pt}
+                      </span>
+                    </React.Fragment>
+                  ))
+                ) : (
+                  <span className="text-slate-400 text-xs italic">
+                    {cleanLocationName(booking.fromLocation)} → {cleanLocationName(booking.toLocation)}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -665,38 +689,10 @@ export function TaxInvoiceModal({
                 </div>
               </div>
 
-              {/* Right Column: Breakdown & Total (No Tax) */}
+              {/* Right Column: Only Total (No Subtotal or Pass-through rows) */}
               <div className="sm:col-span-5 print:col-span-5 text-xs space-y-1">
-                <div className="flex justify-between py-0.5 text-slate-700">
-                  <span>Subtotal</span>
-                  <span className="font-mono text-slate-900 font-medium">
-                    {tripSubtotal.toLocaleString("en-IN", {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
-                  </span>
-                </div>
-
-                {/* Pass-through charges */}
-                {passThroughSubtotal > 0 && (
-                  <div className="flex justify-between py-0.5 text-slate-700">
-                    <div>
-                      <span>Pass-through charges</span>
-                      <span className="text-[10px] text-slate-400 block font-normal">
-                        Tolls, parking & permits at actuals
-                      </span>
-                    </div>
-                    <span className="font-mono text-slate-900 self-center">
-                      {passThroughSubtotal.toLocaleString("en-IN", {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </span>
-                  </div>
-                )}
-
                 {/* Grand Total */}
-                <div className="border-t-2 border-slate-900 pt-1.5 mt-1 flex justify-between items-baseline">
+                <div className="border-t-2 border-b-2 border-slate-900 py-1.5 flex justify-between items-baseline">
                   <span className="font-black text-sm uppercase text-slate-900">
                     Total
                   </span>
