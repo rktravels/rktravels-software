@@ -234,10 +234,8 @@ export default function BookingsPage() {
     new Date().toISOString().split("T")[0]
   );
   const [startTime, setStartTime] = useState<string>("09:00");
-  const [endDate, setEndDate] = useState<string>(() =>
-    new Date().toISOString().split("T")[0]
-  );
-  const [endTime, setEndTime] = useState<string>("18:00");
+  const [endDate, setEndDate] = useState<string>("");
+  const [endTime, setEndTime] = useState<string>("");
   const [fromLocation, setFromLocation] = useState("");
   const [toLocation, setToLocation] = useState("");
   const [dbLocations, setDbLocations] = useState<
@@ -890,12 +888,15 @@ export default function BookingsPage() {
     return nStart < bEnd && nEnd > bStart;
   };
 
-  const newTripStartIso = `${startDate}T${startTime}:00`;
-  const newTripEndIso = `${endDate}T${endTime}:00`;
+  const newTripStartIso = `${startDate}T${startTime || "00:00"}:00`;
+  const newTripEndIso = endDate
+    ? `${endDate}T${endTime || "23:59"}:00`
+    : newTripStartIso;
 
   // Occupied Vehicles & Drivers for this window
   const occupiedVehicleIds = useMemo(() => {
     const set = new Set<string>();
+    if (!startDate || !endDate) return set;
     bookings.forEach((b) => {
       if (b.bookingStatus === "Trip Completed") return;
       if (b.vehicleId && b.startDate && b.endDate) {
@@ -907,10 +908,11 @@ export default function BookingsPage() {
       }
     });
     return set;
-  }, [bookings, newTripStartIso, newTripEndIso]);
+  }, [bookings, newTripStartIso, newTripEndIso, startDate, endDate]);
 
   const occupiedDriverIds = useMemo(() => {
     const set = new Set<string>();
+    if (!startDate || !endDate) return set;
     bookings.forEach((b) => {
       if (b.bookingStatus === "Trip Completed") return;
       if (b.driverId && b.startDate && b.endDate) {
@@ -922,7 +924,7 @@ export default function BookingsPage() {
       }
     });
     return set;
-  }, [bookings, newTripStartIso, newTripEndIso]);
+  }, [bookings, newTripStartIso, newTripEndIso, startDate, endDate]);
 
   // Available vehicles in the selected vehicle category
   const filteredVehicles = useMemo(() => {
@@ -1125,8 +1127,8 @@ export default function BookingsPage() {
     const today = new Date().toISOString().split("T")[0];
     setStartDate(today);
     setStartTime("09:00");
-    setEndDate(today);
-    setEndTime("18:00");
+    setEndDate("");
+    setEndTime("");
     setFromLocation("");
     setToLocation("");
     setClientType("Company");
@@ -1236,23 +1238,58 @@ export default function BookingsPage() {
   };
 
   // -------------------------------------------------------------------------
-  // Save Booking Submission
+  // Step 1 Validation Helper
   // -------------------------------------------------------------------------
-  const handleSaveBookingSubmit = async () => {
-    // Step 1: Mandatory core details validation
-    if (!startDate || !endDate) {
+  const validateStep1Details = (): boolean => {
+    if (!startDate) {
       setActiveTab("details");
-      alert("Please enter trip start and end dates.");
-      return;
+      alert("Please select start date.");
+      return false;
+    }
+    if (!startTime) {
+      setActiveTab("details");
+      alert("Please select start time.");
+      return false;
+    }
+    if (!fromLocation.trim()) {
+      setActiveTab("details");
+      alert("Please enter From (pickup) location.");
+      return false;
+    }
+    if (!selectedEntityId) {
+      setActiveTab("details");
+      alert("Please select an operating entity.");
+      return false;
+    }
+    if (!clientType) {
+      setActiveTab("details");
+      alert("Please select a client type.");
+      return false;
     }
     if (!selectedCustomerName) {
       setActiveTab("details");
       alert(`Please select a ${clientType === "Individual Customer" ? "individual customer" : "company"}.`);
-      return;
+      return false;
     }
-    if (!fromLocation.trim() || !toLocation.trim()) {
+    if (!selectedVehicleCategory) {
       setActiveTab("details");
-      alert("Please enter From (pickup) and To (drop) locations.");
+      alert("Please select a vehicle category.");
+      return false;
+    }
+    if (!travelerName.trim()) {
+      setActiveTab("details");
+      alert("Please enter passenger / traveler name.");
+      return false;
+    }
+    return true;
+  };
+
+  // -------------------------------------------------------------------------
+  // Save Booking Submission
+  // -------------------------------------------------------------------------
+  const handleSaveBookingSubmit = async () => {
+    // Step 1: Mandatory core details validation
+    if (!validateStep1Details()) {
       return;
     }
 
@@ -1283,13 +1320,13 @@ export default function BookingsPage() {
 
       // Handle UPDATE EXISTING BOOKING
       if (editingBookingId) {
-        const updatePayload: Partial<BookingRecord> = {
+        const updatePayload: Record<string, any> = {
           clientType,
           customerType: clientType,
           startDate,
           startTime,
-          endDate,
-          endTime,
+          endDate: endDate || "",
+          endTime: endTime || "",
           fromLocation: fromLocation.trim(),
           toLocation: toLocation.trim(),
           entityId: selectedEntityId,
@@ -1298,22 +1335,23 @@ export default function BookingsPage() {
           customerName: selectedCustomerName,
           vehicleCategory: selectedVehicleCategory,
           tariffType: selectedTariffType,
-          tariffPackageId: selectedPackageId || undefined,
-          tariffPackageName: selectedPackageName || undefined,
-          travelerName: (travelerName || selectedCustomerName).trim(),
-          travelerMobile: travelerMobile.trim(),
+          tariffPackageId: selectedPackageId || "",
+          tariffPackageName: selectedPackageName || "",
+          travelerName: (travelerName || selectedCustomerName || "").trim(),
+          travelerMobile: (travelerMobile || "").trim(),
 
           durationText: calculatedDuration.text,
           totalDays: calculatedDuration.totalDays,
           totalHours: calculatedDuration.totalHours,
           totalMinutes: calculatedDuration.totalMinutes,
 
-          vehicleId: selectedVehicleId || undefined,
-          vehicleRegNumber: selectedVehicleReg || undefined,
-          vehicleName: selectedVehicleName || undefined,
-          driverId: selectedDriverId || undefined,
-          driverName: selectedDriverName || undefined,
-          driverMobile: selectedDriverMobile || undefined,
+          vehicleId: selectedVehicleId || "",
+          vehicleRegNumber: selectedVehicleReg || "",
+          vehicleName: selectedVehicleName || "",
+          driverId: selectedDriverId || "",
+          driverName: selectedDriverName || "",
+          driverMobile: selectedDriverMobile || "",
+          driverStatus: selectedDriverId ? "Occupied for Trip" : "",
           startingKm: startKmNum,
           endingKm: endKmNum,
           totalKm: calculatedTotalKm,
@@ -1350,7 +1388,14 @@ export default function BookingsPage() {
           updatedAt: serverTimestamp(),
         };
 
-        await updateDoc(doc(db, "bookings", editingBookingId), updatePayload);
+        const cleanedUpdatePayload: Record<string, any> = {};
+        for (const [key, val] of Object.entries(updatePayload)) {
+          if (val !== undefined) {
+            cleanedUpdatePayload[key] = val;
+          }
+        }
+
+        await updateDoc(doc(db, "bookings", editingBookingId), cleanedUpdatePayload);
 
         setFeedback({
           type: "success",
@@ -1374,14 +1419,14 @@ export default function BookingsPage() {
         });
       }
 
-      const bookingPayload: Omit<BookingRecord, "id"> = {
+      const bookingPayload: Record<string, any> = {
         bookingNumber,
         clientType,
         customerType: clientType,
         startDate,
         startTime,
-        endDate,
-        endTime,
+        endDate: endDate || "",
+        endTime: endTime || "",
         fromLocation: fromLocation.trim(),
         toLocation: toLocation.trim(),
         entityId: selectedEntityId,
@@ -1390,22 +1435,22 @@ export default function BookingsPage() {
         customerName: selectedCustomerName,
         vehicleCategory: selectedVehicleCategory,
         tariffType: selectedTariffType,
-        tariffPackageId: selectedPackageId,
-        tariffPackageName: selectedPackageName,
-        travelerName: travelerName.trim() || selectedCustomerName,
-        travelerMobile: travelerMobile.trim(),
+        tariffPackageId: selectedPackageId || "",
+        tariffPackageName: selectedPackageName || "",
+        travelerName: (travelerName || selectedCustomerName || "").trim(),
+        travelerMobile: (travelerMobile || "").trim(),
 
         durationText: calculatedDuration.text,
         totalDays: calculatedDuration.totalDays,
         totalHours: calculatedDuration.totalHours,
         totalMinutes: calculatedDuration.totalMinutes,
-        vehicleId: selectedVehicleId || undefined,
-        vehicleRegNumber: selectedVehicleReg || undefined,
-        vehicleName: selectedVehicleName || undefined,
-        driverId: selectedDriverId || undefined,
-        driverName: selectedDriverName || undefined,
-        driverMobile: selectedDriverMobile || undefined,
-        driverStatus: selectedDriverId ? "Occupied for Trip" : undefined,
+        vehicleId: selectedVehicleId || "",
+        vehicleRegNumber: selectedVehicleReg || "",
+        vehicleName: selectedVehicleName || "",
+        driverId: selectedDriverId || "",
+        driverName: selectedDriverName || "",
+        driverMobile: selectedDriverMobile || "",
+        driverStatus: selectedDriverId ? "Occupied for Trip" : "",
         startingKm: startKmNum,
         endingKm: endKmNum,
         totalKm: calculatedTotalKm,
@@ -1445,8 +1490,15 @@ export default function BookingsPage() {
         updatedAt: serverTimestamp(),
       };
 
+      const cleanedBookingPayload: Record<string, any> = {};
+      for (const [key, val] of Object.entries(bookingPayload)) {
+        if (val !== undefined) {
+          cleanedBookingPayload[key] = val;
+        }
+      }
+
       // 1. Add to bookings collection
-      const docRef = await addDoc(collection(db, "bookings"), bookingPayload);
+      const docRef = await addDoc(collection(db, "bookings"), cleanedBookingPayload);
 
       // 2. If advance > 0, also log in payments collection for ledger
       if (advanceNum > 0) {
@@ -2249,7 +2301,7 @@ export default function BookingsPage() {
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
-                    END DATE *
+                    END DATE
                   </label>
                   <CustomDatePicker
                     value={endDate}
@@ -2261,7 +2313,7 @@ export default function BookingsPage() {
                 </div>
                 <div className="space-y-1">
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
-                    END TIME *
+                    END TIME
                   </label>
                   <CustomTimePicker
                     value={endTime}
@@ -2291,7 +2343,7 @@ export default function BookingsPage() {
 
                 <div className="space-y-1">
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
-                    TO LOCATION *
+                    TO LOCATION
                   </label>
                   <SearchableSelect
                     options={locationOptions}
@@ -2479,7 +2531,7 @@ export default function BookingsPage() {
                 {/* Tariff Type */}
                 <div className="space-y-1">
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
-                    TARIFF DUTY TYPE *
+                    TARIFF DUTY TYPE
                   </label>
                   <SearchableSelect
                     options={availableTariffTypes.map((type) => ({
@@ -2496,7 +2548,7 @@ export default function BookingsPage() {
                 {/* Package / Slab */}
                 <div className="space-y-1">
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
-                    PACKAGE / SLAB *
+                    PACKAGE / SLAB
                   </label>
                   <SearchableSelect
                     options={availablePackages.map((pkg: any) => ({
@@ -2570,18 +2622,7 @@ export default function BookingsPage() {
                   <button
                     type="button"
                     onClick={() => {
-                      if (!startDate || !endDate) {
-                        alert("Please enter trip start and end dates before proceeding.");
-                        return;
-                      }
-                      if (!selectedCustomerName) {
-                        alert(`Please select a ${clientType === "Individual Customer" ? "individual customer" : "company"}.`);
-                        return;
-                      }
-                      if (!fromLocation.trim() || !toLocation.trim()) {
-                        alert("Please enter From and To locations.");
-                        return;
-                      }
+                      if (!validateStep1Details()) return;
                       setActiveTab("assignment");
                     }}
                     className="h-[34px] max-h-[34px] px-4 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] text-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
