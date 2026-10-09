@@ -106,7 +106,7 @@ export interface BookingRecord {
   customerId: string; // Company Id or Customer Id
   customerName: string; // Company Name or Customer Name
   vehicleCategory: string;
-  tariffType: "Local" | "Pickup & Drop" | "Day Rent" | "Outstation";
+  tariffType?: "Local" | "Pickup & Drop" | "Day Rent" | "Outstation" | string;
   tariffPackageId?: string;
   tariffPackageName?: string;
   travelerName: string;
@@ -250,8 +250,8 @@ export default function BookingsPage() {
 
   const [selectedVehicleCategory, setSelectedVehicleCategory] = useState("");
   const [selectedTariffType, setSelectedTariffType] = useState<
-    "Local" | "Pickup & Drop" | "Day Rent" | "Outstation"
-  >("Local");
+    "Local" | "Pickup & Drop" | "Day Rent" | "Outstation" | ""
+  >("");
 
   const [selectedPackageId, setSelectedPackageId] = useState("");
   const [selectedPackageName, setSelectedPackageName] = useState("");
@@ -746,12 +746,12 @@ export default function BookingsPage() {
     return types;
   }, [activeCompanyTariff]);
 
-  // When availableTariffTypes change, reset selectedTariffType if needed
+  // When availableTariffTypes change, reset selectedTariffType only if current selection is invalid
   useEffect(() => {
-    if (availableTariffTypes.length > 0) {
-      if (!availableTariffTypes.includes(selectedTariffType)) {
-        setSelectedTariffType(availableTariffTypes[0]);
-      }
+    if (selectedTariffType && !availableTariffTypes.includes(selectedTariffType)) {
+      setSelectedTariffType("");
+      setSelectedPackageId("");
+      setSelectedPackageName("");
     }
   }, [availableTariffTypes, selectedTariffType]);
 
@@ -815,17 +815,17 @@ export default function BookingsPage() {
     return [];
   }, [activeCompanyTariff, selectedTariffType]);
 
-  // Automatically select first package when availablePackages change
+  // Reset package only if current selection is invalid for newly computed availablePackages
   useEffect(() => {
-    if (availablePackages.length > 0) {
-      if (
-        !selectedPackageId ||
-        !availablePackages.some((p: any) => p.id === selectedPackageId)
-      ) {
-        setSelectedPackageId(availablePackages[0].id);
-        setSelectedPackageName(availablePackages[0].name);
+    if (availablePackages.length === 0) {
+      if (selectedPackageId) {
+        setSelectedPackageId("");
+        setSelectedPackageName("");
       }
-    } else {
+    } else if (
+      selectedPackageId &&
+      !availablePackages.some((p: any) => p.id === selectedPackageId)
+    ) {
       setSelectedPackageId("");
       setSelectedPackageName("");
     }
@@ -1149,6 +1149,9 @@ export default function BookingsPage() {
     setSelectedDriverId("");
     setSelectedDriverName("");
     setSelectedDriverMobile("");
+    setSelectedTariffType("");
+    setSelectedPackageId("");
+    setSelectedPackageName("");
     setStartingKm("");
     setEndingKm("");
     setTravelledPlaces([]);
@@ -1186,7 +1189,7 @@ export default function BookingsPage() {
     setTravelerName(booking.travelerName || "");
     setTravelerMobile(booking.travelerMobile || "");
     setSelectedVehicleCategory(booking.vehicleCategory || "Sedan");
-    setSelectedTariffType(booking.tariffType || "Local");
+    setSelectedTariffType((booking.tariffType as any) || "");
     setSelectedPackageId(booking.tariffPackageId || "");
     setSelectedPackageName(booking.tariffPackageName || "");
     setSelectedVehicleId(booking.vehicleId || "");
@@ -2539,8 +2542,13 @@ export default function BookingsPage() {
                       label: type,
                     }))}
                     value={selectedTariffType}
-                    onChange={(val) => setSelectedTariffType(val as any)}
+                    onChange={(val) => {
+                      setSelectedTariffType((val as any) || "");
+                      setSelectedPackageId("");
+                      setSelectedPackageName("");
+                    }}
                     placeholder="Select Duty Type..."
+                    allowClear
                     disabled={availableTariffTypes.length === 0}
                   />
                 </div>
@@ -2558,11 +2566,12 @@ export default function BookingsPage() {
                     }))}
                     value={selectedPackageId}
                     onChange={(val) => {
-                      setSelectedPackageId(val);
+                      setSelectedPackageId(val || "");
                       const pkg = availablePackages.find((p: any) => p.id === val);
                       setSelectedPackageName(pkg?.name || "");
                     }}
                     placeholder="Select Package..."
+                    allowClear
                     disabled={availablePackages.length === 0}
                   />
                 </div>

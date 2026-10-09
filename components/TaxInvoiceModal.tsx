@@ -36,7 +36,7 @@ export interface InvoiceBookingData {
   travelerMobile?: string;
 
   // Duty particulars
-  tariffType: "Local" | "Pickup & Drop" | "Day Rent" | "Outstation";
+  tariffType?: "Local" | "Pickup & Drop" | "Day Rent" | "Outstation" | string;
   tariffPackageName?: string;
   startDate: string;
   startTime?: string;
