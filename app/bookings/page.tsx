@@ -14,6 +14,7 @@ import {
   IndianRupee,
   Loader2,
   Trash2,
+  Pencil,
   CheckCircle2,
   AlertCircle,
   PhoneCall,
@@ -37,6 +38,8 @@ import {
   DollarSign,
   Fuel,
   TrendingUp,
+  Sparkles,
+  MoreVertical,
 } from "lucide-react";
 import {
   collection,
@@ -58,6 +61,8 @@ import { SearchableSelect, type SearchableSelectOption } from "@/components/Sear
 import { CustomDatePicker } from "@/components/CustomDatePicker";
 import { CustomTimePicker } from "@/components/CustomTimePicker";
 import { ALL_INDIA_STATES_DATA } from "@/app/locations/page";
+import { TaxInvoiceModal } from "@/components/TaxInvoiceModal";
+import { generateNextInvoiceNumber } from "@/lib/invoice-utils";
 
 // --- Types & Data Models ---
 
@@ -149,6 +154,13 @@ export interface BookingRecord {
   receivedAmount: number;
   balanceAmount: number;
 
+  // Invoice & Fuel Specifics
+  invoiceNumber?: string;
+  invoiceDate?: string;
+  fuelChargesCost?: number;
+  fuelRatePerKm?: number;
+  showFuelInInvoice?: boolean;
+
   bookingStatus: BookingStatus;
   paymentStatus: PaymentStatus;
   paymentHistory: PaymentHistoryItem[];
@@ -164,15 +176,18 @@ const ALL_CITIES_LIST: string[] = Array.from(
 
 export default function BookingsPage() {
   const [isOffCanvasOpen, setIsOffCanvasOpen] = useState(false);
+  const [editingBookingId, setEditingBookingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<
     "details" | "assignment" | "charges" | "invoice"
   >("details");
 
   // Collections data
   const [entities, setEntities] = useState<{ id: string; name: string }[]>([]);
+  const [rawEntities, setRawEntities] = useState<any[]>([]);
   const [companies, setCompanies] = useState<
     { id: string; name: string; contactPerson?: string; mobile?: string }[]
   >([]);
+  const [rawCompanies, setRawCompanies] = useState<any[]>([]);
   const [individualCustomers, setIndividualCustomers] = useState<
     { id: string; name: string; mobile?: string; email?: string }[]
   >([]);
@@ -189,6 +204,7 @@ export default function BookingsPage() {
   const [paymentFilter, setPaymentFilter] = useState<string>("all");
   const [clientTypeFilter, setClientTypeFilter] = useState<string>("all");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isAllocatingInvoice, setIsAllocatingInvoice] = useState(false);
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
     message: string;
@@ -284,6 +300,17 @@ export default function BookingsPage() {
     PaymentStatus | null
   >(null);
 
+  // Action Popover Menu (3 vertical dots)
+  const [activeActionMenuId, setActiveActionMenuId] = useState<string | null>(null);
+
+  // Close popover when clicking anywhere outside
+  useEffect(() => {
+    if (!activeActionMenuId) return;
+    const handleClickOutside = () => setActiveActionMenuId(null);
+    window.addEventListener("click", handleClickOutside);
+    return () => window.removeEventListener("click", handleClickOutside);
+  }, [activeActionMenuId]);
+
   // -------------------------------------------------------------------------
   // 1. Subscribe to Entities / Travels
   // -------------------------------------------------------------------------
@@ -299,11 +326,14 @@ export default function BookingsPage() {
       };
 
       unsubEntities = onSnapshot(collection(db, "entities"), (snap) => {
+        const rawList: any[] = [];
         snap.docs.forEach((d) => {
           const data = d.data();
+          rawList.push({ id: d.id, ...data });
           const name = data.tradeName || data.legalName || data.entityName || "RK Travels";
           entMap.set(d.id, name);
         });
+        setRawEntities(rawList);
         syncEnts();
       });
 
@@ -335,6 +365,8 @@ export default function BookingsPage() {
       unsubComps = onSnapshot(
         q,
         (snap) => {
+          const rawList = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+          setRawCompanies(rawList);
           const list = snap.docs.map((d) => {
             const data = d.data();
             return {
@@ -349,6 +381,8 @@ export default function BookingsPage() {
         (err) => {
           console.warn("Companies fallback:", err);
           getDocs(collection(db, "companies")).then((snap) => {
+            const rawList = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+            setRawCompanies(rawList);
             const list = snap.docs.map((d) => ({
               id: d.id,
               name: d.data().companyName || d.data().legalName || "Unnamed Company",
@@ -997,6 +1031,25 @@ export default function BookingsPage() {
     const totalPassThrough =
       tollVal + parkVal + statePermitVal + mealsVal + interstateTaxVal + nightHaltVal;
 
+    // Fuel Charges policy calculation
+    let dutyFuelConfig: any = null;
+    if (activeCompanyTariff) {
+      if (selectedTariffType === "Local") {
+        dutyFuelConfig = activeCompanyTariff.localDuty?.fuelConfig;
+      } else if (selectedTariffType === "Pickup & Drop") {
+        dutyFuelConfig = activeCompanyTariff.pickupDropDuty?.fuelConfig;
+      } else if (selectedTariffType === "Day Rent") {
+        dutyFuelConfig = activeCompanyTariff.dayRentDuty?.fuelConfig;
+      } else if (selectedTariffType === "Outstation") {
+        dutyFuelConfig = activeCompanyTariff.outstationDuty?.fuelConfig;
+      }
+    }
+
+    const isFuelExclusive = dutyFuelConfig?.fuelType === "Exclusive";
+    const fuelRatePerKm = isFuelExclusive ? Number(dutyFuelConfig?.fuelRatePerKm) || 0 : 0;
+    const fuelChargesCost = isFuelExclusive ? calculatedTotalKm * fuelRatePerKm : 0;
+    const showFuelInInvoice = isFuelExclusive && !!dutyFuelConfig?.showFuelInInvoice;
+
     // Customer Advance & Discount
     const advanceVal = Math.max(0, Number(customerAdvance) || 0);
     const discountVal = Math.max(0, Number(discount) || 0);
@@ -1007,6 +1060,7 @@ export default function BookingsPage() {
       extraHoursCost +
       driverBataCost +
       nightHaltCost +
+      fuelChargesCost +
       totalPassThrough;
 
     const netBilled = Math.max(0, grossAmount - discountVal);
@@ -1024,6 +1078,9 @@ export default function BookingsPage() {
       extraHoursCost,
       driverBataCost,
       nightHaltCost,
+      fuelChargesCost,
+      fuelRatePerKm,
+      showFuelInInvoice,
       totalPassThrough,
       grossAmount,
       discount: discountVal,
@@ -1063,6 +1120,7 @@ export default function BookingsPage() {
   // Handle Open Add Booking OffCanvas
   // -------------------------------------------------------------------------
   const handleOpenAddBooking = () => {
+    setEditingBookingId(null);
     setActiveTab("details");
     const today = new Date().toISOString().split("T")[0];
     setStartDate(today);
@@ -1107,6 +1165,77 @@ export default function BookingsPage() {
   };
 
   // -------------------------------------------------------------------------
+  // Handle Open Edit Booking OffCanvas
+  // -------------------------------------------------------------------------
+  const handleOpenEditBooking = (booking: BookingRecord) => {
+    setEditingBookingId(booking.id);
+    setActiveTab("details");
+    setStartDate(booking.startDate || "");
+    setStartTime(booking.startTime || "09:00");
+    setEndDate(booking.endDate || "");
+    setEndTime(booking.endTime || "18:00");
+    setFromLocation(booking.fromLocation || "");
+    setToLocation(booking.toLocation || "");
+    setClientType(booking.clientType || booking.customerType || "Company");
+    setSelectedEntityId(booking.entityId || "");
+    setSelectedEntityName(booking.entityName || "");
+    setSelectedCustomerId(booking.customerId || "");
+    setSelectedCustomerName(booking.customerName || "");
+    setTravelerName(booking.travelerName || "");
+    setTravelerMobile(booking.travelerMobile || "");
+    setSelectedVehicleCategory(booking.vehicleCategory || "Sedan");
+    setSelectedTariffType(booking.tariffType || "Local");
+    setSelectedPackageId(booking.tariffPackageId || "");
+    setSelectedPackageName(booking.tariffPackageName || "");
+    setSelectedVehicleId(booking.vehicleId || "");
+    setSelectedVehicleReg(booking.vehicleRegNumber || "");
+    setSelectedVehicleName(booking.vehicleName || "");
+    setSelectedDriverId(booking.driverId || "");
+    setSelectedDriverName(booking.driverName || "");
+    setSelectedDriverMobile(booking.driverMobile || "");
+    setStartingKm(booking.startingKm !== undefined ? String(booking.startingKm) : "");
+    setEndingKm(booking.endingKm !== undefined ? String(booking.endingKm) : "");
+    setTravelledPlaces(booking.travelledPlaces || []);
+    setNotes(booking.notes || "");
+    setTolls(booking.tolls ? String(booking.tolls) : "");
+    setParking(booking.parking ? String(booking.parking) : "");
+    setStatePermit(booking.statePermit ? String(booking.statePermit) : "");
+    setMeals(booking.meals ? String(booking.meals) : "");
+    setInterstateEntryTax(booking.interstateEntryTax ? String(booking.interstateEntryTax) : "");
+    setNightHalt(booking.nightHalt ? String(booking.nightHalt) : "");
+    setCustomerAdvance(booking.customerAdvance ? String(booking.customerAdvance) : "");
+    setDiscount(booking.discount ? String(booking.discount) : "");
+    setBookingStatus(booking.bookingStatus || "New");
+    setOverridePaymentStatus(booking.paymentStatus || null);
+    setIsOffCanvasOpen(true);
+  };
+
+  // -------------------------------------------------------------------------
+  // Delete Booking
+  // -------------------------------------------------------------------------
+  const handleDeleteBooking = async (booking: BookingRecord) => {
+    const confirmDelete = window.confirm(
+      `Are you sure you want to delete booking ${booking.bookingNumber}? This action cannot be undone.`
+    );
+    if (!confirmDelete) return;
+
+    try {
+      await deleteDoc(doc(db, "bookings", booking.id));
+      setFeedback({
+        type: "success",
+        message: `Booking ${booking.bookingNumber} deleted successfully.`,
+      });
+      if (viewingBooking?.id === booking.id) {
+        setViewingBooking(null);
+      }
+      setTimeout(() => setFeedback(null), 3000);
+    } catch (err: any) {
+      console.error("Error deleting booking:", err);
+      alert("Failed to delete booking: " + (err.message || "Unknown error"));
+    }
+  };
+
+  // -------------------------------------------------------------------------
   // Save Booking Submission
   // -------------------------------------------------------------------------
   const handleSaveBookingSubmit = async () => {
@@ -1136,6 +1265,87 @@ export default function BookingsPage() {
 
       const initialPaymentHistory: PaymentHistoryItem[] = [];
       const advanceNum = pricingBreakdown.customerAdvance;
+
+      // Handle UPDATE EXISTING BOOKING
+      if (editingBookingId) {
+        const updatePayload: Partial<BookingRecord> = {
+          clientType,
+          customerType: clientType,
+          startDate,
+          startTime,
+          endDate,
+          endTime,
+          fromLocation: fromLocation.trim(),
+          toLocation: toLocation.trim(),
+          entityId: selectedEntityId,
+          entityName: selectedEntityName,
+          customerId: selectedCustomerId,
+          customerName: selectedCustomerName,
+          vehicleCategory: selectedVehicleCategory,
+          tariffType: selectedTariffType,
+          tariffPackageId: selectedPackageId || undefined,
+          tariffPackageName: selectedPackageName || undefined,
+          travelerName: (travelerName || selectedCustomerName).trim(),
+          travelerMobile: travelerMobile.trim(),
+
+          durationText: calculatedDuration.text,
+          totalDays: calculatedDuration.totalDays,
+          totalHours: calculatedDuration.totalHours,
+          totalMinutes: calculatedDuration.totalMinutes,
+
+          vehicleId: selectedVehicleId || undefined,
+          vehicleRegNumber: selectedVehicleReg || undefined,
+          vehicleName: selectedVehicleName || undefined,
+          driverId: selectedDriverId || undefined,
+          driverName: selectedDriverName || undefined,
+          driverMobile: selectedDriverMobile || undefined,
+          startingKm: startKmNum,
+          endingKm: endKmNum,
+          totalKm: calculatedTotalKm,
+          travelledPlaces,
+          notes: notes.trim(),
+
+          tolls: Math.max(0, Number(tolls) || 0),
+          parking: Math.max(0, Number(parking) || 0),
+          statePermit: Math.max(0, Number(statePermit) || 0),
+          meals: Math.max(0, Number(meals) || 0),
+          interstateEntryTax: Math.max(0, Number(interstateEntryTax) || 0),
+          nightHalt: Math.max(0, Number(nightHalt) || 0),
+          totalPassThrough: pricingBreakdown.totalPassThrough,
+          customerAdvance: advanceNum,
+          discount: pricingBreakdown.discount,
+
+          baseFare: pricingBreakdown.baseFare,
+          extraKmRate: pricingBreakdown.extraKmRate,
+          extraKmCost: pricingBreakdown.extraKmCost,
+          extraHoursRate: pricingBreakdown.extraHoursRate,
+          extraHoursCost: pricingBreakdown.extraHoursCost,
+          driverBataCost: pricingBreakdown.driverBataCost,
+          nightHaltCost: pricingBreakdown.nightHaltCost,
+          fuelChargesCost: pricingBreakdown.fuelChargesCost,
+          fuelRatePerKm: pricingBreakdown.fuelRatePerKm,
+          showFuelInInvoice: pricingBreakdown.showFuelInInvoice,
+          grossAmount: pricingBreakdown.grossAmount,
+          netAmount: pricingBreakdown.netAmount,
+          receivedAmount: advanceNum,
+          balanceAmount: pricingBreakdown.netAmount,
+
+          bookingStatus: bookingStatus,
+          paymentStatus: autoPaymentStatus,
+          updatedAt: serverTimestamp(),
+        };
+
+        await updateDoc(doc(db, "bookings", editingBookingId), updatePayload);
+
+        setFeedback({
+          type: "success",
+          message: "Booking updated successfully!",
+        });
+        setIsOffCanvasOpen(false);
+        setEditingBookingId(null);
+        setTimeout(() => setFeedback(null), 4000);
+        return;
+      }
       if (advanceNum > 0) {
         initialPaymentHistory.push({
           id: `pay-${Date.now()}`,
@@ -1204,6 +1414,9 @@ export default function BookingsPage() {
         extraHoursCost: pricingBreakdown.extraHoursCost,
         driverBataCost: pricingBreakdown.driverBataCost,
         nightHaltCost: pricingBreakdown.nightHaltCost,
+        fuelChargesCost: pricingBreakdown.fuelChargesCost,
+        fuelRatePerKm: pricingBreakdown.fuelRatePerKm,
+        showFuelInInvoice: pricingBreakdown.showFuelInInvoice,
         grossAmount: pricingBreakdown.grossAmount,
         netAmount: pricingBreakdown.netAmount,
         receivedAmount: advanceNum,
@@ -1257,6 +1470,53 @@ export default function BookingsPage() {
       });
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // -------------------------------------------------------------------------
+  // Generate Tax Invoice with sequential numbering: INV + YYYY + MM + NN
+  // -------------------------------------------------------------------------
+  const handleGenerateInvoice = async (bookingItem: BookingRecord) => {
+    // If invoice is already generated, simply view it
+    if (bookingItem.invoiceNumber) {
+      setInvoiceBooking(bookingItem);
+      return bookingItem.invoiceNumber;
+    }
+
+    setIsAllocatingInvoice(true);
+    try {
+      const nextInvNum = generateNextInvoiceNumber(bookings, new Date());
+      const nowIso = new Date().toISOString();
+
+      await updateDoc(doc(db, "bookings", bookingItem.id), {
+        invoiceNumber: nextInvNum,
+        invoiceDate: nowIso,
+        bookingStatus: "Invoice Generated",
+        updatedAt: serverTimestamp(),
+      });
+
+      const updatedRecord: BookingRecord = {
+        ...bookingItem,
+        invoiceNumber: nextInvNum,
+        invoiceDate: nowIso,
+        bookingStatus: "Invoice Generated",
+      };
+
+      setInvoiceBooking(updatedRecord);
+      if (viewingBooking && viewingBooking.id === bookingItem.id) {
+        setViewingBooking(updatedRecord);
+      }
+      setFeedback({
+        type: "success",
+        message: `Invoice ${nextInvNum} generated successfully!`,
+      });
+      setTimeout(() => setFeedback(null), 3500);
+      return nextInvNum;
+    } catch (err: any) {
+      console.error("Error generating tax invoice:", err);
+      alert(`Failed to allocate invoice number: ${err?.message || "Unknown error"}`);
+    } finally {
+      setIsAllocatingInvoice(false);
     }
   };
 
@@ -1568,7 +1828,7 @@ export default function BookingsPage() {
 
       {/* Bookings Table Directory */}
       <div className="bg-white rounded-[6px] border border-slate-200/80 shadow-xs overflow-hidden">
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto min-h-[320px]">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-medium text-slate-600">
@@ -1602,10 +1862,13 @@ export default function BookingsPage() {
                   </td>
                 </tr>
               ) : (
-                filteredBookings.map((b) => {
+                filteredBookings.map((b, idx) => {
                   const isIndiv =
                     b.clientType === "Individual Customer" ||
                     b.customerType === "Individual Customer";
+                  const isNearBottom =
+                    idx >= Math.max(0, filteredBookings.length - 3) &&
+                    filteredBookings.length > 3;
 
                   return (
                     <tr
@@ -1762,36 +2025,160 @@ export default function BookingsPage() {
                         </span>
                       </td>
 
-                      {/* Actions */}
+                      {/* Actions (3 Vertical Dots Popover) */}
                       <td className="py-2.5 px-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
+                        <div className="relative inline-block text-left group/action">
                           <button
                             type="button"
-                            onClick={() => setViewingBooking(b)}
-                            className="p-1 rounded text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition cursor-pointer"
-                            title="View details & charges"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveActionMenuId((prev) =>
+                                prev === b.id ? null : b.id
+                              );
+                            }}
+                            className={`w-7 h-7 flex items-center justify-center rounded-[6px] transition cursor-pointer border ${
+                              activeActionMenuId === b.id
+                                ? "bg-slate-100 text-slate-900 border-slate-300"
+                                : "text-slate-500 hover:text-slate-900 hover:bg-slate-100 border-transparent hover:border-slate-200"
+                            }`}
+                            title="Trip actions"
                           >
-                            <Eye className="w-3.5 h-3.5" />
+                            <MoreVertical className="w-4 h-4" />
                           </button>
 
-                          <button
-                            type="button"
-                            onClick={() => setInvoiceBooking(b)}
-                            className="p-1 rounded text-slate-400 hover:text-[#f16623] hover:bg-orange-50 transition cursor-pointer"
-                            title="View / Print Tax Invoice"
+                          {/* Action Popover Menu (Triggered on Click or Hover) */}
+                          <div
+                            onClick={(e) => e.stopPropagation()}
+                            className={`absolute right-0 z-40 w-52 bg-white rounded-[8px] border border-slate-200 shadow-xl py-1 text-xs divide-y divide-slate-100 text-left transition-all ${
+                              isNearBottom
+                                ? "bottom-full mb-1.5 origin-bottom-right"
+                                : "top-full mt-1.5 origin-top-right"
+                            } ${
+                              activeActionMenuId === b.id
+                                ? "block"
+                                : "hidden group-hover/action:block"
+                            }`}
                           >
-                            <FileText className="w-3.5 h-3.5" />
-                          </button>
+                            <div className="py-1">
+                              {/* 1. View Details */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveActionMenuId(null);
+                                  setViewingBooking(b);
+                                }}
+                                className="w-full px-3 py-2 flex items-center gap-2.5 text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition cursor-pointer"
+                              >
+                                <Eye className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                                <div>
+                                  <span className="font-medium block leading-tight">View Details</span>
+                                  <span className="text-[10px] text-slate-400 block leading-tight">
+                                    Itinerary &amp; particulars
+                                  </span>
+                                </div>
+                              </button>
 
-                          <button
-                            type="button"
-                            onClick={() => handleOpenCollectPayment(b)}
-                            className="h-[26px] max-h-[34px] px-2 rounded-[4px] border border-slate-200 bg-white hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 text-slate-600 text-[10px] font-normal transition flex items-center gap-1 shadow-2xs cursor-pointer"
-                            title="Collect / Record Payment"
-                          >
-                            <Banknote className="w-3 h-3 text-emerald-600" />
-                            <span>Collect</span>
-                          </button>
+                              {/* 2. Edit Booking */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveActionMenuId(null);
+                                  handleOpenEditBooking(b);
+                                }}
+                                className="w-full px-3 py-2 flex items-center gap-2.5 text-slate-700 hover:bg-orange-50/70 hover:text-[#f16623] transition cursor-pointer"
+                              >
+                                <Pencil className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                <div>
+                                  <span className="font-medium block leading-tight">Edit Booking</span>
+                                  <span className="text-[10px] text-slate-400 block leading-tight">
+                                    Modify trip &amp; rates
+                                  </span>
+                                </div>
+                              </button>
+
+                              {/* 3. Invoice View / Generate */}
+                              {b.invoiceNumber ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveActionMenuId(null);
+                                    setInvoiceBooking(b);
+                                  }}
+                                  className="w-full px-3 py-2 flex items-center gap-2.5 text-slate-700 hover:bg-orange-50/70 hover:text-[#f16623] transition cursor-pointer"
+                                >
+                                  <FileText className="w-3.5 h-3.5 text-[#f16623] shrink-0" />
+                                  <div>
+                                    <span className="font-medium block leading-tight">
+                                      View Invoice
+                                    </span>
+                                    <span className="text-[10px] font-mono text-[#f16623] block leading-tight">
+                                      {b.invoiceNumber}
+                                    </span>
+                                  </div>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  disabled={isAllocatingInvoice}
+                                  onClick={() => {
+                                    setActiveActionMenuId(null);
+                                    handleGenerateInvoice(b);
+                                  }}
+                                  className="w-full px-3 py-2 flex items-center gap-2.5 text-slate-700 hover:bg-orange-50/70 hover:text-[#f16623] disabled:opacity-50 transition cursor-pointer"
+                                >
+                                  <Sparkles className="w-3.5 h-3.5 text-[#f16623] shrink-0" />
+                                  <div>
+                                    <span className="font-medium block leading-tight">
+                                      Generate Invoice
+                                    </span>
+                                    <span className="text-[10px] text-slate-400 block leading-tight">
+                                      Create invoice number
+                                    </span>
+                                  </div>
+                                </button>
+                              )}
+
+                              {/* 4. Collect Payment */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveActionMenuId(null);
+                                  handleOpenCollectPayment(b);
+                                }}
+                                className="w-full px-3 py-2 flex items-center gap-2.5 text-slate-700 hover:bg-emerald-50/70 hover:text-emerald-700 transition cursor-pointer"
+                              >
+                                <Banknote className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                <div>
+                                  <span className="font-medium block leading-tight">
+                                    Collect Payment
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 block leading-tight">
+                                    Record cash, card or UPI
+                                  </span>
+                                </div>
+                              </button>
+                            </div>
+
+                            {/* 5. Delete Action */}
+                            <div className="py-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveActionMenuId(null);
+                                  handleDeleteBooking(b);
+                                }}
+                                className="w-full px-3 py-2 flex items-center gap-2.5 text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                                <div>
+                                  <span className="font-medium block leading-tight">Delete Booking</span>
+                                  <span className="text-[10px] text-rose-400 block leading-tight">
+                                    Remove trip permanently
+                                  </span>
+                                </div>
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -1804,13 +2191,26 @@ export default function BookingsPage() {
       </div>
 
       {/* ===================================================================== */}
-      {/* 4-TAB ADD BOOKING OFFCANVAS DRAWER */}
+      {/* 4-TAB ADD / EDIT BOOKING OFFCANVAS DRAWER */}
       {/* ===================================================================== */}
       <OffCanvas
         isOpen={isOffCanvasOpen}
-        onClose={() => setIsOffCanvasOpen(false)}
-        title="Add Booking"
-        subtitle="Step-by-step trip configuration, vehicle & driver assignment, pass-through charges, and pricing"
+        onClose={() => {
+          setIsOffCanvasOpen(false);
+          setEditingBookingId(null);
+        }}
+        title={
+          editingBookingId
+            ? `Edit Booking — ${
+                bookings.find((b) => b.id === editingBookingId)?.bookingNumber || ""
+              }`
+            : "Add Booking"
+        }
+        subtitle={
+          editingBookingId
+            ? "Update trip schedule, assignment, pass-through charges, and billing breakdown"
+            : "Step-by-step trip configuration, vehicle & driver assignment, pass-through charges, and pricing"
+        }
         size="3xl"
         widthClassName="max-w-3xl"
       >
@@ -2526,7 +2926,7 @@ export default function BookingsPage() {
 
                   <div className="space-y-1">
                     <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
-                      INTERSTATE ENTRY TAX
+                      INTERSTATE / BORDER ENTRY
                     </label>
                     <input
                       type="number"
@@ -2759,7 +3159,7 @@ export default function BookingsPage() {
                   {pricingBreakdown.totalPassThrough > 0 && (
                     <div className="flex items-center justify-between pt-2">
                       <span className="text-slate-600">
-                        Pass-through Charges (Tolls, Parking, Permits, Meals, Tax)
+                        Pass-through Charges (Tolls, Parking, Permits, Meals, Border Entry)
                       </span>
                       <span className="font-mono text-slate-900">
                         + ₹
@@ -2871,12 +3271,12 @@ export default function BookingsPage() {
                     {isSubmitting ? (
                       <>
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        <span>Saving Booking...</span>
+                        <span>{editingBookingId ? "Updating Booking..." : "Saving Booking..."}</span>
                       </>
                     ) : (
                       <>
                         <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                        <span>Save Booking</span>
+                        <span>{editingBookingId ? "Update Booking" : "Save Booking"}</span>
                       </>
                     )}
                   </button>
@@ -3085,7 +3485,7 @@ export default function BookingsPage() {
                 </div>
                 <div>
                   <span className="text-slate-400 text-[10px] block">
-                    INTERSTATE TAX
+                    INTERSTATE ENTRY
                   </span>
                   <span className="font-mono">
                     ₹{viewingBooking.interstateEntryTax || 0}
@@ -3172,15 +3572,57 @@ export default function BookingsPage() {
             </div>
 
             {/* Bottom Actions */}
-            <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => setInvoiceBooking(viewingBooking)}
-                className="h-[34px] max-h-[34px] px-3.5 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] text-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-              >
-                <FileText className="w-3.5 h-3.5" />
-                <span>View / Print Invoice</span>
-              </button>
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  disabled={isAllocatingInvoice}
+                  onClick={() => {
+                    const b = viewingBooking;
+                    handleGenerateInvoice(b);
+                  }}
+                  className="h-[34px] max-h-[34px] px-3.5 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] disabled:opacity-60 text-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  {viewingBooking.invoiceNumber ? (
+                    <>
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>View Invoice ({viewingBooking.invoiceNumber})</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Generate Invoice</span>
+                    </>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const b = viewingBooking;
+                    setViewingBooking(null);
+                    handleOpenEditBooking(b);
+                  }}
+                  className="h-[34px] max-h-[34px] px-3 rounded-[6px] border border-orange-200 bg-orange-50 hover:bg-orange-100 text-[#f16623] text-xs font-medium transition flex items-center gap-1.5 cursor-pointer"
+                  title="Edit this booking"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  <span>Edit Booking</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const b = viewingBooking;
+                    handleDeleteBooking(b);
+                  }}
+                  className="h-[34px] max-h-[34px] px-3 rounded-[6px] border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-medium transition flex items-center gap-1.5 cursor-pointer"
+                  title="Delete this booking"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete</span>
+                </button>
+              </div>
 
               <button
                 type="button"
@@ -3357,310 +3799,39 @@ export default function BookingsPage() {
       </OffCanvas>
 
       {/* ===================================================================== */}
-      {/* INVOICE / BILL OF SUPPLY MODAL */}
+      {/* TAX INVOICE MODAL (MATCHING ATTACHED SCREENSHOT EXACTLY) */}
       {/* ===================================================================== */}
-      <OffCanvas
+      <TaxInvoiceModal
         isOpen={!!invoiceBooking}
         onClose={() => setInvoiceBooking(null)}
-        title={`Invoice: ${invoiceBooking?.bookingNumber || ""}`}
-        subtitle="Printable tax invoice & duty voucher with passenger particulars"
-        size="2xl"
-        widthClassName="max-w-3xl"
-      >
-        {invoiceBooking && (
-          <div className="space-y-4 text-xs font-normal text-slate-800">
-            {/* Printable Invoice Container */}
-            <div className="border border-slate-200 rounded-[6px] p-5 bg-white shadow-xs space-y-4 print:border-none print:p-0">
-              {/* Header: Company / Entity Brand & Invoice Info */}
-              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-slate-200 pb-3">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-[6px] bg-[#f16623] flex items-center justify-center text-white font-bold text-sm shadow-xs">
-                      RK
-                    </div>
-                    <div>
-                      <h2 className="text-base font-bold text-slate-900 leading-tight">
-                        {invoiceBooking.entityName || "RK Travels"}
-                      </h2>
-                      <p className="text-[10px] text-slate-500 font-normal">
-                        Fleet &amp; Executive Passenger Transit Services
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="text-left sm:text-right space-y-0.5">
-                  <div className="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-orange-50 text-[#f16623] border border-[#f16623]/20 uppercase tracking-wider">
-                    TAX INVOICE / TRIP BILL
-                  </div>
-                  <div className="text-xs font-mono font-bold text-slate-900">
-                    #{invoiceBooking.bookingNumber}
-                  </div>
-                  <div className="text-[11px] text-slate-500">
-                    Date: {invoiceBooking.startDate || new Date().toISOString().split("T")[0]}
-                  </div>
-                </div>
-              </div>
-
-              {/* Billed To Section - Prominently displays Company or Individual Customer */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 rounded-[6px] bg-slate-50 border border-slate-200">
-                <div className="space-y-1">
-                  <span className="text-[10px] text-slate-400 uppercase font-medium block tracking-wider">
-                    BILLED TO (
-                    {invoiceBooking.clientType === "Individual Customer" ||
-                    invoiceBooking.customerType === "Individual Customer"
-                      ? "INDIVIDUAL CUSTOMER"
-                      : "CORPORATE CLIENT"}
-                    )
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    {invoiceBooking.clientType === "Individual Customer" ||
-                    invoiceBooking.customerType === "Individual Customer" ? (
-                      <User className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                    ) : (
-                      <Building2 className="w-3.5 h-3.5 text-[#f16623] shrink-0" />
-                    )}
-                    <span className="font-semibold text-slate-900 text-xs">
-                      {invoiceBooking.customerName}
-                    </span>
-                    <span
-                      className={`text-[9px] px-1.5 py-0.2 rounded font-medium border ${
-                        invoiceBooking.clientType === "Individual Customer" ||
-                        invoiceBooking.customerType === "Individual Customer"
-                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                          : "bg-blue-50 text-blue-700 border-blue-200"
-                      }`}
-                    >
-                      {invoiceBooking.clientType === "Individual Customer" ||
-                      invoiceBooking.customerType === "Individual Customer"
-                        ? "Individual Customer"
-                        : "Company Account"}
-                    </span>
-                  </div>
-                  <div className="text-[11px] text-slate-600 space-y-0.5">
-                    <p>
-                      Passenger: <strong className="font-medium text-slate-800">{invoiceBooking.travelerName}</strong>
-                    </p>
-                    {invoiceBooking.travelerMobile && (
-                      <p>Mobile: <span className="font-mono">{invoiceBooking.travelerMobile}</span></p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <span className="text-[10px] text-slate-400 uppercase font-medium block tracking-wider">
-                    DUTY / TRIP PARTICULARS
-                  </span>
-                  <div className="text-[11px] text-slate-700 space-y-0.5">
-                    <p>
-                      Route:{" "}
-                      <strong className="font-medium text-slate-900">
-                        {invoiceBooking.fromLocation} → {invoiceBooking.toLocation}
-                      </strong>
-                    </p>
-                    <p>
-                      Dates: {invoiceBooking.startDate} ({invoiceBooking.startTime || "09:00"}) to {invoiceBooking.endDate} ({invoiceBooking.endTime || "18:00"})
-                    </p>
-                    <p>
-                      Vehicle:{" "}
-                      <span className="font-mono font-medium">
-                        {invoiceBooking.vehicleRegNumber || "Standard"} ({invoiceBooking.vehicleCategory})
-                      </span>
-                    </p>
-                    {invoiceBooking.driverName && (
-                      <p>Driver: {invoiceBooking.driverName} ({invoiceBooking.driverMobile || "On duty"})</p>
-                    )}
-                    {invoiceBooking.totalKm > 0 && (
-                      <p>Total Run: <span className="font-mono">{invoiceBooking.totalKm} KM</span> • {invoiceBooking.durationText}</p>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Itemized Charges Table */}
-              <div className="border border-slate-200 rounded-[6px] overflow-hidden">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 text-[10px] uppercase font-semibold text-slate-600 border-b border-slate-200">
-                    <tr>
-                      <th className="py-2 px-3">Description</th>
-                      <th className="py-2 px-3 text-center">Qty / Slab</th>
-                      <th className="py-2 px-3 text-right">Amount (₹)</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-normal">
-                    <tr>
-                      <td className="py-2 px-3 font-medium text-slate-800">
-                        Base Fare ({invoiceBooking.tariffType} Duty {invoiceBooking.tariffPackageName ? `— ${invoiceBooking.tariffPackageName}` : ""})
-                      </td>
-                      <td className="py-2 px-3 text-center text-slate-500 font-mono">1</td>
-                      <td className="py-2 px-3 text-right font-mono font-medium text-slate-900">
-                        ₹{(invoiceBooking.baseFare || 0).toLocaleString("en-IN")}
-                      </td>
-                    </tr>
-
-                    {invoiceBooking.extraKmCost > 0 && (
-                      <tr>
-                        <td className="py-2 px-3 text-slate-700">
-                          Extra Distance Run (@ ₹{invoiceBooking.extraKmRate}/KM)
-                        </td>
-                        <td className="py-2 px-3 text-center text-slate-500 font-mono">
-                          {Math.round(invoiceBooking.extraKmCost / (invoiceBooking.extraKmRate || 1))} KM
-                        </td>
-                        <td className="py-2 px-3 text-right font-mono text-slate-900">
-                          ₹{invoiceBooking.extraKmCost.toLocaleString("en-IN")}
-                        </td>
-                      </tr>
-                    )}
-
-                    {invoiceBooking.extraHoursCost > 0 && (
-                      <tr>
-                        <td className="py-2 px-3 text-slate-700">
-                          Extra Duty Hours (@ ₹{invoiceBooking.extraHoursRate}/Hr)
-                        </td>
-                        <td className="py-2 px-3 text-center text-slate-500 font-mono">
-                          {Math.round(invoiceBooking.extraHoursCost / (invoiceBooking.extraHoursRate || 1))} Hrs
-                        </td>
-                        <td className="py-2 px-3 text-right font-mono text-slate-900">
-                          ₹{invoiceBooking.extraHoursCost.toLocaleString("en-IN")}
-                        </td>
-                      </tr>
-                    )}
-
-                    {invoiceBooking.driverBataCost > 0 && (
-                      <tr>
-                        <td className="py-2 px-3 text-slate-700">Driver Bata Allowance</td>
-                        <td className="py-2 px-3 text-center text-slate-500 font-mono">—</td>
-                        <td className="py-2 px-3 text-right font-mono text-slate-900">
-                          ₹{invoiceBooking.driverBataCost.toLocaleString("en-IN")}
-                        </td>
-                      </tr>
-                    )}
-
-                    {invoiceBooking.nightHaltCost > 0 && (
-                      <tr>
-                        <td className="py-2 px-3 text-slate-700">Night Halt Charges</td>
-                        <td className="py-2 px-3 text-center text-slate-500 font-mono">—</td>
-                        <td className="py-2 px-3 text-right font-mono text-slate-900">
-                          ₹{invoiceBooking.nightHaltCost.toLocaleString("en-IN")}
-                        </td>
-                      </tr>
-                    )}
-
-                    {/* Pass-through charges breakdown if any */}
-                    {invoiceBooking.totalPassThrough > 0 && (
-                      <tr>
-                        <td className="py-2 px-3 text-slate-700">
-                          Pass-through Expenses (Tolls: ₹{invoiceBooking.tolls || 0}, Parking: ₹{invoiceBooking.parking || 0}, Permits: ₹{invoiceBooking.statePermit || 0}, Meals: ₹{invoiceBooking.meals || 0}, Tax: ₹{invoiceBooking.interstateEntryTax || 0})
-                        </td>
-                        <td className="py-2 px-3 text-center text-slate-500 font-mono">Actuals</td>
-                        <td className="py-2 px-3 text-right font-mono text-slate-900">
-                          ₹{invoiceBooking.totalPassThrough.toLocaleString("en-IN")}
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                  <tfoot className="bg-slate-50/80 border-t border-slate-200">
-                    <tr>
-                      <td colSpan={2} className="py-2 px-3 text-right font-semibold text-slate-800">
-                        Gross Total:
-                      </td>
-                      <td className="py-2 px-3 text-right font-mono font-bold text-slate-900">
-                        ₹{(invoiceBooking.grossAmount || 0).toLocaleString("en-IN")}
-                      </td>
-                    </tr>
-                    {invoiceBooking.discount && invoiceBooking.discount > 0 ? (
-                      <tr className="text-rose-600">
-                        <td colSpan={2} className="py-1.5 px-3 text-right font-medium">
-                          Less: Special Concession / Discount:
-                        </td>
-                        <td className="py-1.5 px-3 text-right font-mono font-semibold">
-                          − ₹{invoiceBooking.discount.toLocaleString("en-IN")}
-                        </td>
-                      </tr>
-                    ) : null}
-                    {invoiceBooking.customerAdvance > 0 && (
-                      <tr className="text-emerald-700">
-                        <td colSpan={2} className="py-1.5 px-3 text-right font-medium">
-                          Less: Advance Received on Booking:
-                        </td>
-                        <td className="py-1.5 px-3 text-right font-mono font-semibold">
-                          − ₹{invoiceBooking.customerAdvance.toLocaleString("en-IN")}
-                        </td>
-                      </tr>
-                    )}
-                    {invoiceBooking.receivedAmount > invoiceBooking.customerAdvance && (
-                      <tr className="text-emerald-700">
-                        <td colSpan={2} className="py-1.5 px-3 text-right font-medium">
-                          Additional Amount Collected:
-                        </td>
-                        <td className="py-1.5 px-3 text-right font-mono font-semibold">
-                          − ₹{(invoiceBooking.receivedAmount - invoiceBooking.customerAdvance).toLocaleString("en-IN")}
-                        </td>
-                      </tr>
-                    )}
-                    <tr className="border-t-2 border-slate-300">
-                      <td colSpan={2} className="py-2.5 px-3 text-right font-bold text-slate-900 text-sm">
-                        Net Balance Payable:
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-mono font-bold text-[#f16623] text-sm">
-                        ₹{(invoiceBooking.balanceAmount ?? invoiceBooking.netAmount ?? 0).toLocaleString("en-IN")}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-
-              {/* Status and Notes */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-[6px] bg-slate-50 border border-slate-200 text-xs">
-                <div>
-                  <span className="text-[10px] text-slate-400 uppercase font-medium block">
-                    PAYMENT STATUS
-                  </span>
-                  <span
-                    className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium border mt-0.5 ${
-                      invoiceBooking.paymentStatus === "Paid"
-                        ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                        : invoiceBooking.paymentStatus === "Partial"
-                        ? "bg-amber-50 text-amber-700 border-amber-200"
-                        : "bg-rose-50 text-rose-700 border-rose-200"
-                    }`}
-                  >
-                    {invoiceBooking.paymentStatus}
-                  </span>
-                </div>
-                <div className="text-left sm:text-right">
-                  <span className="text-[10px] text-slate-400 uppercase font-medium block">
-                    TOTAL RECEIVED
-                  </span>
-                  <span className="font-mono font-semibold text-emerald-700">
-                    ₹{(invoiceBooking.receivedAmount || 0).toLocaleString("en-IN")}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Print & Close Actions */}
-            <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="h-[34px] max-h-[34px] px-4 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] text-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-              >
-                <FileText className="w-3.5 h-3.5" />
-                <span>Print Invoice</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setInvoiceBooking(null)}
-                className="h-[34px] max-h-[34px] px-4 rounded-[6px] border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-normal transition cursor-pointer"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        )}
-      </OffCanvas>
+        booking={invoiceBooking}
+        entityData={
+          rawEntities.find(
+            (e) =>
+              e.id === invoiceBooking?.entityId ||
+              e.legalName === invoiceBooking?.entityName ||
+              e.tradeName === invoiceBooking?.entityName ||
+              e.entityName === invoiceBooking?.entityName
+          ) || null
+        }
+        companyData={
+          rawCompanies.find(
+            (c) =>
+              c.id === invoiceBooking?.customerId ||
+              c.legalName === invoiceBooking?.customerName ||
+              c.companyName === invoiceBooking?.customerName ||
+              c.name === invoiceBooking?.customerName
+          ) || null
+        }
+        onGenerateInvoice={async (bookingId: string) => {
+          const bookingItem =
+            bookings.find((b) => b.id === bookingId) || invoiceBooking;
+          if (bookingItem) {
+            await handleGenerateInvoice(bookingItem);
+          }
+        }}
+        isGenerating={isAllocatingInvoice}
+      />
     </div>
   );
 }

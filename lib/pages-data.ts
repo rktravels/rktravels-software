@@ -145,7 +145,7 @@ export const NAV_ITEMS: PageModuleInfo[] = [
   },
   {
     id: "tariffs",
-    name: "Tariffs",
+    name: "Company Tariff",
     href: "/tariffs",
     category: "COMMERCIAL",
     icon: Tags,

@@ -42,6 +42,11 @@ import { db } from "@/lib/firebase";
 import { OffCanvas } from "@/components/OffCanvas";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { CustomDatePicker } from "@/components/CustomDatePicker";
+import {
+  FuelChargesCard,
+  type FuelChargesConfig,
+  DEFAULT_FUEL_CHARGES_CONFIG,
+} from "@/components/FuelChargesCard";
 
 // --- Types & Data Models ---
 
@@ -67,6 +72,7 @@ export interface LocalDutyConfig {
   enabled: boolean;
   packages: TariffPackageBlock[];
   extraRates: ExtraRatesBlock;
+  fuelConfig?: FuelChargesConfig;
 }
 
 // 2. Pickup & Drop Models (Airport & Railway)
@@ -83,6 +89,7 @@ export interface PickupDropDutyConfig {
   offerRailway: boolean;
   airportRates: TransferParticulars;
   railwayRates: TransferParticulars;
+  fuelConfig?: FuelChargesConfig;
 }
 
 // 3. Day Rent Models
@@ -98,6 +105,7 @@ export interface DayRentParticulars {
 export interface DayRentDutyConfig {
   enabled: boolean;
   rates: DayRentParticulars;
+  fuelConfig?: FuelChargesConfig;
 }
 
 // 4. Outstation Models
@@ -111,6 +119,7 @@ export interface OutstationParticulars {
 export interface OutstationDutyConfig {
   enabled: boolean;
   rates: OutstationParticulars;
+  fuelConfig?: FuelChargesConfig;
 }
 
 // 5. Default Customer Tariff Record
@@ -167,6 +176,9 @@ export default function CustomerTariffsPage() {
     extraPerHour: {},
     extraPerKm: {},
   });
+  const [localFuelConfig, setLocalFuelConfig] = useState<FuelChargesConfig>(
+    DEFAULT_FUEL_CHARGES_CONFIG
+  );
   const [newPackageName, setNewPackageName] = useState("");
   const [isAddingPackage, setIsAddingPackage] = useState(false);
 
@@ -187,6 +199,9 @@ export default function CustomerTariffsPage() {
     waitingPerHour: {},
     extraPerKm: {},
   });
+  const [pickupDropFuelConfig, setPickupDropFuelConfig] = useState<FuelChargesConfig>(
+    DEFAULT_FUEL_CHARGES_CONFIG
+  );
 
   // --- 3. DAY RENT STATE ---
   const [offerDayRent, setOfferDayRent] = useState(true);
@@ -198,6 +213,9 @@ export default function CustomerTariffsPage() {
     driverBata24Hrs: {},
     nightHaltPerNight: {},
   });
+  const [dayRentFuelConfig, setDayRentFuelConfig] = useState<FuelChargesConfig>(
+    DEFAULT_FUEL_CHARGES_CONFIG
+  );
 
   // --- 4. OUTSTATION STATE ---
   const [offerOutstation, setOfferOutstation] = useState(true);
@@ -207,6 +225,9 @@ export default function CustomerTariffsPage() {
     driverBataPerDay: {},
     nightHaltPerNight: {},
   });
+  const [outstationFuelConfig, setOutstationFuelConfig] = useState<FuelChargesConfig>(
+    DEFAULT_FUEL_CHARGES_CONFIG
+  );
 
   // Data & Loading state
   const [tariffsList, setTariffsList] = useState<CustomerTariffRecord[]>([]);
@@ -670,6 +691,12 @@ export default function CustomerTariffsPage() {
           nightHaltPerNight: {},
         }
       );
+
+      // Fuel Configurations
+      setLocalFuelConfig(defaultTariff.localDuty?.fuelConfig || DEFAULT_FUEL_CHARGES_CONFIG);
+      setPickupDropFuelConfig(defaultTariff.pickupDropDuty?.fuelConfig || DEFAULT_FUEL_CHARGES_CONFIG);
+      setDayRentFuelConfig(defaultTariff.dayRentDuty?.fuelConfig || DEFAULT_FUEL_CHARGES_CONFIG);
+      setOutstationFuelConfig(defaultTariff.outstationDuty?.fuelConfig || DEFAULT_FUEL_CHARGES_CONFIG);
     } else {
       // Pre-fill baseline standard rates
       populateStandardBaselineRates(
@@ -819,20 +846,24 @@ export default function CustomerTariffsPage() {
           enabled: offerLocal,
           packages: localPackages,
           extraRates: localExtraRates,
+          fuelConfig: localFuelConfig,
         },
         pickupDropDuty: {
           offerAirport: offerAirport,
           offerRailway: offerRailway,
           airportRates: airportRates,
           railwayRates: railwayRates,
+          fuelConfig: pickupDropFuelConfig,
         },
         dayRentDuty: {
           enabled: offerDayRent,
           rates: dayRentRates,
+          fuelConfig: dayRentFuelConfig,
         },
         outstationDuty: {
           enabled: offerOutstation,
           rates: outstationRates,
+          fuelConfig: outstationFuelConfig,
         },
         planName: "Default Customer Tariff",
         amount: Number(localPackages[0]?.rates[selectedCategories[0]]?.baseFare) || 0,
@@ -1804,6 +1835,13 @@ export default function CustomerTariffsPage() {
                   </table>
                 </div>
               </div>
+
+              {/* Fuel Charges Section */}
+              <FuelChargesCard
+                dutyTitle="Local"
+                config={localFuelConfig}
+                onChange={setLocalFuelConfig}
+              />
             </div>
           )}
 
@@ -2019,6 +2057,13 @@ export default function CustomerTariffsPage() {
                   </table>
                 </div>
               </div>
+
+              {/* Fuel Charges Section */}
+              <FuelChargesCard
+                dutyTitle="Pickup & Drop"
+                config={pickupDropFuelConfig}
+                onChange={setPickupDropFuelConfig}
+              />
             </div>
           )}
 
@@ -2140,6 +2185,13 @@ export default function CustomerTariffsPage() {
                   </tbody>
                 </table>
               </div>
+
+              {/* Fuel Charges Section */}
+              <FuelChargesCard
+                dutyTitle="Day Rent"
+                config={dayRentFuelConfig}
+                onChange={setDayRentFuelConfig}
+              />
             </div>
           )}
 
@@ -2233,6 +2285,13 @@ export default function CustomerTariffsPage() {
                   </tbody>
                 </table>
               </div>
+
+              {/* Fuel Charges Section */}
+              <FuelChargesCard
+                dutyTitle="Outstation"
+                config={outstationFuelConfig}
+                onChange={setOutstationFuelConfig}
+              />
             </div>
           )}
 

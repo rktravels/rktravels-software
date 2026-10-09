@@ -45,6 +45,11 @@ import { db } from "@/lib/firebase";
 import { OffCanvas } from "@/components/OffCanvas";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { CustomDatePicker } from "@/components/CustomDatePicker";
+import {
+  FuelChargesCard,
+  type FuelChargesConfig,
+  DEFAULT_FUEL_CHARGES_CONFIG,
+} from "@/components/FuelChargesCard";
 
 // --- Types & Data Models ---
 
@@ -70,6 +75,7 @@ export interface LocalDutyConfig {
   enabled: boolean;
   packages: TariffPackageBlock[];
   extraRates: ExtraRatesBlock;
+  fuelConfig?: FuelChargesConfig;
 }
 
 // 2. Pickup & Drop Models (Airport & Railway)
@@ -86,6 +92,7 @@ export interface PickupDropDutyConfig {
   offerRailway: boolean;
   airportRates: TransferParticulars;
   railwayRates: TransferParticulars;
+  fuelConfig?: FuelChargesConfig;
 }
 
 // 3. Day Rent Models
@@ -101,6 +108,7 @@ export interface DayRentParticulars {
 export interface DayRentDutyConfig {
   enabled: boolean;
   rates: DayRentParticulars;
+  fuelConfig?: FuelChargesConfig;
 }
 
 // 4. Outstation Models
@@ -114,6 +122,7 @@ export interface OutstationParticulars {
 export interface OutstationDutyConfig {
   enabled: boolean;
   rates: OutstationParticulars;
+  fuelConfig?: FuelChargesConfig;
 }
 
 // 5. Overall Tariff Record
@@ -171,6 +180,9 @@ export default function TariffsPage() {
     extraPerHour: {},
     extraPerKm: {},
   });
+  const [localFuelConfig, setLocalFuelConfig] = useState<FuelChargesConfig>(
+    DEFAULT_FUEL_CHARGES_CONFIG
+  );
   const [newPackageName, setNewPackageName] = useState("");
   const [isAddingPackage, setIsAddingPackage] = useState(false);
 
@@ -191,6 +203,9 @@ export default function TariffsPage() {
     waitingPerHour: {},
     extraPerKm: {},
   });
+  const [pickupDropFuelConfig, setPickupDropFuelConfig] = useState<FuelChargesConfig>(
+    DEFAULT_FUEL_CHARGES_CONFIG
+  );
 
   // --- 3. DAY RENT STATE ---
   const [offerDayRent, setOfferDayRent] = useState(false);
@@ -202,6 +217,9 @@ export default function TariffsPage() {
     driverBata24Hrs: {},
     nightHaltPerNight: {},
   });
+  const [dayRentFuelConfig, setDayRentFuelConfig] = useState<FuelChargesConfig>(
+    DEFAULT_FUEL_CHARGES_CONFIG
+  );
 
   // --- 4. OUTSTATION STATE ---
   const [offerOutstation, setOfferOutstation] = useState(false);
@@ -211,6 +229,9 @@ export default function TariffsPage() {
     driverBataPerDay: {},
     nightHaltPerNight: {},
   });
+  const [outstationFuelConfig, setOutstationFuelConfig] = useState<FuelChargesConfig>(
+    DEFAULT_FUEL_CHARGES_CONFIG
+  );
 
   // Page List & Search
   const [tariffsList, setTariffsList] = useState<TariffRecord[]>([]);
@@ -752,6 +773,9 @@ interface CompanyOptionItem {
       setLocalPackages(tariff.localDuty.packages);
       setLocalExtraRates(tariff.localDuty.extraRates || localExtraRates);
       setOfferLocal(tariff.localDuty.enabled ?? true);
+      setLocalFuelConfig(tariff.localDuty.fuelConfig || DEFAULT_FUEL_CHARGES_CONFIG);
+    } else {
+      setLocalFuelConfig(tariff.localDuty?.fuelConfig || DEFAULT_FUEL_CHARGES_CONFIG);
     }
 
     // Pickup & Drop
@@ -760,18 +784,21 @@ interface CompanyOptionItem {
       setOfferRailway(tariff.pickupDropDuty.offerRailway ?? true);
       if (tariff.pickupDropDuty.airportRates) setAirportRates(tariff.pickupDropDuty.airportRates);
       if (tariff.pickupDropDuty.railwayRates) setRailwayRates(tariff.pickupDropDuty.railwayRates);
+      setPickupDropFuelConfig(tariff.pickupDropDuty.fuelConfig || DEFAULT_FUEL_CHARGES_CONFIG);
     }
 
     // Day Rent
     if (tariff.dayRentDuty) {
       setOfferDayRent(tariff.dayRentDuty.enabled ?? true);
       if (tariff.dayRentDuty.rates) setDayRentRates(tariff.dayRentDuty.rates);
+      setDayRentFuelConfig(tariff.dayRentDuty.fuelConfig || DEFAULT_FUEL_CHARGES_CONFIG);
     }
 
     // Outstation
     if (tariff.outstationDuty) {
       setOfferOutstation(tariff.outstationDuty.enabled ?? true);
       if (tariff.outstationDuty.rates) setOutstationRates(tariff.outstationDuty.rates);
+      setOutstationFuelConfig(tariff.outstationDuty.fuelConfig || DEFAULT_FUEL_CHARGES_CONFIG);
     }
 
     setIsCustomCompany(false);
@@ -790,14 +817,18 @@ interface CompanyOptionItem {
     setOfferLocal(false);
     setLocalPackages([]);
     setLocalExtraRates({ extraPerHour: {}, extraPerKm: {} });
+    setLocalFuelConfig(DEFAULT_FUEL_CHARGES_CONFIG);
     setOfferAirport(false);
     setOfferRailway(false);
     setAirportRates({ includedHours: {}, includedKm: {}, fare: {}, waitingPerHour: {}, extraPerKm: {} });
     setRailwayRates({ includedHours: {}, includedKm: {}, fare: {}, waitingPerHour: {}, extraPerKm: {} });
+    setPickupDropFuelConfig(DEFAULT_FUEL_CHARGES_CONFIG);
     setOfferDayRent(false);
     setDayRentRates({ dayRent12Hrs: {}, dayRent24Hrs: {}, fuelMileage: {}, driverBata12Hrs: {}, driverBata24Hrs: {}, nightHaltPerNight: {} });
+    setDayRentFuelConfig(DEFAULT_FUEL_CHARGES_CONFIG);
     setOfferOutstation(false);
     setOutstationRates({ baseKmSlab: {}, perKmCharge: {}, driverBataPerDay: {}, nightHaltPerNight: {} });
+    setOutstationFuelConfig(DEFAULT_FUEL_CHARGES_CONFIG);
     setOfferActivityLog(false);
     setIsCustomCompany(false);
     setIsOffCanvasOpen(true);
@@ -831,20 +862,24 @@ interface CompanyOptionItem {
           enabled: offerLocal,
           packages: localPackages,
           extraRates: localExtraRates,
+          fuelConfig: localFuelConfig,
         },
         pickupDropDuty: {
           offerAirport: offerAirport,
           offerRailway: offerRailway,
           airportRates: airportRates,
           railwayRates: railwayRates,
+          fuelConfig: pickupDropFuelConfig,
         },
         dayRentDuty: {
           enabled: offerDayRent,
           rates: dayRentRates,
+          fuelConfig: dayRentFuelConfig,
         },
         outstationDuty: {
           enabled: offerOutstation,
           rates: outstationRates,
+          fuelConfig: outstationFuelConfig,
         },
         // Compatibility fields for Bookings dropdown
         planName: `${trimmedCust} Tariff`,
@@ -945,7 +980,7 @@ interface CompanyOptionItem {
         <span className="text-slate-300">/</span>
         <span className="text-slate-500">COMMERCIAL</span>
         <span className="text-slate-300">/</span>
-        <span className="text-[#f16623] font-medium">Tariffs</span>
+        <span className="text-[#f16623] font-medium">Company Tariff</span>
       </nav>
 
       {/* Top Header Card */}
@@ -957,7 +992,7 @@ interface CompanyOptionItem {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-sm sm:text-base font-medium text-slate-900 leading-tight">
-                Tariffs & Pricing Matrix
+                Company Tariff & Pricing Matrix
               </h1>
               <span className="px-2 py-0.5 rounded-[6px] text-[10px] font-medium bg-orange-50 text-[#f16623] border border-[#f16623]/20">
                 {tariffsList.length} Total
@@ -1807,6 +1842,13 @@ interface CompanyOptionItem {
                   </p>
                 </div>
               )}
+
+              {/* Fuel Charges Section */}
+              <FuelChargesCard
+                dutyTitle="Local"
+                config={localFuelConfig}
+                onChange={setLocalFuelConfig}
+              />
             </div>
           )}
 
@@ -2062,6 +2104,13 @@ interface CompanyOptionItem {
                   </p>
                 </div>
               )}
+
+              {/* Fuel Charges Section */}
+              <FuelChargesCard
+                dutyTitle="Pickup & Drop"
+                config={pickupDropFuelConfig}
+                onChange={setPickupDropFuelConfig}
+              />
             </div>
           )}
 
@@ -2203,6 +2252,13 @@ interface CompanyOptionItem {
                   </p>
                 </div>
               )}
+
+              {/* Fuel Charges Section */}
+              <FuelChargesCard
+                dutyTitle="Day Rent"
+                config={dayRentFuelConfig}
+                onChange={setDayRentFuelConfig}
+              />
             </div>
           )}
 
@@ -2319,6 +2375,13 @@ interface CompanyOptionItem {
                   </p>
                 </div>
               )}
+
+              {/* Fuel Charges Section */}
+              <FuelChargesCard
+                dutyTitle="Outstation"
+                config={outstationFuelConfig}
+                onChange={setOutstationFuelConfig}
+              />
             </div>
           )}
 
