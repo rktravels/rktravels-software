@@ -1,9 +1,53 @@
 "use client";
 
+import { useState, useEffect, Fragment } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NAV_ITEMS } from "@/lib/pages-data";
-import { ArrowLeftRight, X } from "lucide-react";
+import {
+  ArrowLeftRight,
+  X,
+  BarChart3,
+  ChevronDown,
+  CalendarCheck,
+  UserCheck,
+  Car,
+  WalletCards,
+  Briefcase,
+} from "lucide-react";
+
+const REPORT_NAV_ITEMS = [
+  {
+    id: "report-bookings",
+    name: "Bookings report",
+    href: "/reports/bookings",
+    icon: CalendarCheck,
+  },
+  {
+    id: "report-drivers",
+    name: "Driver report",
+    href: "/reports/drivers",
+    icon: UserCheck,
+  },
+  {
+    id: "report-vehicles",
+    name: "Vehicel report",
+    href: "/reports/vehicles",
+    icon: Car,
+  },
+  {
+    id: "report-credit",
+    name: "Credit report",
+    href: "/reports/credit",
+    icon: WalletCards,
+  },
+  {
+    id: "report-car-vendors",
+    name: "Care vendor report",
+    href: "/reports/car-vendors",
+    icon: Briefcase,
+  },
+];
 
 interface SidebarProps {
   mobileOpen?: boolean;
@@ -12,6 +56,14 @@ interface SidebarProps {
 
 export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
   const pathname = usePathname();
+  const isReportsRoute = pathname?.startsWith("/reports");
+  const [reportsOpen, setReportsOpen] = useState(isReportsRoute);
+
+  useEffect(() => {
+    if (isReportsRoute) {
+      setReportsOpen(true);
+    }
+  }, [isReportsRoute]);
 
   return (
     <>
@@ -64,9 +116,10 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
           </span>
           <button
             type="button"
-            className="text-[10px] text-slate-400 hover:text-[#f16623] transition-colors h-[22px] max-h-[34px]"
+            onClick={() => setReportsOpen((prev) => !prev)}
+            className="text-[10px] text-slate-400 hover:text-[#f16623] transition-colors h-[22px] max-h-[34px] cursor-pointer"
           >
-            expand all
+            {reportsOpen ? "collapse all" : "expand all"}
           </button>
         </div>
 
@@ -79,25 +132,92 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
               (item.href === "/dashboard" && pathname === "/");
 
             return (
-              <Link
-                key={item.id}
-                href={item.href}
-                onClick={onCloseMobile}
-                className={`group flex items-center gap-2.5 px-3 h-[34px] max-h-[34px] rounded-[6px] text-xs font-medium transition-all duration-150 ${
-                  isActive
-                    ? "bg-[#f16623] text-white shadow-xs shadow-[#f16623]/30"
-                    : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-normal"
-                }`}
-              >
-                <Icon
-                  className={`w-3.5 h-3.5 shrink-0 transition-colors ${
+              <Fragment key={item.id}>
+                <Link
+                  href={item.href}
+                  onClick={onCloseMobile}
+                  className={`group flex items-center gap-2.5 px-3 h-[34px] max-h-[34px] rounded-[6px] text-xs font-medium transition-all duration-150 ${
                     isActive
-                      ? "text-white"
-                      : "text-slate-400 group-hover:text-slate-700"
+                      ? "bg-[#f16623] text-white shadow-xs shadow-[#f16623]/30"
+                      : "text-slate-600 hover:bg-slate-50 hover:text-slate-900 font-normal"
                   }`}
-                />
-                <span className="truncate">{item.name}</span>
-              </Link>
+                >
+                  <Icon
+                    className={`w-3.5 h-3.5 shrink-0 transition-colors ${
+                      isActive
+                        ? "text-white"
+                        : "text-slate-400 group-hover:text-slate-700"
+                    }`}
+                  />
+                  <span className="truncate">{item.name}</span>
+                </Link>
+
+                {/* Reports Accordion placed immediately below Dashboard */}
+                {item.id === "dashboard" && (
+                  <div>
+                    {/* Reports Accordion Trigger */}
+                    <button
+                      type="button"
+                      onClick={() => setReportsOpen((prev) => !prev)}
+                      className={`w-full group flex items-center justify-between px-3 h-[34px] max-h-[34px] rounded-[6px] text-xs font-medium transition-all duration-150 cursor-pointer ${
+                        isReportsRoute
+                          ? "bg-orange-50 text-[#f16623] font-semibold"
+                          : "text-slate-700 hover:bg-slate-50 hover:text-slate-900 font-normal"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <BarChart3
+                          className={`w-3.5 h-3.5 shrink-0 transition-colors ${
+                            isReportsRoute
+                              ? "text-[#f16623]"
+                              : "text-slate-400 group-hover:text-slate-700"
+                          }`}
+                        />
+                        <span className="truncate font-medium">Reports</span>
+                      </div>
+                      <ChevronDown
+                        className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${
+                          reportsOpen
+                            ? "rotate-180 text-[#f16623]"
+                            : "text-slate-400 group-hover:text-slate-600"
+                        }`}
+                      />
+                    </button>
+
+                    {/* Accordion Sub-items */}
+                    {reportsOpen && (
+                      <div className="pl-3 pr-1 py-1 space-y-0.5 border-l-2 border-orange-200/80 ml-4 my-1 transition-all">
+                        {REPORT_NAV_ITEMS.map((sub) => {
+                          const SubIcon = sub.icon;
+                          const isSubActive = pathname === sub.href;
+
+                          return (
+                            <Link
+                              key={sub.id}
+                              href={sub.href}
+                              onClick={onCloseMobile}
+                              className={`group flex items-center gap-2 px-2.5 h-[32px] max-h-[34px] rounded-[6px] text-xs transition-all ${
+                                isSubActive
+                                  ? "bg-[#f16623] text-white font-medium shadow-xs shadow-[#f16623]/25"
+                                  : "text-slate-600 hover:bg-slate-100/70 hover:text-slate-900 font-normal"
+                              }`}
+                            >
+                              <SubIcon
+                                className={`w-3 h-3 shrink-0 transition-colors ${
+                                  isSubActive
+                                    ? "text-white"
+                                    : "text-slate-400 group-hover:text-slate-600"
+                                }`}
+                              />
+                              <span className="truncate">{sub.name}</span>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </Fragment>
             );
           })}
         </div>
