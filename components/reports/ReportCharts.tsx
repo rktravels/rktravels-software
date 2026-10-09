@@ -617,3 +617,274 @@ export function SolidLineChart({
     </div>
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/* 6. Solid Pie Chart (True circular sector slices)                           */
+/* -------------------------------------------------------------------------- */
+export interface PieSlice {
+  label: string;
+  value: number;
+  color?: string;
+}
+
+interface SolidPieChartProps {
+  title: string;
+  subtitle?: string;
+  slices: PieSlice[];
+  valueFormatter?: (val: number) => string;
+}
+
+export function SolidPieChart({
+  title,
+  subtitle,
+  slices,
+  valueFormatter = (val) => val.toString(),
+}: SolidPieChartProps) {
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+  const total = slices.reduce((sum, s) => sum + s.value, 0);
+
+  const size = 160;
+  const radius = 68;
+  const cx = size / 2;
+  const cy = size / 2;
+
+  let currentAngle = -Math.PI / 2; // start from top
+
+  const paths = slices.map((slice, idx) => {
+    if (slice.value <= 0 || total === 0) return null;
+    const sliceAngle = (slice.value / total) * 2 * Math.PI;
+    const startAngle = currentAngle;
+    const endAngle = currentAngle + sliceAngle;
+    currentAngle += sliceAngle;
+
+    const x1 = cx + radius * Math.cos(startAngle);
+    const y1 = cy + radius * Math.sin(startAngle);
+    const x2 = cx + radius * Math.cos(endAngle);
+    const y2 = cy + radius * Math.sin(endAngle);
+
+    const largeArcFlag = sliceAngle > Math.PI ? 1 : 0;
+    const d = `M ${cx} ${cy} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x2} ${y2} Z`;
+
+    const color = slice.color || SOLID_PALETTE[idx % SOLID_PALETTE.length];
+    return { d, color, label: slice.label, value: slice.value, idx };
+  });
+
+  return (
+    <div className="bg-white border border-slate-200/90 rounded-[6px] p-4 shadow-2xs flex flex-col">
+      <div className="mb-3">
+        <h4 className="text-xs font-semibold text-slate-900">{title}</h4>
+        {subtitle && <p className="text-[11px] text-slate-400 mt-0.5">{subtitle}</p>}
+      </div>
+
+      {total === 0 ? (
+        <div className="py-8 text-center text-xs text-slate-400">No data available</div>
+      ) : (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 flex-1">
+          <div className="relative shrink-0 flex items-center justify-center">
+            <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+              {paths.map((p) => {
+                if (!p) return null;
+                return (
+                  <path
+                    key={p.label}
+                    d={p.d}
+                    fill={p.color}
+                    stroke="#ffffff"
+                    strokeWidth={1.5}
+                    className="transition-opacity duration-150 cursor-pointer hover:opacity-85"
+                    onMouseEnter={() => setHoveredIdx(p.idx)}
+                    onMouseLeave={() => setHoveredIdx(null)}
+                  />
+                );
+              })}
+            </svg>
+          </div>
+
+          {/* Legend */}
+          <div className="flex-1 space-y-1.5 w-full">
+            {slices.map((slice, idx) => {
+              const color = slice.color || SOLID_PALETTE[idx % SOLID_PALETTE.length];
+              const percent = total > 0 ? ((slice.value / total) * 100).toFixed(1) : "0";
+              const isHovered = hoveredIdx === idx;
+
+              return (
+                <div
+                  key={slice.label}
+                  onMouseEnter={() => setHoveredIdx(idx)}
+                  onMouseLeave={() => setHoveredIdx(null)}
+                  className={`flex items-center justify-between p-1.5 rounded-[4px] text-xs transition cursor-pointer ${
+                    isHovered ? "bg-slate-100/80" : "hover:bg-slate-50"
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0 pr-1">
+                    <span
+                      className="w-2.5 h-2.5 rounded-[2px] shrink-0"
+                      style={{ backgroundColor: color }}
+                    />
+                    <span className="text-slate-700 truncate font-medium">{slice.label}</span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="font-semibold text-slate-900">
+                      {valueFormatter(slice.value)}
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-normal w-10 text-right">
+                      {percent}%
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* 7. Solid Area Graph (Filled area under trendline)                           */
+/* -------------------------------------------------------------------------- */
+export interface AreaPoint {
+  label: string;
+  value: number;
+}
+
+interface SolidAreaChartProps {
+  title: string;
+  subtitle?: string;
+  data: AreaPoint[];
+  color?: string;
+  valueFormatter?: (val: number) => string;
+}
+
+export function SolidAreaChart({
+  title,
+  subtitle,
+  data,
+  color = "#f16623",
+  valueFormatter = (val) => val.toString(),
+}: SolidAreaChartProps) {
+  const [hoveredIdx, setHoveredIdx] = useState<number | null>(null);
+
+  if (data.length === 0) {
+    return (
+      <div className="bg-white border border-slate-200/90 rounded-[6px] p-4 shadow-2xs">
+        <h4 className="text-xs font-semibold text-slate-900">{title}</h4>
+        <div className="py-8 text-center text-xs text-slate-400">No data points</div>
+      </div>
+    );
+  }
+
+  const width = 500;
+  const height = 150;
+  const paddingX = 25;
+  const paddingY = 20;
+
+  const maxVal = Math.max(...data.map((d) => d.value), 1);
+  const minVal = 0;
+
+  const getX = (idx: number) => {
+    if (data.length <= 1) return width / 2;
+    return paddingX + (idx / (data.length - 1)) * (width - 2 * paddingX);
+  };
+
+  const getY = (val: number) => {
+    const ratio = (val - minVal) / (maxVal - minVal);
+    return height - paddingY - ratio * (height - 2 * paddingY);
+  };
+
+  const linePoints = data.map((d, i) => `${getX(i).toFixed(1)},${getY(d.value).toFixed(1)}`);
+  const linePointsString = linePoints.join(" ");
+
+  const yBottom = height - paddingY;
+  const firstX = getX(0).toFixed(1);
+  const lastX = getX(data.length - 1).toFixed(1);
+  const areaPath = `M ${firstX} ${yBottom} L ${linePoints.join(" L ")} L ${lastX} ${yBottom} Z`;
+
+  return (
+    <div className="bg-white border border-slate-200/90 rounded-[6px] p-4 shadow-2xs flex flex-col">
+      <div className="flex items-center justify-between mb-3">
+        <div>
+          <h4 className="text-xs font-semibold text-slate-900">{title}</h4>
+          {subtitle && <p className="text-[11px] text-slate-400 mt-0.5">{subtitle}</p>}
+        </div>
+        {hoveredIdx !== null && (
+          <div className="px-2 py-0.5 bg-slate-900 text-white rounded-[4px] text-[10px] font-medium">
+            {data[hoveredIdx].label}: {valueFormatter(data[hoveredIdx].value)}
+          </div>
+        )}
+      </div>
+
+      <div className="w-full overflow-hidden">
+        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-auto overflow-visible">
+          {/* Subtle Guidelines */}
+          <line
+            x1={paddingX}
+            y1={paddingY}
+            x2={width - paddingX}
+            y2={paddingY}
+            stroke="#f1f5f9"
+            strokeDasharray="4 4"
+          />
+          <line
+            x1={paddingX}
+            y1={height / 2}
+            x2={width - paddingX}
+            y2={height / 2}
+            stroke="#f1f5f9"
+            strokeDasharray="4 4"
+          />
+          <line
+            x1={paddingX}
+            y1={yBottom}
+            x2={width - paddingX}
+            y2={yBottom}
+            stroke="#cbd5e1"
+          />
+
+          {/* Solid Area Fill with clean solid opacity */}
+          <path d={areaPath} fill={color} fillOpacity="0.18" />
+
+          {/* Top Line Stroke */}
+          <polyline
+            fill="none"
+            stroke={color}
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            points={linePointsString}
+          />
+
+          {/* Data Points */}
+          {data.map((d, idx) => {
+            const cx = getX(idx);
+            const cy = getY(d.value);
+            const isHovered = hoveredIdx === idx;
+
+            return (
+              <circle
+                key={idx}
+                cx={cx}
+                cy={cy}
+                r={isHovered ? 5.5 : 3.5}
+                fill={isHovered ? "#ffffff" : color}
+                stroke={color}
+                strokeWidth={isHovered ? 3 : 1.5}
+                className="transition-all cursor-pointer"
+                onMouseEnter={() => setHoveredIdx(idx)}
+                onMouseLeave={() => setHoveredIdx(null)}
+              />
+            );
+          })}
+        </svg>
+
+        {/* X Axis labels */}
+        <div className="flex justify-between items-center text-[10px] text-slate-400 mt-1 px-2">
+          <span>{data[0]?.label}</span>
+          {data.length > 2 && <span>{data[Math.floor(data.length / 2)]?.label}</span>}
+          <span>{data[data.length - 1]?.label}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
