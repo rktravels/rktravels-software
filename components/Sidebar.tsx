@@ -43,7 +43,7 @@ const REPORT_NAV_ITEMS = [
   },
   {
     id: "report-car-vendors",
-    name: "Care vendor report",
+    name: "Car vendor report",
     href: "/reports/car-vendors",
     icon: Briefcase,
   },
