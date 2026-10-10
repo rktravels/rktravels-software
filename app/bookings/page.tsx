@@ -9,6 +9,7 @@ import {
   MapPin,
   ArrowRight,
   User,
+  Users,
   Building2,
   Layers,
   IndianRupee,
@@ -86,6 +87,11 @@ export interface PaymentHistoryItem {
   recordedAt?: string;
 }
 
+export interface PassengerItem {
+  name: string;
+  mobile?: string;
+}
+
 export interface BookingRecord {
   id: string;
   bookingNumber: string;
@@ -111,6 +117,7 @@ export interface BookingRecord {
   tariffPackageName?: string;
   travelerName: string;
   travelerMobile: string;
+  passengers?: PassengerItem[];
 
   // Tab 2: Trip Assignment
   durationText: string;
@@ -258,6 +265,45 @@ export default function BookingsPage() {
 
   const [travelerName, setTravelerName] = useState("");
   const [travelerMobile, setTravelerMobile] = useState("");
+  const [passengers, setPassengers] = useState<PassengerItem[]>([
+    { name: "", mobile: "" },
+  ]);
+
+  const handleAddPassenger = () => {
+    setPassengers((prev) => [...prev, { name: "", mobile: "" }]);
+  };
+
+  const handleRemovePassenger = (index: number) => {
+    setPassengers((prev) => {
+      if (prev.length <= 1) {
+        setTravelerName("");
+        setTravelerMobile("");
+        return [{ name: "", mobile: "" }];
+      }
+      const updated = prev.filter((_, i) => i !== index);
+      if (index === 0 && updated[0]) {
+        setTravelerName(updated[0].name);
+        setTravelerMobile(updated[0].mobile || "");
+      }
+      return updated;
+    });
+  };
+
+  const handlePassengerChange = (
+    index: number,
+    field: "name" | "mobile",
+    value: string
+  ) => {
+    setPassengers((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value };
+      if (index === 0) {
+        if (field === "name") setTravelerName(value);
+        if (field === "mobile") setTravelerMobile(value);
+      }
+      return updated;
+    });
+  };
 
   // =========================================================================
   // TAB 2: TRIP ASSIGNMENT STATE
@@ -1135,13 +1181,17 @@ export default function BookingsPage() {
     if (companies.length > 0) {
       setSelectedCustomerId(companies[0].id);
       setSelectedCustomerName(companies[0].name);
-      setTravelerName(companies[0].contactPerson || "");
-      setTravelerMobile(companies[0].mobile || "");
+      const pName = companies[0].contactPerson || companies[0].name || "";
+      const pMob = companies[0].mobile || "";
+      setTravelerName(pName);
+      setTravelerMobile(pMob);
+      setPassengers([{ name: pName, mobile: pMob }]);
     } else {
       setSelectedCustomerId("");
       setSelectedCustomerName("");
       setTravelerName("");
       setTravelerMobile("");
+      setPassengers([{ name: "", mobile: "" }]);
     }
     setSelectedVehicleId("");
     setSelectedVehicleReg("");
@@ -1188,6 +1238,28 @@ export default function BookingsPage() {
     setSelectedCustomerName(booking.customerName || "");
     setTravelerName(booking.travelerName || "");
     setTravelerMobile(booking.travelerMobile || "");
+    if (booking.passengers && Array.isArray(booking.passengers) && booking.passengers.length > 0) {
+      setPassengers(
+        booking.passengers.map((p) => ({
+          name: p.name || "",
+          mobile: p.mobile || "",
+        }))
+      );
+    } else if (booking.travelerName) {
+      const parts = booking.travelerName.split(",").map((s) => s.trim()).filter(Boolean);
+      if (parts.length > 1) {
+        setPassengers(
+          parts.map((pName, idx) => ({
+            name: pName,
+            mobile: idx === 0 ? booking.travelerMobile || "" : "",
+          }))
+        );
+      } else {
+        setPassengers([{ name: booking.travelerName, mobile: booking.travelerMobile || "" }]);
+      }
+    } else {
+      setPassengers([{ name: "", mobile: "" }]);
+    }
     setSelectedVehicleCategory(booking.vehicleCategory || "Sedan");
     setSelectedTariffType((booking.tariffType as any) || "");
     setSelectedPackageId(booking.tariffPackageId || "");
@@ -1279,7 +1351,9 @@ export default function BookingsPage() {
       alert("Please select a vehicle category.");
       return false;
     }
-    if (!travelerName.trim()) {
+    const hasPassengerName =
+      passengers.some((p) => p.name.trim() !== "") || travelerName.trim() !== "";
+    if (!hasPassengerName) {
       setActiveTab("details");
       alert("Please enter passenger / traveler name.");
       return false;
@@ -1321,6 +1395,27 @@ export default function BookingsPage() {
       const initialPaymentHistory: PaymentHistoryItem[] = [];
       const advanceNum = pricingBreakdown.customerAdvance;
 
+      const validPassengers = passengers
+        .map((p) => ({ name: p.name.trim(), mobile: p.mobile ? p.mobile.trim() : "" }))
+        .filter((p) => p.name !== "");
+
+      const primaryPassenger = validPassengers[0] || {
+        name: (travelerName || selectedCustomerName || "").trim(),
+        mobile: (travelerMobile || "").trim(),
+      };
+
+      const finalTravelerName = validPassengers.length > 0
+        ? validPassengers.map((p) => p.name).join(", ")
+        : (travelerName || selectedCustomerName || "").trim();
+
+      const finalTravelerMobile = validPassengers.length > 0
+        ? primaryPassenger.mobile || ""
+        : (travelerMobile || "").trim();
+
+      const finalPassengersList = validPassengers.length > 0
+        ? validPassengers
+        : [{ name: finalTravelerName, mobile: finalTravelerMobile }];
+
       // Handle UPDATE EXISTING BOOKING
       if (editingBookingId) {
         const updatePayload: Record<string, any> = {
@@ -1340,8 +1435,9 @@ export default function BookingsPage() {
           tariffType: selectedTariffType,
           tariffPackageId: selectedPackageId || "",
           tariffPackageName: selectedPackageName || "",
-          travelerName: (travelerName || selectedCustomerName || "").trim(),
-          travelerMobile: (travelerMobile || "").trim(),
+          travelerName: finalTravelerName,
+          travelerMobile: finalTravelerMobile,
+          passengers: finalPassengersList,
 
           durationText: calculatedDuration.text,
           totalDays: calculatedDuration.totalDays,
@@ -1440,8 +1536,9 @@ export default function BookingsPage() {
         tariffType: selectedTariffType,
         tariffPackageId: selectedPackageId || "",
         tariffPackageName: selectedPackageName || "",
-        travelerName: (travelerName || selectedCustomerName || "").trim(),
-        travelerMobile: (travelerMobile || "").trim(),
+        travelerName: finalTravelerName,
+        travelerMobile: finalTravelerMobile,
+        passengers: finalPassengersList,
 
         durationText: calculatedDuration.text,
         totalDays: calculatedDuration.totalDays,
@@ -1726,6 +1823,11 @@ export default function BookingsPage() {
         b.bookingNumber?.toLowerCase().includes(q) ||
         b.customerName?.toLowerCase().includes(q) ||
         b.travelerName?.toLowerCase().includes(q) ||
+        b.passengers?.some(
+          (p) =>
+            p.name?.toLowerCase().includes(q) ||
+            p.mobile?.includes(q)
+        ) ||
         b.fromLocation?.toLowerCase().includes(q) ||
         b.toLocation?.toLowerCase().includes(q) ||
         b.vehicleRegNumber?.toLowerCase().includes(q) ||
@@ -1983,12 +2085,26 @@ export default function BookingsPage() {
                             {isIndiv ? "Individual" : "Company"}
                           </span>
                         </div>
-                        <div className="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
+                        <div className="text-[11px] text-slate-500 mt-0.5 flex flex-wrap items-center gap-1">
                           <span className="text-slate-400 text-[10px]">Pax:</span>
-                          <span>{b.travelerName}</span>
-                          {b.travelerMobile && (
+                          <span className="font-medium text-slate-800">{b.travelerName || "—"}</span>
+                          {b.travelerMobile && !b.travelerName?.includes(",") && (
                             <span className="text-[10px] text-slate-400">
                               ({b.travelerMobile})
+                            </span>
+                          )}
+                          {b.passengers && b.passengers.length > 1 && (
+                            <span
+                              className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-orange-50 text-[#f16623] border border-orange-200 text-[9px] font-semibold cursor-help"
+                              title={b.passengers
+                                .map(
+                                  (p, idx) =>
+                                    `${idx + 1}. ${p.name}${p.mobile ? ` (${p.mobile})` : ""}`
+                                )
+                                .join("\n")}
+                            >
+                              <Users className="w-2.5 h-2.5" />
+                              {b.passengers.length} Pax
                             </span>
                           )}
                         </div>
@@ -2398,8 +2514,16 @@ export default function BookingsPage() {
                         if (companies.length > 0) {
                           setSelectedCustomerId(companies[0].id);
                           setSelectedCustomerName(companies[0].name);
-                          setTravelerName(companies[0].contactPerson || companies[0].name);
-                          setTravelerMobile(companies[0].mobile || "");
+                          const pName = companies[0].contactPerson || companies[0].name;
+                          const pMob = companies[0].mobile || "";
+                          setTravelerName(pName);
+                          setTravelerMobile(pMob);
+                          setPassengers((prev) => {
+                            if (prev.length <= 1) return [{ name: pName, mobile: pMob }];
+                            const updated = [...prev];
+                            updated[0] = { name: pName, mobile: pMob };
+                            return updated;
+                          });
                         } else {
                           setSelectedCustomerId("");
                           setSelectedCustomerName("");
@@ -2408,8 +2532,16 @@ export default function BookingsPage() {
                         if (individualCustomers.length > 0) {
                           setSelectedCustomerId(individualCustomers[0].id);
                           setSelectedCustomerName(individualCustomers[0].name);
-                          setTravelerName(individualCustomers[0].name);
-                          setTravelerMobile(individualCustomers[0].mobile || "");
+                          const pName = individualCustomers[0].name;
+                          const pMob = individualCustomers[0].mobile || "";
+                          setTravelerName(pName);
+                          setTravelerMobile(pMob);
+                          setPassengers((prev) => {
+                            if (prev.length <= 1) return [{ name: pName, mobile: pMob }];
+                            const updated = [...prev];
+                            updated[0] = { name: pName, mobile: pMob };
+                            return updated;
+                          });
                         } else {
                           setSelectedCustomerId("");
                           setSelectedCustomerName("");
@@ -2440,8 +2572,16 @@ export default function BookingsPage() {
                           const comp = companies.find((c) => c.id === cId);
                           if (comp) {
                             setSelectedCustomerName(comp.name);
-                            setTravelerName(comp.contactPerson || comp.name);
-                            setTravelerMobile(comp.mobile || "");
+                            const pName = comp.contactPerson || comp.name;
+                            const pMob = comp.mobile || "";
+                            setTravelerName(pName);
+                            setTravelerMobile(pMob);
+                            setPassengers((prev) => {
+                              if (prev.length <= 1) return [{ name: pName, mobile: pMob }];
+                              const updated = [...prev];
+                              updated[0] = { name: pName, mobile: pMob };
+                              return updated;
+                            });
                           } else {
                             setSelectedCustomerName("");
                           }
@@ -2466,8 +2606,16 @@ export default function BookingsPage() {
                           const cust = individualCustomers.find((c) => c.id === cId);
                           if (cust) {
                             setSelectedCustomerName(cust.name);
-                            setTravelerName(cust.name);
-                            setTravelerMobile(cust.mobile || "");
+                            const pName = cust.name;
+                            const pMob = cust.mobile || "";
+                            setTravelerName(pName);
+                            setTravelerMobile(pMob);
+                            setPassengers((prev) => {
+                              if (prev.length <= 1) return [{ name: pName, mobile: pMob }];
+                              const updated = [...prev];
+                              updated[0] = { name: pName, mobile: pMob };
+                              return updated;
+                            });
                           } else {
                             setSelectedCustomerName("");
                           }
@@ -2577,32 +2725,101 @@ export default function BookingsPage() {
                 </div>
               </div>
 
-              {/* Traveler Details */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
-                    TRAVELER / PASSENGER NAME *
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Ramesh Kumar (Director)"
-                    value={travelerName}
-                    onChange={(e) => setTravelerName(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-normal"
-                  />
+              {/* Traveler / Multiple Passengers Details */}
+              <div className="pt-2 border-t border-slate-100/90 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-[#f16623]" />
+                    <label className="text-[10px] font-semibold text-slate-700 uppercase tracking-wider">
+                      PASSENGERS / TRAVELERS ({passengers.length})
+                    </label>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAddPassenger}
+                    className="h-[26px] px-2.5 rounded-[5px] border border-orange-200 bg-orange-50 hover:bg-orange-100/80 text-[#f16623] text-[11px] font-medium transition flex items-center gap-1 cursor-pointer active:scale-95"
+                  >
+                    <Plus className="w-3 h-3 stroke-[2.5]" />
+                    <span>Add Passenger</span>
+                  </button>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
-                    TRAVELER MOBILE NUMBER
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. 9876543210"
-                    value={travelerMobile}
-                    onChange={(e) => setTravelerMobile(e.target.value)}
-                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-normal"
-                  />
+
+                <div className="space-y-2">
+                  {passengers.map((passenger, index) => (
+                    <div
+                      key={index}
+                      className={`p-2.5 rounded-[8px] border transition-all ${
+                        index === 0
+                          ? "bg-slate-50/70 border-slate-200/80"
+                          : "bg-white border-slate-200/70 shadow-2xs"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded text-slate-700 bg-slate-200/70">
+                            Passenger {index + 1}
+                          </span>
+                          {index === 0 && (
+                            <span className="text-[9px] font-medium px-1.5 py-0.2 rounded bg-orange-100 text-[#f16623]">
+                              Primary Contact
+                            </span>
+                          )}
+                        </div>
+                        {index > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePassenger(index)}
+                            className="text-slate-400 hover:text-red-500 transition p-1 rounded hover:bg-red-50 cursor-pointer flex items-center gap-1 text-[10px]"
+                            title="Remove passenger"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span className="hidden sm:inline">Remove</span>
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-medium text-slate-500 uppercase tracking-wider block">
+                            {index === 0 ? "PASSENGER NAME *" : "PASSENGER NAME"}
+                          </label>
+                          <input
+                            type="text"
+                            placeholder={index === 0 ? "e.g. Ramesh Kumar (Director)" : "e.g. Suresh Patel"}
+                            value={passenger.name}
+                            onChange={(e) => handlePassengerChange(index, "name", e.target.value)}
+                            className="w-full h-[32px] max-h-[32px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-normal"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-medium text-slate-500 uppercase tracking-wider block">
+                            {index === 0 ? "TRAVELER MOBILE NUMBER" : "MOBILE NUMBER (OPTIONAL)"}
+                          </label>
+                          <input
+                            type="text"
+                            placeholder={index === 0 ? "e.g. 9876543210" : "e.g. 9876500000"}
+                            value={passenger.mobile}
+                            onChange={(e) => handlePassengerChange(index, "mobile", e.target.value)}
+                            className="w-full h-[32px] max-h-[32px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-normal"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
+
+                {passengers.length > 1 && (
+                  <div className="flex justify-end pt-0.5">
+                    <button
+                      type="button"
+                      onClick={handleAddPassenger}
+                      className="text-[11px] text-[#f16623] hover:underline flex items-center gap-1 font-medium cursor-pointer"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>Add Another Passenger</span>
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* Step 1 Actions */}
@@ -3186,7 +3403,13 @@ export default function BookingsPage() {
                       {selectedCustomerName || "Not Selected"}
                     </span>
                     <span className="text-[11px] text-slate-500 block mt-0.5">
-                      Traveler / Contact: {travelerName || selectedCustomerName} {travelerMobile ? `(${travelerMobile})` : ""}
+                      Traveler(s):{" "}
+                      {passengers.filter((p) => p.name.trim()).length > 0
+                        ? passengers
+                            .filter((p) => p.name.trim())
+                            .map((p) => `${p.name}${p.mobile ? ` (${p.mobile})` : ""}`)
+                            .join(", ")
+                        : travelerName || selectedCustomerName || "—"}
                     </span>
                   </div>
                   <div className="text-right">
@@ -3483,10 +3706,40 @@ export default function BookingsPage() {
                       : "Company"}
                   </span>
                 </div>
-                <span className="text-[11px] text-slate-500 block mt-0.5">
-                  Traveler: {viewingBooking.travelerName} (
-                  {viewingBooking.travelerMobile})
-                </span>
+                {viewingBooking.passengers && viewingBooking.passengers.length > 1 ? (
+                  <div className="mt-1 space-y-1">
+                    <span className="text-[10px] font-medium text-slate-400 uppercase tracking-wider block">
+                      Passengers ({viewingBooking.passengers.length})
+                    </span>
+                    <div className="space-y-1 bg-slate-50 p-2 rounded-[6px] border border-slate-200/60 max-h-36 overflow-y-auto">
+                      {viewingBooking.passengers.map((p, idx) => (
+                        <div key={idx} className="flex items-center justify-between text-xs text-slate-700">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-4 h-4 rounded-full bg-slate-200 text-slate-600 text-[9px] font-bold flex items-center justify-center">
+                              {idx + 1}
+                            </span>
+                            <span className="font-medium text-slate-900">{p.name}</span>
+                            {idx === 0 && (
+                              <span className="text-[9px] px-1 py-0.2 rounded bg-orange-100 text-[#f16623] font-medium">
+                                Lead
+                              </span>
+                            )}
+                          </div>
+                          {p.mobile && (
+                            <span className="text-[11px] text-slate-500 font-mono">
+                              {p.mobile}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <span className="text-[11px] text-slate-500 block mt-0.5">
+                    Traveler: {viewingBooking.travelerName}{" "}
+                    {viewingBooking.travelerMobile ? `(${viewingBooking.travelerMobile})` : ""}
+                  </span>
+                )}
               </div>
 
               <div>

@@ -112,22 +112,6 @@ export const NAV_ITEMS: PageModuleInfo[] = [
     ],
   },
   {
-    id: "customers",
-    name: "Customers",
-    href: "/customers",
-    category: "CRM & CLIENTS",
-    icon: Users,
-    description:
-      "Customer 360 directory with lifetime trip history, loyalty credits, corporate affiliations, and preferences.",
-    primaryAction: "Add Customer",
-    secondaryAction: "Customer Directory",
-    plannedFeatures: [
-      "Comprehensive trip history, frequent route preferences & rating records",
-      "Loyalty rewards, promotional discount tiers & referral tracking",
-      "Corporate billing profiles with customized tax invoices",
-    ],
-  },
-  {
     id: "companies",
     name: "Companies",
     href: "/companies",
@@ -157,6 +141,22 @@ export const NAV_ITEMS: PageModuleInfo[] = [
       "Hourly, daily & outstation package pricing rules configuration",
       "Vehicle category-based base fares, extra km and waiting charge rules",
       "Seasonal surge multiplier & holiday premium tariff scheduler",
+    ],
+  },
+  {
+    id: "customers",
+    name: "Customers",
+    href: "/customers",
+    category: "CRM & CLIENTS",
+    icon: Users,
+    description:
+      "Customer 360 directory with lifetime trip history, loyalty credits, corporate affiliations, and preferences.",
+    primaryAction: "Add Customer",
+    secondaryAction: "Customer Directory",
+    plannedFeatures: [
+      "Comprehensive trip history, frequent route preferences & rating records",
+      "Loyalty rewards, promotional discount tiers & referral tracking",
+      "Corporate billing profiles with customized tax invoices",
     ],
   },
   {
