@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useMemo, Fragment } from "react";
+import { useState, useEffect, useMemo, Fragment, useRef } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import {
   CalendarCheck,
@@ -344,16 +345,64 @@ export default function BookingsPage() {
     PaymentStatus | null
   >(null);
 
-  // Action Popover Menu (3 vertical dots)
-  const [activeActionMenuId, setActiveActionMenuId] = useState<string | null>(null);
+  // Action Popover Menu (3 vertical dots - rendered via Portal on top of everything)
+  const [activeActionMenu, setActiveActionMenu] = useState<{
+    booking: BookingRecord;
+    rect: DOMRect;
+    placeAbove: boolean;
+  } | null>(null);
+  const closeMenuTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Close popover when clicking anywhere outside
+  const openActionMenu = (booking: BookingRecord, element: HTMLElement) => {
+    if (closeMenuTimeoutRef.current) {
+      clearTimeout(closeMenuTimeoutRef.current);
+      closeMenuTimeoutRef.current = null;
+    }
+    const rect = element.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const placeAbove = spaceBelow < 220 && rect.top > spaceBelow;
+    setActiveActionMenu({
+      booking,
+      rect,
+      placeAbove,
+    });
+  };
+
+  const closeActionMenuWithDelay = () => {
+    if (closeMenuTimeoutRef.current) {
+      clearTimeout(closeMenuTimeoutRef.current);
+    }
+    closeMenuTimeoutRef.current = setTimeout(() => {
+      setActiveActionMenu(null);
+    }, 180);
+  };
+
+  const cancelCloseActionMenu = () => {
+    if (closeMenuTimeoutRef.current) {
+      clearTimeout(closeMenuTimeoutRef.current);
+      closeMenuTimeoutRef.current = null;
+    }
+  };
+
+  // Close popover when clicking outside, scrolling anywhere, or resizing
   useEffect(() => {
-    if (!activeActionMenuId) return;
-    const handleClickOutside = () => setActiveActionMenuId(null);
-    window.addEventListener("click", handleClickOutside);
-    return () => window.removeEventListener("click", handleClickOutside);
-  }, [activeActionMenuId]);
+    if (!activeActionMenu) return;
+    const handleClose = () => {
+      if (closeMenuTimeoutRef.current) {
+        clearTimeout(closeMenuTimeoutRef.current);
+        closeMenuTimeoutRef.current = null;
+      }
+      setActiveActionMenu(null);
+    };
+    window.addEventListener("scroll", handleClose, true);
+    window.addEventListener("resize", handleClose);
+    window.addEventListener("click", handleClose);
+    return () => {
+      window.removeEventListener("scroll", handleClose, true);
+      window.removeEventListener("resize", handleClose);
+      window.removeEventListener("click", handleClose);
+    };
+  }, [activeActionMenu]);
 
   // -------------------------------------------------------------------------
   // 1. Subscribe to Entities / Travels
@@ -2034,13 +2083,10 @@ export default function BookingsPage() {
                   </td>
                 </tr>
               ) : (
-                filteredBookings.map((b, idx) => {
+                filteredBookings.map((b) => {
                   const isIndiv =
                     b.clientType === "Individual Customer" ||
                     b.customerType === "Individual Customer";
-                  const isNearBottom =
-                    idx >= Math.max(0, filteredBookings.length - 3) &&
-                    filteredBookings.length > 3;
 
                   return (
                     <tr
@@ -2211,125 +2257,29 @@ export default function BookingsPage() {
                         </span>
                       </td>
 
-                      {/* Actions (3 Vertical Dots Popover) */}
+                      {/* Actions (3 Vertical Dots Popover - floating outside table) */}
                       <td className="py-2.5 px-3 text-right">
-                        <div className="relative inline-block text-left group/action">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setActiveActionMenuId((prev) =>
-                                prev === b.id ? null : b.id
-                              );
-                            }}
-                            className={`w-7 h-7 flex items-center justify-center rounded-[6px] transition cursor-pointer border ${
-                              activeActionMenuId === b.id
-                                ? "bg-slate-100 text-slate-900 border-slate-300"
-                                : "text-slate-500 hover:text-slate-900 hover:bg-slate-100 border-transparent hover:border-slate-200"
-                            }`}
-                            title="Trip actions"
-                          >
-                            <MoreVertical className="w-4 h-4" />
-                          </button>
-
-                          {/* Action Popover Menu (Triggered on Click or Hover) */}
-                          <div
-                            onClick={(e) => e.stopPropagation()}
-                            className={`absolute right-0 z-40 w-44 bg-white rounded-[8px] border border-slate-200/90 shadow-lg p-1 text-xs text-left transition-all ${
-                              isNearBottom
-                                ? "bottom-full mb-1.5 origin-bottom-right"
-                                : "top-full mt-1.5 origin-top-right"
-                            } ${
-                              activeActionMenuId === b.id
-                                ? "block"
-                                : "hidden group-hover/action:block"
-                            }`}
-                          >
-                            <div className="space-y-0.5">
-                              {/* 1. View Details */}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setActiveActionMenuId(null);
-                                  setViewingBooking(b);
-                                }}
-                                className="w-full px-2.5 py-1.5 rounded-[5px] flex items-center gap-2.5 text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition cursor-pointer"
-                              >
-                                <Eye className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                <span>View Details</span>
-                              </button>
-
-                              {/* 2. Edit Booking */}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setActiveActionMenuId(null);
-                                  handleOpenEditBooking(b);
-                                }}
-                                className="w-full px-2.5 py-1.5 rounded-[5px] flex items-center gap-2.5 text-slate-700 hover:bg-orange-50 hover:text-[#f16623] transition cursor-pointer"
-                              >
-                                <Pencil className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                                <span>Edit Booking</span>
-                              </button>
-
-                              {/* 3. Invoice View / Generate */}
-                              {b.invoiceNumber ? (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setActiveActionMenuId(null);
-                                    setInvoiceBooking(b);
-                                  }}
-                                  className="w-full px-2.5 py-1.5 rounded-[5px] flex items-center gap-2.5 text-slate-700 hover:bg-orange-50 hover:text-[#f16623] transition cursor-pointer"
-                                >
-                                  <FileText className="w-3.5 h-3.5 text-[#f16623] shrink-0" />
-                                  <span>View Invoice</span>
-                                </button>
-                              ) : (
-                                <button
-                                  type="button"
-                                  disabled={isAllocatingInvoice}
-                                  onClick={() => {
-                                    setActiveActionMenuId(null);
-                                    handleGenerateInvoice(b);
-                                  }}
-                                  className="w-full px-2.5 py-1.5 rounded-[5px] flex items-center gap-2.5 text-slate-700 hover:bg-orange-50 hover:text-[#f16623] disabled:opacity-50 transition cursor-pointer"
-                                >
-                                  <Sparkles className="w-3.5 h-3.5 text-[#f16623] shrink-0" />
-                                  <span>Generate Invoice</span>
-                                </button>
-                              )}
-
-                              {/* 4. Collect Payment */}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setActiveActionMenuId(null);
-                                  handleOpenCollectPayment(b);
-                                }}
-                                className="w-full px-2.5 py-1.5 rounded-[5px] flex items-center gap-2.5 text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition cursor-pointer"
-                              >
-                                <Banknote className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                                <span>Collect Payment</span>
-                              </button>
-                            </div>
-
-                            {/* 5. Delete Action */}
-                            <div className="pt-1 mt-1 border-t border-slate-100">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setActiveActionMenuId(null);
-                                  handleDeleteBooking(b);
-                                }}
-                                className="w-full px-2.5 py-1.5 rounded-[5px] flex items-center gap-2.5 text-rose-600 hover:bg-rose-50 transition cursor-pointer"
-                              >
-                                <Trash2 className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-                                <span>Delete Booking</span>
-                              </button>
-                            </div>
-                          </div>
-                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (activeActionMenu?.booking.id === b.id) {
+                              setActiveActionMenu(null);
+                            } else {
+                              openActionMenu(b, e.currentTarget);
+                            }
+                          }}
+                          onMouseEnter={(e) => openActionMenu(b, e.currentTarget)}
+                          onMouseLeave={closeActionMenuWithDelay}
+                          className={`w-7 h-7 inline-flex items-center justify-center rounded-[6px] transition cursor-pointer border ${
+                            activeActionMenu?.booking.id === b.id
+                              ? "bg-slate-100 text-slate-900 border-slate-300"
+                              : "text-slate-500 hover:text-slate-900 hover:bg-slate-100 border-transparent hover:border-slate-200"
+                          }`}
+                          title="Trip actions"
+                        >
+                          <MoreVertical className="w-4 h-4" />
+                        </button>
                       </td>
                     </tr>
                   );
@@ -2339,6 +2289,127 @@ export default function BookingsPage() {
           </table>
         </div>
       </div>
+
+      {/* Action Popover Menu (Portal: Rendered on top of everything to prevent scrollbar layout shift & table dancing) */}
+      {activeActionMenu &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            onMouseEnter={cancelCloseActionMenu}
+            onMouseLeave={closeActionMenuWithDelay}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "fixed",
+              top: activeActionMenu.placeAbove
+                ? undefined
+                : `${activeActionMenu.rect.bottom + 4}px`,
+              bottom: activeActionMenu.placeAbove
+                ? `${window.innerHeight - activeActionMenu.rect.top + 4}px`
+                : undefined,
+              left: `${Math.max(
+                8,
+                Math.min(window.innerWidth - 184, activeActionMenu.rect.right - 176)
+              )}px`,
+              zIndex: 99999,
+            }}
+            className={`w-44 bg-white rounded-[8px] border border-slate-200/90 shadow-xl p-1 text-xs text-left animate-in fade-in-50 duration-100 select-none ${
+              activeActionMenu.placeAbove
+                ? "after:absolute after:-bottom-2 after:left-0 after:right-0 after:h-2"
+                : "before:absolute before:-top-2 before:left-0 before:right-0 before:h-2"
+            }`}
+          >
+            <div className="space-y-0.5">
+              {/* 1. View Details */}
+              <button
+                type="button"
+                onClick={() => {
+                  const b = activeActionMenu.booking;
+                  setActiveActionMenu(null);
+                  setViewingBooking(b);
+                }}
+                className="w-full px-2.5 py-1.5 rounded-[5px] flex items-center gap-2.5 text-slate-700 hover:bg-slate-100 hover:text-slate-900 transition cursor-pointer"
+              >
+                <Eye className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <span>View Details</span>
+              </button>
+
+              {/* 2. Edit Booking */}
+              <button
+                type="button"
+                onClick={() => {
+                  const b = activeActionMenu.booking;
+                  setActiveActionMenu(null);
+                  handleOpenEditBooking(b);
+                }}
+                className="w-full px-2.5 py-1.5 rounded-[5px] flex items-center gap-2.5 text-slate-700 hover:bg-orange-50 hover:text-[#f16623] transition cursor-pointer"
+              >
+                <Pencil className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                <span>Edit Booking</span>
+              </button>
+
+              {/* 3. Invoice View / Generate */}
+              {activeActionMenu.booking.invoiceNumber ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const b = activeActionMenu.booking;
+                    setActiveActionMenu(null);
+                    setInvoiceBooking(b);
+                  }}
+                  className="w-full px-2.5 py-1.5 rounded-[5px] flex items-center gap-2.5 text-slate-700 hover:bg-orange-50 hover:text-[#f16623] transition cursor-pointer"
+                >
+                  <FileText className="w-3.5 h-3.5 text-[#f16623] shrink-0" />
+                  <span>View Invoice</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={isAllocatingInvoice}
+                  onClick={() => {
+                    const b = activeActionMenu.booking;
+                    setActiveActionMenu(null);
+                    handleGenerateInvoice(b);
+                  }}
+                  className="w-full px-2.5 py-1.5 rounded-[5px] flex items-center gap-2.5 text-slate-700 hover:bg-orange-50 hover:text-[#f16623] disabled:opacity-50 transition cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-[#f16623] shrink-0" />
+                  <span>Generate Invoice</span>
+                </button>
+              )}
+
+              {/* 4. Collect Payment */}
+              <button
+                type="button"
+                onClick={() => {
+                  const b = activeActionMenu.booking;
+                  setActiveActionMenu(null);
+                  handleOpenCollectPayment(b);
+                }}
+                className="w-full px-2.5 py-1.5 rounded-[5px] flex items-center gap-2.5 text-slate-700 hover:bg-emerald-50 hover:text-emerald-700 transition cursor-pointer"
+              >
+                <Banknote className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                <span>Collect Payment</span>
+              </button>
+            </div>
+
+            {/* 5. Delete Action */}
+            <div className="pt-1 mt-1 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  const b = activeActionMenu.booking;
+                  setActiveActionMenu(null);
+                  handleDeleteBooking(b);
+                }}
+                className="w-full px-2.5 py-1.5 rounded-[5px] flex items-center gap-2.5 text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                <span>Delete Booking</span>
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* ===================================================================== */}
       {/* 4-TAB ADD / EDIT BOOKING OFFCANVAS DRAWER */}
