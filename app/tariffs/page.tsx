@@ -26,6 +26,7 @@ import {
   Plane,
   Train,
   Check,
+  Settings,
 } from "lucide-react";
 import {
   collection,
@@ -39,6 +40,8 @@ import {
   updateDoc,
   where,
   getDocs,
+  setDoc,
+  getDoc,
   type Timestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -63,6 +66,8 @@ export interface TariffRateRow {
 export interface TariffPackageBlock {
   id: string;
   packageName: string;
+  includedHours?: number;
+  includedKm?: number;
   rates: Record<string, TariffRateRow>;
 }
 
@@ -183,8 +188,10 @@ export default function TariffsPage() {
   const [localFuelConfig, setLocalFuelConfig] = useState<FuelChargesConfig>(
     DEFAULT_FUEL_CHARGES_CONFIG
   );
-  const [newPackageName, setNewPackageName] = useState("");
   const [isAddingPackage, setIsAddingPackage] = useState(false);
+  // New Hours+KM package inputs
+  const [newPkgHours, setNewPkgHours] = useState<number | "">("");
+  const [newPkgKm, setNewPkgKm] = useState<number | "">("");
 
   // --- 2. PICKUP & DROP STATE ---
   const [offerAirport, setOfferAirport] = useState(false);
@@ -246,6 +253,23 @@ export default function TariffsPage() {
 
   // Available Companies for dropdown
   const [availableCompanies, setAvailableCompanies] = useState<string[]>([]);
+
+  // --- Settings OffCanvas State ---
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsActiveTab, setSettingsActiveTab] = useState<'local' | 'pickup' | 'dayrent' | 'outstation'>('dayrent');
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+  const [settingsFeedback, setSettingsFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+
+  // Day Rent Settings
+  const [dayRentDayMode, setDayRentDayMode] = useState<'24hour' | 'calendar'>('24hour');
+  const [dayRentDayHours, setDayRentDayHours] = useState(24);
+  const [nightChargeFrom, setNightChargeFrom] = useState('22:00');
+  const [nightChargeTo, setNightChargeTo] = useState('06:00');
+  const [overtimeGraceMinutes, setOvertimeGraceMinutes] = useState(30);
+
+  // Outstation Settings
+  const [outstationMinKmPerDay, setOutstationMinKmPerDay] = useState(300);
+  const [outstationReturnTrip, setOutstationReturnTrip] = useState<'separate-day' | 'included'>('separate-day');
 
   // 1. Subscribe to Vehicle Categories across Firestore collections
   useEffect(() => {
@@ -525,6 +549,28 @@ interface CompanyOptionItem {
     };
   }, []);
 
+  // 4. Load tariff settings on mount
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const snap = await getDoc(doc(db, "tariff_settings", "global"));
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data.dayRentDayMode) setDayRentDayMode(data.dayRentDayMode);
+          if (data.dayRentDayHours !== undefined) setDayRentDayHours(data.dayRentDayHours);
+          if (data.nightChargeFrom) setNightChargeFrom(data.nightChargeFrom);
+          if (data.nightChargeTo) setNightChargeTo(data.nightChargeTo);
+          if (data.overtimeGraceMinutes !== undefined) setOvertimeGraceMinutes(data.overtimeGraceMinutes);
+          if (data.outstationMinKmPerDay !== undefined) setOutstationMinKmPerDay(data.outstationMinKmPerDay);
+          if (data.outstationReturnTrip) setOutstationReturnTrip(data.outstationReturnTrip);
+        }
+      } catch (err) {
+        console.warn("Could not load tariff settings:", err);
+      }
+    };
+    loadSettings();
+  }, []);
+
   // --- Handlers for Category Selection ---
   const toggleCategory = (cat: string) => {
     if (selectedCategories.includes(cat)) {
@@ -565,6 +611,8 @@ interface CompanyOptionItem {
       {
         id: "pkg-4h-40k",
         packageName: "4 HOURS 40 KM",
+        includedHours: 4,
+        includedKm: 40,
         rates: {
           "SEDAN (A/C)": { baseFare: 1500, nightCharge: 0, driverBata: 100 },
           "INNOVA (A/C)": { baseFare: 2000, nightCharge: 0, driverBata: 100 },
@@ -575,6 +623,8 @@ interface CompanyOptionItem {
       {
         id: "pkg-8h-80k",
         packageName: "8 HOURS 80 KM",
+        includedHours: 8,
+        includedKm: 80,
         rates: {
           "SEDAN (A/C)": { baseFare: 2500, nightCharge: 0, driverBata: 200 },
           "INNOVA (A/C)": { baseFare: 3000, nightCharge: 0, driverBata: 200 },
@@ -627,7 +677,7 @@ interface CompanyOptionItem {
       nightHaltPerNight: { "SEDAN (A/C)": 300, "INNOVA (A/C)": 350, "CRYSTA (A/C)": 400, "HYCROSS (A/C)": 450 },
     });
 
-    // Outstation (Matching user's Image 3)
+    // Outstation
     setOfferOutstation(true);
     setOutstationRates({
       baseKmSlab: { "SEDAN (A/C)": 350, "INNOVA (A/C)": 450, "CRYSTA (A/C)": 450, "HYCROSS (A/C)": 450 },
@@ -643,23 +693,26 @@ interface CompanyOptionItem {
     setTimeout(() => setFeedback(null), 3000);
   };
 
-  // --- Handlers for Local Duty ---
+  // --- Handlers for Local Duty (new Hours+KM approach) ---
   const handleAddNewPackage = () => {
-    const trimmed = newPackageName.trim().toUpperCase();
-    if (!trimmed) {
-      alert("Please enter a package title (e.g. 10 HOURS 100 KM)");
+    if (!newPkgHours || !newPkgKm) {
+      alert("Please enter both hours and kilometers for the package.");
       return;
     }
+    const packageName = `${newPkgHours} HOURS ${newPkgKm} KM`;
     const newPkg: TariffPackageBlock = {
       id: `pkg-${Date.now()}`,
-      packageName: trimmed,
+      packageName,
+      includedHours: Number(newPkgHours),
+      includedKm: Number(newPkgKm),
       rates: {},
     };
     selectedCategories.forEach((cat) => {
       newPkg.rates[cat] = { baseFare: "", nightCharge: "", driverBata: "" };
     });
     setLocalPackages([...localPackages, newPkg]);
-    setNewPackageName("");
+    setNewPkgHours("");
+    setNewPkgKm("");
     setIsAddingPackage(false);
   };
 
@@ -753,6 +806,31 @@ interface CompanyOptionItem {
     }));
   };
 
+  // --- Save Settings to Firestore ---
+  const handleSaveSettings = async () => {
+    setIsSavingSettings(true);
+    setSettingsFeedback(null);
+    try {
+      await setDoc(doc(db, "tariff_settings", "global"), {
+        dayRentDayMode,
+        dayRentDayHours,
+        nightChargeFrom,
+        nightChargeTo,
+        overtimeGraceMinutes,
+        outstationMinKmPerDay,
+        outstationReturnTrip,
+        updatedAt: serverTimestamp(),
+      });
+      setSettingsFeedback({ type: "success", message: "Settings saved successfully!" });
+      setTimeout(() => setSettingsFeedback(null), 3000);
+    } catch (err) {
+      console.error("Error saving tariff settings:", err);
+      setSettingsFeedback({ type: "error", message: "Failed to save settings." });
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
+
   // --- Open Edit Tariff ---
   const handleEditTariff = (tariff: TariffRecord) => {
     setEditingTariffId(tariff.id);
@@ -831,6 +909,9 @@ interface CompanyOptionItem {
     setOutstationFuelConfig(DEFAULT_FUEL_CHARGES_CONFIG);
     setOfferActivityLog(false);
     setIsCustomCompany(false);
+    setIsAddingPackage(false);
+    setNewPkgHours("");
+    setNewPkgKm("");
     setIsOffCanvasOpen(true);
   };
 
@@ -992,14 +1073,14 @@ interface CompanyOptionItem {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-sm sm:text-base font-medium text-slate-900 leading-tight">
-                Company Tariff & Pricing Matrix
+                Company Tariff &amp; Pricing Matrix
               </h1>
               <span className="px-2 py-0.5 rounded-[6px] text-[10px] font-medium bg-orange-50 text-[#f16623] border border-[#f16623]/20">
                 {tariffsList.length} Total
               </span>
             </div>
             <p className="text-[11px] text-slate-400 font-normal">
-              Customer contracts, Local duty, Airport & Railway transfers, Day Rent, Outstation (24 items per page)
+              Customer contracts, Local duty, Airport &amp; Railway transfers, Day Rent, Outstation (24 items per page)
             </p>
           </div>
         </div>
@@ -1016,6 +1097,16 @@ interface CompanyOptionItem {
               className="w-full h-[34px] max-h-[34px] pl-8 pr-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white font-normal transition"
             />
           </div>
+
+          {/* Settings Button */}
+          <button
+            type="button"
+            onClick={() => setIsSettingsOpen(true)}
+            className="h-[34px] max-h-[34px] px-3 rounded-[6px] border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-900 text-xs font-normal transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+          >
+            <Settings className="w-3.5 h-3.5" />
+            <span>Settings</span>
+          </button>
 
           <button
             type="button"
@@ -1052,7 +1143,7 @@ interface CompanyOptionItem {
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-[2px] bg-[#f16623]"></span>
             <h3 className="text-xs font-medium text-slate-900">
-              Active Tariff Contracts & Global Fallbacks
+              Active Tariff Contracts &amp; Global Fallbacks
             </h3>
           </div>
           <span className="text-[11px] text-slate-400 font-normal">
@@ -1283,7 +1374,7 @@ interface CompanyOptionItem {
       </div>
 
       {/* ============================================================== */}
-      {/* Off-Canvas Drawer: ADD / EDIT TARIFF MATRIX (MATCHING SCREENSHOTS) */}
+      {/* Off-Canvas Drawer: ADD / EDIT TARIFF MATRIX */}
       {/* ============================================================== */}
       <OffCanvas
         isOpen={isOffCanvasOpen}
@@ -1295,7 +1386,7 @@ interface CompanyOptionItem {
         widthClassName="w-screen max-w-5xl sm:max-w-6xl xl:max-w-7xl"
       >
         <div className="space-y-4">
-          {/* Top Fields Row (Matching Screenshot Header) */}
+          {/* Top Fields Row */}
           <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-start bg-slate-50/70 p-3.5 rounded-[6px] border border-slate-200">
             {/* Customer Dropdown */}
             <div className="md:col-span-4 space-y-1">
@@ -1439,7 +1530,7 @@ interface CompanyOptionItem {
             </span>
           </div>
 
-          {/* Vehicle Categories In This Card — Each Becomes A Column */}
+          {/* Vehicle Categories In This Card */}
           <div className="space-y-2.5 bg-white p-3.5 rounded-[6px] border border-slate-200/80 shadow-2xs">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
               <div className="flex items-center gap-2">
@@ -1637,8 +1728,8 @@ interface CompanyOptionItem {
           {/* ============================================================== */}
           {activeTab === "Local" && (
             <div className="space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <label className="flex items-center gap-2 text-xs font-medium text-slate-800 cursor-pointer select-none">
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                <label className="flex items-center gap-2 text-xs font-medium text-slate-800 cursor-pointer select-none mt-1">
                   <input
                     type="checkbox"
                     checked={offerLocal}
@@ -1650,31 +1741,43 @@ interface CompanyOptionItem {
 
                 <div className="flex items-center gap-2">
                   {isAddingPackage ? (
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="text"
-                        placeholder="e.g. 10 HOURS 100 KM"
-                        value={newPackageName}
-                        onChange={(e) => setNewPackageName(e.target.value)}
-                        className="h-[30px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] font-normal"
-                      />
-                      <button
-                        type="button"
-                        onClick={handleAddNewPackage}
-                        className="h-[30px] max-h-[34px] px-3 rounded-[6px] bg-[#f16623] text-white text-xs font-medium cursor-pointer"
-                      >
-                        Add
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setNewPackageName("");
-                          setIsAddingPackage(false);
-                        }}
-                        className="h-[30px] max-h-[34px] px-2 rounded-[6px] text-slate-400 hover:text-slate-700 text-xs font-normal"
-                      >
-                        Cancel
-                      </button>
+                    <div className="flex flex-col gap-2 p-3 bg-slate-50 border border-slate-200 rounded-[6px] w-full sm:w-auto">
+                      <div className="flex items-center gap-2">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">Hours</label>
+                          <input
+                            type="number"
+                            min="1"
+                            max="24"
+                            placeholder="e.g. 4"
+                            value={newPkgHours}
+                            onChange={(e) => setNewPkgHours(e.target.value === "" ? "" : Number(e.target.value))}
+                            onWheel={(e) => (e.target as HTMLElement).blur()}
+                            className="w-20 h-[30px] px-2 text-xs bg-white border border-slate-200 rounded-[4px] text-slate-900 focus:outline-none focus:border-[#f16623] font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">Kilometers</label>
+                          <input
+                            type="number"
+                            min="1"
+                            placeholder="e.g. 40"
+                            value={newPkgKm}
+                            onChange={(e) => setNewPkgKm(e.target.value === "" ? "" : Number(e.target.value))}
+                            onWheel={(e) => (e.target as HTMLElement).blur()}
+                            className="w-24 h-[30px] px-2 text-xs bg-white border border-slate-200 rounded-[4px] text-slate-900 focus:outline-none focus:border-[#f16623] font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                          />
+                        </div>
+                      </div>
+                      {newPkgHours && newPkgKm && (
+                        <div className="text-[10px] text-[#f16623] font-medium bg-orange-50 px-2 py-1 rounded-[4px] border border-[#f16623]/20">
+                          Package: {newPkgHours} HOURS {newPkgKm} KM
+                        </div>
+                      )}
+                      <div className="flex items-center gap-1.5">
+                        <button type="button" onClick={handleAddNewPackage} className="h-[28px] px-3 rounded-[6px] bg-[#f16623] text-white text-xs font-medium cursor-pointer">Add</button>
+                        <button type="button" onClick={() => { setNewPkgHours(""); setNewPkgKm(""); setIsAddingPackage(false); }} className="h-[28px] px-2 rounded-[6px] text-slate-400 hover:text-slate-700 text-xs cursor-pointer">Cancel</button>
+                      </div>
                     </div>
                   ) : (
                     <button
@@ -1723,6 +1826,11 @@ interface CompanyOptionItem {
                                   <div className="flex items-center gap-1.5 text-[#f16623] font-medium text-xs">
                                     <Tags className="w-3.5 h-3.5" />
                                     <span>{pkg.packageName}</span>
+                                    {(pkg.includedHours || pkg.includedKm) && (
+                                      <span className="text-[10px] text-slate-400 font-normal ml-1">
+                                        ({pkg.includedHours ?? "?"}h / {pkg.includedKm ?? "?"}km included)
+                                      </span>
+                                    )}
                                   </div>
                                   <button
                                     type="button"
@@ -1853,7 +1961,7 @@ interface CompanyOptionItem {
           )}
 
           {/* ============================================================== */}
-          {/* TAB 2: PICKUP & DROP (IMAGE 1: AIRPORT & RAILWAY) */}
+          {/* TAB 2: PICKUP & DROP */}
           {/* ============================================================== */}
           {activeTab === "Pickup & Drop" && (
             <div className="space-y-4">
@@ -2115,7 +2223,7 @@ interface CompanyOptionItem {
           )}
 
           {/* ============================================================== */}
-          {/* TAB 3: DAY RENT (IMAGE 2: 12H, 24H, MILEAGE, BATA, NIGHT HALT) */}
+          {/* TAB 3: DAY RENT */}
           {/* ============================================================== */}
           {activeTab === "Day Rent" && (
             <div className="space-y-3">
@@ -2263,7 +2371,7 @@ interface CompanyOptionItem {
           )}
 
           {/* ============================================================== */}
-          {/* TAB 4: OUTSTATION (IMAGE 3: BASE KM, PER KM, DRIVER BATA, NIGHT HALT) */}
+          {/* TAB 4: OUTSTATION */}
           {/* ============================================================== */}
           {activeTab === "Outstation" && (
             <div className="space-y-3">
@@ -2393,7 +2501,7 @@ interface CompanyOptionItem {
               <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                 <div className="flex items-center gap-2 text-xs font-medium text-slate-900">
                   <History className="w-4 h-4 text-[#f16623]" />
-                  <span>Tariff Audit Trail & Version History</span>
+                  <span>Tariff Audit Trail &amp; Version History</span>
                 </div>
                 <label className="flex items-center gap-2 text-xs font-medium text-slate-700 cursor-pointer select-none">
                   <input
@@ -2438,7 +2546,7 @@ interface CompanyOptionItem {
           )}
 
           {/* ============================================================== */}
-          {/* Drawer Bottom Actions: Close (Left), Save as Draft & Activate (Right) */}
+          {/* Drawer Bottom Actions */}
           {/* ============================================================== */}
           <div className="pt-4 border-t border-slate-200 flex items-center justify-between gap-3">
             <button
@@ -2479,6 +2587,295 @@ interface CompanyOptionItem {
                 )}
               </button>
             </div>
+          </div>
+        </div>
+      </OffCanvas>
+
+      {/* ============================================================== */}
+      {/* Settings OffCanvas */}
+      {/* ============================================================== */}
+      <OffCanvas
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        title="Tariff Calculation Settings"
+        subtitle="Configure how days, hours, and kilometers are counted across duty types"
+        widthClassName="w-screen max-w-xl"
+      >
+        <div className="space-y-5">
+          {/* Settings Tab Navigation */}
+          <div className="flex items-center gap-1 border-b border-slate-200 overflow-x-auto">
+            {(
+              [
+                { key: "local", label: "Local Duty" },
+                { key: "pickup", label: "Pickup & Drop" },
+                { key: "dayrent", label: "Day Rent" },
+                { key: "outstation", label: "Outstation" },
+              ] as const
+            ).map(({ key, label }) => {
+              const isActive = settingsActiveTab === key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setSettingsActiveTab(key)}
+                  className={`px-4 py-2 text-xs font-medium transition cursor-pointer whitespace-nowrap ${
+                    isActive
+                      ? "text-[#f16623] border-b-2 border-[#f16623] -mb-[1px] bg-orange-50/40"
+                      : "text-slate-600 hover:text-slate-900 border-b-2 border-transparent hover:bg-slate-50 font-normal"
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Section A: Local Duty Settings */}
+          {settingsActiveTab === "local" && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 p-3 rounded-[6px] bg-blue-50 border border-blue-200">
+                <span className="text-xs text-blue-800 font-normal">
+                  <strong className="font-medium">Local Duty</strong> uses packages defined per tariff (e.g. 4 HOURS 40 KM). Extra charges apply when actual hours or km exceed the package limits. No global settings required here — configure per tariff card.
+                </span>
+              </div>
+              <div className="p-3 rounded-[6px] bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
+                <p className="font-medium text-slate-800">How extra charges work:</p>
+                <p>• If actual hours &gt; package hours → (actualHours − packageHours) × extraPerHour rate</p>
+                <p>• If actual km &gt; package km → (actualKm − packageKm) × extraPerKm rate</p>
+                <p className="text-slate-400 text-[11px] mt-1">Both includedHours and includedKm are stored per package for calculation use.</p>
+              </div>
+            </div>
+          )}
+
+          {/* Section B: Pickup & Drop Settings */}
+          {settingsActiveTab === "pickup" && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 p-3 rounded-[6px] bg-blue-50 border border-blue-200">
+                <span className="text-xs text-blue-800 font-normal">
+                  <strong className="font-medium">Pickup &amp; Drop</strong> transfers (Airport &amp; Railway) use fixed fares with included hours and km. Extra waiting charges apply after the included hours. Configure rates per tariff card.
+                </span>
+              </div>
+              <div className="p-3 rounded-[6px] bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
+                <p className="font-medium text-slate-800">Fare calculation:</p>
+                <p>• Fixed fare applies for the journey up to includedHours and includedKm</p>
+                <p>• Waiting per hour kicks in after the included hours are exceeded</p>
+                <p>• Extra per km applies if actual km exceeds included km</p>
+              </div>
+            </div>
+          )}
+
+          {/* Section C: Day Rent Settings */}
+          {settingsActiveTab === "dayrent" && (
+            <div className="space-y-5">
+              {/* Day Counting Mode */}
+              <div className="space-y-2">
+                <label className="text-[11px] font-medium text-slate-700 uppercase tracking-wider block">
+                  Day Counting Mode
+                </label>
+                <div className="space-y-2">
+                  <label className={`flex items-start gap-3 p-3 rounded-[6px] border cursor-pointer transition ${dayRentDayMode === '24hour' ? 'border-[#f16623] bg-orange-50/40' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
+                    <input
+                      type="radio"
+                      name="dayMode"
+                      value="24hour"
+                      checked={dayRentDayMode === '24hour'}
+                      onChange={() => setDayRentDayMode('24hour')}
+                      className="mt-0.5 accent-[#f16623]"
+                    />
+                    <div>
+                      <p className="text-xs font-medium text-slate-900">24-Hour Rolling</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">A day = exactly 24 hours from booking start. e.g. 10AM to 10AM next day = 1 day.</p>
+                    </div>
+                  </label>
+                  <label className={`flex items-start gap-3 p-3 rounded-[6px] border cursor-pointer transition ${dayRentDayMode === 'calendar' ? 'border-[#f16623] bg-orange-50/40' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
+                    <input
+                      type="radio"
+                      name="dayMode"
+                      value="calendar"
+                      checked={dayRentDayMode === 'calendar'}
+                      onChange={() => setDayRentDayMode('calendar')}
+                      className="mt-0.5 accent-[#f16623]"
+                    />
+                    <div>
+                      <p className="text-xs font-medium text-slate-900">Calendar Day</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">A day changes at midnight. e.g. 10PM Day 1 to 2AM Day 2 = 2 days.</p>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* Day Rate Hours Threshold */}
+              {dayRentDayMode === '24hour' && (
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-medium text-slate-700 uppercase tracking-wider block">
+                    Day Rate Hours Threshold
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      max="24"
+                      value={dayRentDayHours}
+                      onChange={(e) => setDayRentDayHours(Number(e.target.value))}
+                      onWheel={(e) => (e.target as HTMLElement).blur()}
+                      className="w-24 h-[34px] px-2.5 text-sm bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                    />
+                    <span className="text-xs text-slate-500">hours per day (default: 24)</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">Maximum hours included in one &quot;day&quot; before the next day rate kicks in.</p>
+                </div>
+              )}
+
+              {/* Night Charge Time Range */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-medium text-slate-700 uppercase tracking-wider block">
+                  Night Charge Time Range
+                </label>
+                <div className="flex items-center gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-500 block">From</label>
+                    <input
+                      type="time"
+                      value={nightChargeFrom}
+                      onChange={(e) => setNightChargeFrom(e.target.value)}
+                      className="h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-mono"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] text-slate-500 block">To</label>
+                    <input
+                      type="time"
+                      value={nightChargeTo}
+                      onChange={(e) => setNightChargeTo(e.target.value)}
+                      className="h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-mono"
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-slate-400">Bookings starting or falling within this window incur the night charge.</p>
+              </div>
+
+              {/* Overtime Grace Period */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-medium text-slate-700 uppercase tracking-wider block">
+                  Overtime Grace Period
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    max="120"
+                    value={overtimeGraceMinutes}
+                    onChange={(e) => setOvertimeGraceMinutes(Number(e.target.value))}
+                    onWheel={(e) => (e.target as HTMLElement).blur()}
+                    className="w-24 h-[34px] px-2.5 text-sm bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                  <span className="text-xs text-slate-500">minutes (default: 30)</span>
+                </div>
+                <p className="text-[11px] text-slate-400">Minutes over the included time before extra overtime charges apply.</p>
+              </div>
+            </div>
+          )}
+
+          {/* Section D: Outstation Settings */}
+          {settingsActiveTab === "outstation" && (
+            <div className="space-y-5">
+              {/* Minimum KM per Day */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-medium text-slate-700 uppercase tracking-wider block">
+                  Minimum KM per Day
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    value={outstationMinKmPerDay}
+                    onChange={(e) => setOutstationMinKmPerDay(Number(e.target.value))}
+                    onWheel={(e) => (e.target as HTMLElement).blur()}
+                    className="w-28 h-[34px] px-2.5 text-sm bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  />
+                  <span className="text-xs text-slate-500">km/day (default: 300)</span>
+                </div>
+                <p className="text-[11px] text-slate-400">Minimum guaranteed km charged per day, even if actual km driven is less.</p>
+              </div>
+
+              {/* Return Trip */}
+              <div className="space-y-2">
+                <label className="text-[11px] font-medium text-slate-700 uppercase tracking-wider block">
+                  Return Trip Counting
+                </label>
+                <div className="space-y-2">
+                  <label className={`flex items-start gap-3 p-3 rounded-[6px] border cursor-pointer transition ${outstationReturnTrip === 'separate-day' ? 'border-[#f16623] bg-orange-50/40' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
+                    <input
+                      type="radio"
+                      name="returnTrip"
+                      value="separate-day"
+                      checked={outstationReturnTrip === 'separate-day'}
+                      onChange={() => setOutstationReturnTrip('separate-day')}
+                      className="mt-0.5 accent-[#f16623]"
+                    />
+                    <div>
+                      <p className="text-xs font-medium text-slate-900">Separate Day</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">Return trip counts as an additional day with its own km/bata charges.</p>
+                    </div>
+                  </label>
+                  <label className={`flex items-start gap-3 p-3 rounded-[6px] border cursor-pointer transition ${outstationReturnTrip === 'included' ? 'border-[#f16623] bg-orange-50/40' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
+                    <input
+                      type="radio"
+                      name="returnTrip"
+                      value="included"
+                      checked={outstationReturnTrip === 'included'}
+                      onChange={() => setOutstationReturnTrip('included')}
+                      className="mt-0.5 accent-[#f16623]"
+                    />
+                    <div>
+                      <p className="text-xs font-medium text-slate-900">Included in Trip</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">Return trip km are included in total km calculation, not counted as extra day.</p>
+                    </div>
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Settings Feedback */}
+          {settingsFeedback && (
+            <div className={`flex items-center gap-2 px-3 py-2 rounded-[6px] text-xs border ${settingsFeedback.type === "success" ? "bg-emerald-50 text-emerald-800 border-emerald-200" : "bg-rose-50 text-rose-800 border-rose-200"}`}>
+              {settingsFeedback.type === "success" ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+              ) : (
+                <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+              )}
+              <span>{settingsFeedback.message}</span>
+            </div>
+          )}
+
+          {/* Settings Bottom Actions */}
+          <div className="pt-4 border-t border-slate-200 flex items-center justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => setIsSettingsOpen(false)}
+              className="h-[34px] max-h-[34px] px-4 rounded-[6px] border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-normal transition cursor-pointer"
+            >
+              Close
+            </button>
+            <button
+              type="button"
+              disabled={isSavingSettings}
+              onClick={handleSaveSettings}
+              className="h-[34px] max-h-[34px] px-5 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] disabled:opacity-60 text-white text-xs font-medium shadow-xs shadow-[#f16623]/25 transition flex items-center justify-center gap-1.5 active:scale-[0.98] cursor-pointer"
+            >
+              {isSavingSettings ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                  <span>Save Settings</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
       </OffCanvas>
