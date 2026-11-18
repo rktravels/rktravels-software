@@ -130,6 +130,27 @@ export interface OutstationDutyConfig {
   fuelConfig?: FuelChargesConfig;
 }
 
+// 5a. Per-Tariff Calculation Settings
+export interface TariffCalculationSettings {
+  // Day Rent
+  dayRentDayMode: "24hour" | "calendar";
+  dayRentDayHours: number;
+  nightChargeFrom: string;
+  nightChargeTo: string;
+  dayRentGraceMinutes: number;
+  // Outstation
+  outstationGraceMinutes: number;
+}
+
+export const DEFAULT_TARIFF_SETTINGS: TariffCalculationSettings = {
+  dayRentDayMode: "24hour",
+  dayRentDayHours: 24,
+  nightChargeFrom: "22:00",
+  nightChargeTo: "06:00",
+  dayRentGraceMinutes: 30,
+  outstationGraceMinutes: 60,
+};
+
 // 5. Overall Tariff Record
 export interface TariffRecord {
   id: string;
@@ -143,6 +164,7 @@ export interface TariffRecord {
   pickupDropDuty: PickupDropDutyConfig;
   dayRentDuty: DayRentDutyConfig;
   outstationDuty: OutstationDutyConfig;
+  tariffSettings?: TariffCalculationSettings;
   // Legacy / Booking compatibility fields
   planName?: string;
   amount?: number;
@@ -175,8 +197,16 @@ export default function TariffsPage() {
 
   // Active Tab
   const [activeTab, setActiveTab] = useState<
-    "Local" | "Pickup & Drop" | "Day Rent" | "Outstation" | "Activity Log"
+    "Local" | "Pickup & Drop" | "Day Rent" | "Outstation" | "Activity Log" | "Settings"
   >("Local");
+
+  // --- Per-Tariff Calculation Settings ---
+  const [tariffDayRentDayMode, setTariffDayRentDayMode] = useState<"24hour" | "calendar">("24hour");
+  const [tariffDayRentDayHours, setTariffDayRentDayHours] = useState(24);
+  const [tariffNightChargeFrom, setTariffNightChargeFrom] = useState("22:00");
+  const [tariffNightChargeTo, setTariffNightChargeTo] = useState("06:00");
+  const [tariffDayRentGraceMinutes, setTariffDayRentGraceMinutes] = useState(30);
+  const [tariffOutstationGraceMinutes, setTariffOutstationGraceMinutes] = useState(60);
 
   // --- 1. LOCAL DUTY STATE ---
   const [offerLocal, setOfferLocal] = useState(false);
@@ -254,22 +284,7 @@ export default function TariffsPage() {
   // Available Companies for dropdown
   const [availableCompanies, setAvailableCompanies] = useState<string[]>([]);
 
-  // --- Settings OffCanvas State ---
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [settingsActiveTab, setSettingsActiveTab] = useState<'local' | 'pickup' | 'dayrent' | 'outstation'>('dayrent');
-  const [isSavingSettings, setIsSavingSettings] = useState(false);
-  const [settingsFeedback, setSettingsFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
-  // Day Rent Settings
-  const [dayRentDayMode, setDayRentDayMode] = useState<'24hour' | 'calendar'>('24hour');
-  const [dayRentDayHours, setDayRentDayHours] = useState(24);
-  const [nightChargeFrom, setNightChargeFrom] = useState('22:00');
-  const [nightChargeTo, setNightChargeTo] = useState('06:00');
-  const [overtimeGraceMinutes, setOvertimeGraceMinutes] = useState(30);
-
-  // Outstation Settings
-  const [outstationMinKmPerDay, setOutstationMinKmPerDay] = useState(300);
-  const [outstationReturnTrip, setOutstationReturnTrip] = useState<'separate-day' | 'included'>('separate-day');
 
   // 1. Subscribe to Vehicle Categories across Firestore collections
   useEffect(() => {
@@ -437,6 +452,7 @@ interface CompanyOptionItem {
                 enabled: true,
                 rates: outstationRates,
               },
+              tariffSettings: data.tariffSettings || undefined,
               planName: data.planName,
               amount: data.amount,
               travelName: data.travelName,
@@ -476,6 +492,7 @@ interface CompanyOptionItem {
                   enabled: true,
                   rates: outstationRates,
                 },
+                tariffSettings: data.tariffSettings || undefined,
                 planName: data.planName,
                 amount: data.amount,
                 travelName: data.travelName,
@@ -549,27 +566,7 @@ interface CompanyOptionItem {
     };
   }, []);
 
-  // 4. Load tariff settings on mount
-  useEffect(() => {
-    const loadSettings = async () => {
-      try {
-        const snap = await getDoc(doc(db, "tariff_settings", "global"));
-        if (snap.exists()) {
-          const data = snap.data();
-          if (data.dayRentDayMode) setDayRentDayMode(data.dayRentDayMode);
-          if (data.dayRentDayHours !== undefined) setDayRentDayHours(data.dayRentDayHours);
-          if (data.nightChargeFrom) setNightChargeFrom(data.nightChargeFrom);
-          if (data.nightChargeTo) setNightChargeTo(data.nightChargeTo);
-          if (data.overtimeGraceMinutes !== undefined) setOvertimeGraceMinutes(data.overtimeGraceMinutes);
-          if (data.outstationMinKmPerDay !== undefined) setOutstationMinKmPerDay(data.outstationMinKmPerDay);
-          if (data.outstationReturnTrip) setOutstationReturnTrip(data.outstationReturnTrip);
-        }
-      } catch (err) {
-        console.warn("Could not load tariff settings:", err);
-      }
-    };
-    loadSettings();
-  }, []);
+
 
   // --- Handlers for Category Selection ---
   const toggleCategory = (cat: string) => {
@@ -806,30 +803,7 @@ interface CompanyOptionItem {
     }));
   };
 
-  // --- Save Settings to Firestore ---
-  const handleSaveSettings = async () => {
-    setIsSavingSettings(true);
-    setSettingsFeedback(null);
-    try {
-      await setDoc(doc(db, "tariff_settings", "global"), {
-        dayRentDayMode,
-        dayRentDayHours,
-        nightChargeFrom,
-        nightChargeTo,
-        overtimeGraceMinutes,
-        outstationMinKmPerDay,
-        outstationReturnTrip,
-        updatedAt: serverTimestamp(),
-      });
-      setSettingsFeedback({ type: "success", message: "Settings saved successfully!" });
-      setTimeout(() => setSettingsFeedback(null), 3000);
-    } catch (err) {
-      console.error("Error saving tariff settings:", err);
-      setSettingsFeedback({ type: "error", message: "Failed to save settings." });
-    } finally {
-      setIsSavingSettings(false);
-    }
-  };
+
 
   // --- Open Edit Tariff ---
   const handleEditTariff = (tariff: TariffRecord) => {
@@ -880,6 +854,16 @@ interface CompanyOptionItem {
     }
 
     setIsCustomCompany(false);
+
+    // Load per-tariff settings
+    const s = tariff.tariffSettings;
+    setTariffDayRentDayMode(s?.dayRentDayMode ?? "24hour");
+    setTariffDayRentDayHours(s?.dayRentDayHours ?? 24);
+    setTariffNightChargeFrom(s?.nightChargeFrom ?? "22:00");
+    setTariffNightChargeTo(s?.nightChargeTo ?? "06:00");
+    setTariffDayRentGraceMinutes(s?.dayRentGraceMinutes ?? 30);
+    setTariffOutstationGraceMinutes(s?.outstationGraceMinutes ?? 60);
+
     setIsOffCanvasOpen(true);
   };
 
@@ -912,6 +896,13 @@ interface CompanyOptionItem {
     setIsAddingPackage(false);
     setNewPkgHours("");
     setNewPkgKm("");
+    // Reset per-tariff settings to defaults
+    setTariffDayRentDayMode("24hour");
+    setTariffDayRentDayHours(24);
+    setTariffNightChargeFrom("22:00");
+    setTariffNightChargeTo("06:00");
+    setTariffDayRentGraceMinutes(30);
+    setTariffOutstationGraceMinutes(60);
     setIsOffCanvasOpen(true);
   };
 
@@ -962,6 +953,15 @@ interface CompanyOptionItem {
           rates: outstationRates,
           fuelConfig: outstationFuelConfig,
         },
+        // Per-tariff calculation settings
+        tariffSettings: {
+          dayRentDayMode: tariffDayRentDayMode,
+          dayRentDayHours: tariffDayRentDayHours,
+          nightChargeFrom: tariffNightChargeFrom,
+          nightChargeTo: tariffNightChargeTo,
+          dayRentGraceMinutes: tariffDayRentGraceMinutes,
+          outstationGraceMinutes: tariffOutstationGraceMinutes,
+        } as TariffCalculationSettings,
         // Compatibility fields for Bookings dropdown
         planName: `${trimmedCust} Tariff`,
         amount: Number(localPackages[0]?.rates[selectedCategories[0]]?.baseFare) || 0,
@@ -1098,15 +1098,6 @@ interface CompanyOptionItem {
             />
           </div>
 
-          {/* Settings Button */}
-          <button
-            type="button"
-            onClick={() => setIsSettingsOpen(true)}
-            className="h-[34px] max-h-[34px] px-3 rounded-[6px] border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-900 text-xs font-normal transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
-          >
-            <Settings className="w-3.5 h-3.5" />
-            <span>Settings</span>
-          </button>
 
           <button
             type="button"
@@ -1674,6 +1665,7 @@ interface CompanyOptionItem {
                 "Day Rent",
                 "Outstation",
                 "Activity Log",
+                "Settings",
               ] as const
             ).map((tab) => {
               const isActive = activeTab === tab;
@@ -2546,6 +2538,182 @@ interface CompanyOptionItem {
           )}
 
           {/* ============================================================== */}
+          {/* TAB 6: SETTINGS — Per-Tariff Calculation Settings               */}
+          {/* ============================================================== */}
+          {activeTab === "Settings" && (
+            <div className="space-y-5">
+              {/* Info banner */}
+              <div className="flex items-start gap-2 p-3 rounded-[6px] bg-blue-50 border border-blue-200">
+                <Settings className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+                <span className="text-xs text-blue-800 font-normal">
+                  <strong className="font-medium">Per-Company Settings</strong> — these calculation rules apply only to this tariff and override any global defaults. Useful when different companies have different billing agreements.
+                </span>
+              </div>
+
+              {/* ---- DAY RENT SETTINGS ---- */}
+              <div className="bg-white rounded-[6px] border border-slate-200 shadow-xs overflow-hidden">
+                <div className="px-3.5 py-2.5 bg-slate-50/80 border-b border-slate-200 flex items-center gap-2">
+                  <Clock className="w-3.5 h-3.5 text-[#f16623]" />
+                  <span className="text-xs font-medium text-slate-900">Day Rent Settings</span>
+                </div>
+                <div className="p-4 space-y-5">
+
+                  {/* Day Counting Mode */}
+                  <div className="space-y-2">
+                    <label className="text-[11px] font-medium text-slate-700 uppercase tracking-wider block">
+                      Day Counting Mode
+                    </label>
+                    <div className="space-y-2">
+                      <label className={`flex items-start gap-3 p-3 rounded-[6px] border cursor-pointer transition ${tariffDayRentDayMode === "24hour" ? "border-[#f16623] bg-orange-50/40" : "border-slate-200 bg-white hover:bg-slate-50"}`}>
+                        <input
+                          type="radio"
+                          name="tariffDayMode"
+                          value="24hour"
+                          checked={tariffDayRentDayMode === "24hour"}
+                          onChange={() => setTariffDayRentDayMode("24hour")}
+                          className="mt-0.5 accent-[#f16623]"
+                        />
+                        <div>
+                          <p className="text-xs font-medium text-slate-900">24-Hour Rolling</p>
+                          <p className="text-[11px] text-slate-500 mt-0.5">A day = exactly 24 hours from booking start. e.g. 10AM → 10AM next day = 1 day.</p>
+                        </div>
+                      </label>
+                      <label className={`flex items-start gap-3 p-3 rounded-[6px] border cursor-pointer transition ${tariffDayRentDayMode === "calendar" ? "border-[#f16623] bg-orange-50/40" : "border-slate-200 bg-white hover:bg-slate-50"}`}>
+                        <input
+                          type="radio"
+                          name="tariffDayMode"
+                          value="calendar"
+                          checked={tariffDayRentDayMode === "calendar"}
+                          onChange={() => setTariffDayRentDayMode("calendar")}
+                          className="mt-0.5 accent-[#f16623]"
+                        />
+                        <div>
+                          <p className="text-xs font-medium text-slate-900">Calendar Day</p>
+                          <p className="text-[11px] text-slate-500 mt-0.5">A day changes at midnight. e.g. 10PM Day 1 to 2AM Day 2 = 2 days.</p>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Day Rate Hours (only for 24-hour rolling) */}
+                  {tariffDayRentDayMode === "24hour" && (
+                    <div className="space-y-1.5">
+                      <label className="text-[11px] font-medium text-slate-700 uppercase tracking-wider block">
+                        Max Hours per Day Rate
+                      </label>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min="1"
+                          max="24"
+                          value={tariffDayRentDayHours}
+                          onChange={(e) => setTariffDayRentDayHours(Number(e.target.value))}
+                          onWheel={(e) => (e.target as HTMLElement).blur()}
+                          className="w-24 h-[34px] px-2.5 text-sm bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                        <span className="text-xs text-slate-500">hours per day (default: 24)</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400">Maximum hours included in one day before the next day rate triggers.</p>
+                    </div>
+                  )}
+
+                  {/* Night Charge Time Range */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-medium text-slate-700 uppercase tracking-wider block">
+                      Night Charge Time Range
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-500 block">From</label>
+                        <input
+                          type="time"
+                          value={tariffNightChargeFrom}
+                          onChange={(e) => setTariffNightChargeFrom(e.target.value)}
+                          className="h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-mono"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] text-slate-500 block">To</label>
+                        <input
+                          type="time"
+                          value={tariffNightChargeTo}
+                          onChange={(e) => setTariffNightChargeTo(e.target.value)}
+                          className="h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-mono"
+                        />
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-slate-400">Bookings starting or falling within this window incur the night charge rate.</p>
+                  </div>
+
+                  {/* Day Rent Grace Period */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-medium text-slate-700 uppercase tracking-wider block">
+                      Overtime Grace Period
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        max="120"
+                        value={tariffDayRentGraceMinutes}
+                        onChange={(e) => setTariffDayRentGraceMinutes(Number(e.target.value))}
+                        onWheel={(e) => (e.target as HTMLElement).blur()}
+                        className="w-24 h-[34px] px-2.5 text-sm bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <span className="text-xs text-slate-500">minutes grace (default: 30)</span>
+                    </div>
+                    <p className="text-[11px] text-slate-400">Minutes beyond the included time before overtime charges apply. e.g. 30 min grace on a 12-hr package means charges start only after 12 hrs 30 min.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* ---- OUTSTATION SETTINGS ---- */}
+              <div className="bg-white rounded-[6px] border border-slate-200 shadow-xs overflow-hidden">
+                <div className="px-3.5 py-2.5 bg-slate-50/80 border-b border-slate-200 flex items-center gap-2">
+                  <Car className="w-3.5 h-3.5 text-[#f16623]" />
+                  <span className="text-xs font-medium text-slate-900">Outstation Settings</span>
+                </div>
+                <div className="p-4 space-y-4">
+
+                  {/* Outstation Grace Period */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-medium text-slate-700 uppercase tracking-wider block">
+                      Day Grace Period (minutes)
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min="0"
+                        max="360"
+                        value={tariffOutstationGraceMinutes}
+                        onChange={(e) => setTariffOutstationGraceMinutes(Number(e.target.value))}
+                        onWheel={(e) => (e.target as HTMLElement).blur()}
+                        className="w-28 h-[34px] px-2.5 text-sm bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                      />
+                      <span className="text-xs text-slate-500">
+                        minutes &nbsp;
+                        {tariffOutstationGraceMinutes >= 60
+                          ? `(= ${Math.floor(tariffOutstationGraceMinutes / 60)}h ${tariffOutstationGraceMinutes % 60 > 0 ? `${tariffOutstationGraceMinutes % 60}m` : ""})`
+                          : ""}
+                      </span>
+                    </div>
+                    {/* Visual explanation */}
+                    <div className="mt-2 p-3 rounded-[6px] bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-1">
+                      <p className="font-medium">How it works:</p>
+                      <p>• A booking for <strong>1 day</strong> includes <strong>24 hours</strong>.</p>
+                      <p>• If grace = <strong>{tariffOutstationGraceMinutes} min</strong>, actual usage up to <strong>24h {tariffOutstationGraceMinutes}min</strong> is still billed as <strong>1 day</strong>.</p>
+                      {tariffOutstationGraceMinutes >= 60 && (
+                        <p>• e.g. Grace = 120 min → 12h + 2h overtime = treated as <strong>1 full day (24h)</strong> in bill.</p>
+                      )}
+                      <p className="text-[11px] text-amber-700 mt-1">Only when usage exceeds day + grace does the next day rate apply.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ============================================================== */}
           {/* Drawer Bottom Actions */}
           {/* ============================================================== */}
           <div className="pt-4 border-t border-slate-200 flex items-center justify-between gap-3">
@@ -2591,294 +2759,6 @@ interface CompanyOptionItem {
         </div>
       </OffCanvas>
 
-      {/* ============================================================== */}
-      {/* Settings OffCanvas */}
-      {/* ============================================================== */}
-      <OffCanvas
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        title="Tariff Calculation Settings"
-        subtitle="Configure how days, hours, and kilometers are counted across duty types"
-        widthClassName="w-screen max-w-xl"
-      >
-        <div className="space-y-5">
-          {/* Settings Tab Navigation */}
-          <div className="flex items-center gap-1 border-b border-slate-200 overflow-x-auto">
-            {(
-              [
-                { key: "local", label: "Local Duty" },
-                { key: "pickup", label: "Pickup & Drop" },
-                { key: "dayrent", label: "Day Rent" },
-                { key: "outstation", label: "Outstation" },
-              ] as const
-            ).map(({ key, label }) => {
-              const isActive = settingsActiveTab === key;
-              return (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setSettingsActiveTab(key)}
-                  className={`px-4 py-2 text-xs font-medium transition cursor-pointer whitespace-nowrap ${
-                    isActive
-                      ? "text-[#f16623] border-b-2 border-[#f16623] -mb-[1px] bg-orange-50/40"
-                      : "text-slate-600 hover:text-slate-900 border-b-2 border-transparent hover:bg-slate-50 font-normal"
-                  }`}
-                >
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Section A: Local Duty Settings */}
-          {settingsActiveTab === "local" && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 p-3 rounded-[6px] bg-blue-50 border border-blue-200">
-                <span className="text-xs text-blue-800 font-normal">
-                  <strong className="font-medium">Local Duty</strong> uses packages defined per tariff (e.g. 4 HOURS 40 KM). Extra charges apply when actual hours or km exceed the package limits. No global settings required here — configure per tariff card.
-                </span>
-              </div>
-              <div className="p-3 rounded-[6px] bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
-                <p className="font-medium text-slate-800">How extra charges work:</p>
-                <p>• If actual hours &gt; package hours → (actualHours − packageHours) × extraPerHour rate</p>
-                <p>• If actual km &gt; package km → (actualKm − packageKm) × extraPerKm rate</p>
-                <p className="text-slate-400 text-[11px] mt-1">Both includedHours and includedKm are stored per package for calculation use.</p>
-              </div>
-            </div>
-          )}
-
-          {/* Section B: Pickup & Drop Settings */}
-          {settingsActiveTab === "pickup" && (
-            <div className="space-y-3">
-              <div className="flex items-center gap-2 p-3 rounded-[6px] bg-blue-50 border border-blue-200">
-                <span className="text-xs text-blue-800 font-normal">
-                  <strong className="font-medium">Pickup &amp; Drop</strong> transfers (Airport &amp; Railway) use fixed fares with included hours and km. Extra waiting charges apply after the included hours. Configure rates per tariff card.
-                </span>
-              </div>
-              <div className="p-3 rounded-[6px] bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
-                <p className="font-medium text-slate-800">Fare calculation:</p>
-                <p>• Fixed fare applies for the journey up to includedHours and includedKm</p>
-                <p>• Waiting per hour kicks in after the included hours are exceeded</p>
-                <p>• Extra per km applies if actual km exceeds included km</p>
-              </div>
-            </div>
-          )}
-
-          {/* Section C: Day Rent Settings */}
-          {settingsActiveTab === "dayrent" && (
-            <div className="space-y-5">
-              {/* Day Counting Mode */}
-              <div className="space-y-2">
-                <label className="text-[11px] font-medium text-slate-700 uppercase tracking-wider block">
-                  Day Counting Mode
-                </label>
-                <div className="space-y-2">
-                  <label className={`flex items-start gap-3 p-3 rounded-[6px] border cursor-pointer transition ${dayRentDayMode === '24hour' ? 'border-[#f16623] bg-orange-50/40' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
-                    <input
-                      type="radio"
-                      name="dayMode"
-                      value="24hour"
-                      checked={dayRentDayMode === '24hour'}
-                      onChange={() => setDayRentDayMode('24hour')}
-                      className="mt-0.5 accent-[#f16623]"
-                    />
-                    <div>
-                      <p className="text-xs font-medium text-slate-900">24-Hour Rolling</p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">A day = exactly 24 hours from booking start. e.g. 10AM to 10AM next day = 1 day.</p>
-                    </div>
-                  </label>
-                  <label className={`flex items-start gap-3 p-3 rounded-[6px] border cursor-pointer transition ${dayRentDayMode === 'calendar' ? 'border-[#f16623] bg-orange-50/40' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
-                    <input
-                      type="radio"
-                      name="dayMode"
-                      value="calendar"
-                      checked={dayRentDayMode === 'calendar'}
-                      onChange={() => setDayRentDayMode('calendar')}
-                      className="mt-0.5 accent-[#f16623]"
-                    />
-                    <div>
-                      <p className="text-xs font-medium text-slate-900">Calendar Day</p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">A day changes at midnight. e.g. 10PM Day 1 to 2AM Day 2 = 2 days.</p>
-                    </div>
-                  </label>
-                </div>
-              </div>
-
-              {/* Day Rate Hours Threshold */}
-              {dayRentDayMode === '24hour' && (
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-medium text-slate-700 uppercase tracking-wider block">
-                    Day Rate Hours Threshold
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min="1"
-                      max="24"
-                      value={dayRentDayHours}
-                      onChange={(e) => setDayRentDayHours(Number(e.target.value))}
-                      onWheel={(e) => (e.target as HTMLElement).blur()}
-                      className="w-24 h-[34px] px-2.5 text-sm bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                    />
-                    <span className="text-xs text-slate-500">hours per day (default: 24)</span>
-                  </div>
-                  <p className="text-[11px] text-slate-400">Maximum hours included in one &quot;day&quot; before the next day rate kicks in.</p>
-                </div>
-              )}
-
-              {/* Night Charge Time Range */}
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-medium text-slate-700 uppercase tracking-wider block">
-                  Night Charge Time Range
-                </label>
-                <div className="flex items-center gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-500 block">From</label>
-                    <input
-                      type="time"
-                      value={nightChargeFrom}
-                      onChange={(e) => setNightChargeFrom(e.target.value)}
-                      className="h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-mono"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] text-slate-500 block">To</label>
-                    <input
-                      type="time"
-                      value={nightChargeTo}
-                      onChange={(e) => setNightChargeTo(e.target.value)}
-                      className="h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-mono"
-                    />
-                  </div>
-                </div>
-                <p className="text-[11px] text-slate-400">Bookings starting or falling within this window incur the night charge.</p>
-              </div>
-
-              {/* Overtime Grace Period */}
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-medium text-slate-700 uppercase tracking-wider block">
-                  Overtime Grace Period
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min="0"
-                    max="120"
-                    value={overtimeGraceMinutes}
-                    onChange={(e) => setOvertimeGraceMinutes(Number(e.target.value))}
-                    onWheel={(e) => (e.target as HTMLElement).blur()}
-                    className="w-24 h-[34px] px-2.5 text-sm bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  />
-                  <span className="text-xs text-slate-500">minutes (default: 30)</span>
-                </div>
-                <p className="text-[11px] text-slate-400">Minutes over the included time before extra overtime charges apply.</p>
-              </div>
-            </div>
-          )}
-
-          {/* Section D: Outstation Settings */}
-          {settingsActiveTab === "outstation" && (
-            <div className="space-y-5">
-              {/* Minimum KM per Day */}
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-medium text-slate-700 uppercase tracking-wider block">
-                  Minimum KM per Day
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min="0"
-                    value={outstationMinKmPerDay}
-                    onChange={(e) => setOutstationMinKmPerDay(Number(e.target.value))}
-                    onWheel={(e) => (e.target as HTMLElement).blur()}
-                    className="w-28 h-[34px] px-2.5 text-sm bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                  />
-                  <span className="text-xs text-slate-500">km/day (default: 300)</span>
-                </div>
-                <p className="text-[11px] text-slate-400">Minimum guaranteed km charged per day, even if actual km driven is less.</p>
-              </div>
-
-              {/* Return Trip */}
-              <div className="space-y-2">
-                <label className="text-[11px] font-medium text-slate-700 uppercase tracking-wider block">
-                  Return Trip Counting
-                </label>
-                <div className="space-y-2">
-                  <label className={`flex items-start gap-3 p-3 rounded-[6px] border cursor-pointer transition ${outstationReturnTrip === 'separate-day' ? 'border-[#f16623] bg-orange-50/40' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
-                    <input
-                      type="radio"
-                      name="returnTrip"
-                      value="separate-day"
-                      checked={outstationReturnTrip === 'separate-day'}
-                      onChange={() => setOutstationReturnTrip('separate-day')}
-                      className="mt-0.5 accent-[#f16623]"
-                    />
-                    <div>
-                      <p className="text-xs font-medium text-slate-900">Separate Day</p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">Return trip counts as an additional day with its own km/bata charges.</p>
-                    </div>
-                  </label>
-                  <label className={`flex items-start gap-3 p-3 rounded-[6px] border cursor-pointer transition ${outstationReturnTrip === 'included' ? 'border-[#f16623] bg-orange-50/40' : 'border-slate-200 bg-white hover:bg-slate-50'}`}>
-                    <input
-                      type="radio"
-                      name="returnTrip"
-                      value="included"
-                      checked={outstationReturnTrip === 'included'}
-                      onChange={() => setOutstationReturnTrip('included')}
-                      className="mt-0.5 accent-[#f16623]"
-                    />
-                    <div>
-                      <p className="text-xs font-medium text-slate-900">Included in Trip</p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">Return trip km are included in total km calculation, not counted as extra day.</p>
-                    </div>
-                  </label>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Settings Feedback */}
-          {settingsFeedback && (
-            <div className={`flex items-center gap-2 px-3 py-2 rounded-[6px] text-xs border ${settingsFeedback.type === "success" ? "bg-emerald-50 text-emerald-800 border-emerald-200" : "bg-rose-50 text-rose-800 border-rose-200"}`}>
-              {settingsFeedback.type === "success" ? (
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-              ) : (
-                <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-              )}
-              <span>{settingsFeedback.message}</span>
-            </div>
-          )}
-
-          {/* Settings Bottom Actions */}
-          <div className="pt-4 border-t border-slate-200 flex items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={() => setIsSettingsOpen(false)}
-              className="h-[34px] max-h-[34px] px-4 rounded-[6px] border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-normal transition cursor-pointer"
-            >
-              Close
-            </button>
-            <button
-              type="button"
-              disabled={isSavingSettings}
-              onClick={handleSaveSettings}
-              className="h-[34px] max-h-[34px] px-5 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] disabled:opacity-60 text-white text-xs font-medium shadow-xs shadow-[#f16623]/25 transition flex items-center justify-center gap-1.5 active:scale-[0.98] cursor-pointer"
-            >
-              {isSavingSettings ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  <span>Saving...</span>
-                </>
-              ) : (
-                <>
-                  <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-                  <span>Save Settings</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-      </OffCanvas>
     </div>
   );
 }
