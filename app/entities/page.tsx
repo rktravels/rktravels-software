@@ -63,6 +63,7 @@ export interface BankAccountItem {
   isDefault: boolean;
   upiId?: string;
   qrCodeUrl?: string;
+  paymentQrUrl?: string;
 }
 
 export interface NumberingSeriesItem {
@@ -120,6 +121,7 @@ export interface EntityFullRecord {
   logoUrl?: string;
   signatureUrl?: string;
   paymentQrUrl?: string;
+  qrCodeUrl?: string;
   upiId?: string;
 
   // Step 6: Status
@@ -320,8 +322,20 @@ export default function EntitiesPage() {
                 fuelRates: Array.isArray(data.fuelRates) ? data.fuelRates : [],
                 logoUrl: data.logoUrl || "",
                 signatureUrl: data.signatureUrl || "",
-                paymentQrUrl: data.paymentQrUrl || data.qrCodeUrl || "",
-                upiId: data.upiId || "",
+                paymentQrUrl:
+                  data.paymentQrUrl ||
+                  data.qrCodeUrl ||
+                  (Array.isArray(data.bankAccounts)
+                    ? data.bankAccounts.find((b: any) => b.qrCodeUrl || b.paymentQrUrl)?.qrCodeUrl ||
+                      data.bankAccounts.find((b: any) => b.qrCodeUrl || b.paymentQrUrl)?.paymentQrUrl
+                    : "") ||
+                  "",
+                upiId:
+                  data.upiId ||
+                  (Array.isArray(data.bankAccounts)
+                    ? data.bankAccounts.find((b: any) => b.upiId)?.upiId
+                    : "") ||
+                  "",
                 isActive: data.isActive !== false,
                 entityName: data.legalName || data.entityName || data.travelName || "Unnamed Entity",
                 travelName: data.legalName || data.entityName || data.travelName || "Unnamed Entity",
@@ -363,8 +377,20 @@ export default function EntitiesPage() {
                   fuelRates: Array.isArray(data.fuelRates) ? data.fuelRates : [],
                   logoUrl: data.logoUrl || "",
                   signatureUrl: data.signatureUrl || "",
-                  paymentQrUrl: data.paymentQrUrl || data.qrCodeUrl || "",
-                  upiId: data.upiId || "",
+                  paymentQrUrl:
+                    data.paymentQrUrl ||
+                    data.qrCodeUrl ||
+                    (Array.isArray(data.bankAccounts)
+                      ? data.bankAccounts.find((b: any) => b.qrCodeUrl || b.paymentQrUrl)?.qrCodeUrl ||
+                        data.bankAccounts.find((b: any) => b.qrCodeUrl || b.paymentQrUrl)?.paymentQrUrl
+                      : "") ||
+                    "",
+                  upiId:
+                    data.upiId ||
+                    (Array.isArray(data.bankAccounts)
+                      ? data.bankAccounts.find((b: any) => b.upiId)?.upiId
+                      : "") ||
+                    "",
                   isActive: data.isActive !== false,
                   entityName: data.legalName || data.entityName || data.travelName || "Unnamed Entity",
                   travelName: data.legalName || data.entityName || data.travelName || "Unnamed Entity",
@@ -414,8 +440,20 @@ export default function EntitiesPage() {
                   fuelRates: Array.isArray(data.fuelRates) ? data.fuelRates : [],
                   logoUrl: data.logoUrl || "",
                   signatureUrl: data.signatureUrl || "",
-                  paymentQrUrl: data.paymentQrUrl || data.qrCodeUrl || "",
-                  upiId: data.upiId || "",
+                  paymentQrUrl:
+                    data.paymentQrUrl ||
+                    data.qrCodeUrl ||
+                    (Array.isArray(data.bankAccounts)
+                      ? data.bankAccounts.find((b: any) => b.qrCodeUrl || b.paymentQrUrl)?.qrCodeUrl ||
+                        data.bankAccounts.find((b: any) => b.qrCodeUrl || b.paymentQrUrl)?.paymentQrUrl
+                      : "") ||
+                    "",
+                  upiId:
+                    data.upiId ||
+                    (Array.isArray(data.bankAccounts)
+                      ? data.bankAccounts.find((b: any) => b.upiId)?.upiId
+                      : "") ||
+                    "",
                   isActive: data.isActive !== false,
                   entityName: name,
                   travelName: name,
@@ -544,7 +582,9 @@ export default function EntitiesPage() {
     setBrandingQrFile(null);
     setBrandingQrPreviewUrl(
       entity.paymentQrUrl ||
-      entity.bankAccounts?.find((b) => !!b.qrCodeUrl)?.qrCodeUrl ||
+      entity.qrCodeUrl ||
+      entity.bankAccounts?.find((b) => b.qrCodeUrl || b.paymentQrUrl)?.qrCodeUrl ||
+      entity.bankAccounts?.find((b) => b.qrCodeUrl || b.paymentQrUrl)?.paymentQrUrl ||
       ""
     );
 
@@ -649,8 +689,8 @@ export default function EntitiesPage() {
       accountType: modalAccountType,
       effectiveFrom: modalEffectiveFrom,
       isDefault: modalIsDefault,
-      upiId: modalUpiId.trim() || undefined,
-      qrCodeUrl: finalQrUrl || undefined,
+      upiId: modalUpiId.trim() || "",
+      qrCodeUrl: finalQrUrl || "",
     };
 
     setBankAccounts((prev) => {
@@ -766,7 +806,7 @@ export default function EntitiesPage() {
       evRate: modalEvRate,
       hybridRate: modalHybridRate || modalPetrolPrice,
       effectiveFrom: modalFuelEffectiveFrom,
-      effectiveTo: modalFuelEffectiveTo.trim() || undefined,
+      effectiveTo: modalFuelEffectiveTo.trim() || "",
       revisionNotes: modalRevisionNotes.trim(),
       isCurrentActive: modalFuelIsCurrentActive,
     };
@@ -831,6 +871,25 @@ export default function EntitiesPage() {
     }
 
     return data.url;
+  };
+
+  // Helper to strip undefined values so Firestore writes never fail
+  const sanitizeForFirestore = (val: any): any => {
+    if (Array.isArray(val)) {
+      return val.map(sanitizeForFirestore);
+    }
+    if (val !== null && typeof val === "object" && !(val instanceof Date) && !val.toMillis) {
+      const res: any = {};
+      for (const [k, v] of Object.entries(val)) {
+        if (v !== undefined) {
+          res[k] = sanitizeForFirestore(v);
+        } else {
+          res[k] = "";
+        }
+      }
+      return res;
+    }
+    return val === undefined ? "" : val;
   };
 
   // --- Step 6: Final Submission to ImageKit & Firestore ---
@@ -898,11 +957,18 @@ export default function EntitiesPage() {
         bankAccounts.find((b) => !!b.qrCodeUrl)?.qrCodeUrl ||
         "";
 
+      const resolvedUpiId =
+        bankAccounts.find((b) => b.isDefault)?.upiId ||
+        bankAccounts.find((b) => !!b.upiId)?.upiId ||
+        "";
+
       const syncedBankAccounts = bankAccounts.map((b, idx) => {
-        if ((b.isDefault || idx === 0) && !b.qrCodeUrl && resolvedQrUrl) {
-          return { ...b, qrCodeUrl: resolvedQrUrl };
-        }
-        return b;
+        const isTarget = b.isDefault || idx === 0;
+        return {
+          ...b,
+          qrCodeUrl: b.qrCodeUrl || (isTarget ? resolvedQrUrl : ""),
+          upiId: b.upiId || (isTarget ? resolvedUpiId : ""),
+        };
       });
 
       const entityPayload = {
@@ -927,10 +993,7 @@ export default function EntitiesPage() {
         signatureUrl: finalSignatureUrl,
         paymentQrUrl: resolvedQrUrl,
         qrCodeUrl: resolvedQrUrl,
-        upiId:
-          bankAccounts.find((b) => b.isDefault)?.upiId ||
-          bankAccounts.find((b) => !!b.upiId)?.upiId ||
-          "",
+        upiId: resolvedUpiId,
 
         isActive: isActiveEntity,
 
@@ -940,12 +1003,14 @@ export default function EntitiesPage() {
         mobileNumber: phoneForPrint.trim(),
       };
 
+      const cleanPayload = sanitizeForFirestore(entityPayload);
+
       if (viewMode === "edit" && editingEntityId) {
         const targetCol = editingEntitySourceCol || "entities";
         await setDoc(
           doc(db, targetCol, editingEntityId),
           {
-            ...entityPayload,
+            ...cleanPayload,
             updatedAt: serverTimestamp(),
           },
           { merge: true }
@@ -956,7 +1021,7 @@ export default function EntitiesPage() {
             await setDoc(
               doc(db, "entities", editingEntityId),
               {
-                ...entityPayload,
+                ...cleanPayload,
                 updatedAt: serverTimestamp(),
               },
               { merge: true }
@@ -971,7 +1036,7 @@ export default function EntitiesPage() {
         });
       } else {
         await addDoc(collection(db, "entities"), {
-          ...entityPayload,
+          ...cleanPayload,
           createdAt: serverTimestamp(),
         });
         setFeedback({
@@ -1217,13 +1282,24 @@ export default function EntitiesPage() {
                             </div>
                           </td>
                           <td className="py-2.5 px-3 text-center">
-                            <div className="inline-flex items-center gap-1.5 text-[10px]">
-                              <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
-                                {entity.bankAccounts?.length || 0} Banks
-                              </span>
-                              <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
-                                {entity.numberingSeries?.length || 0} Series
-                              </span>
+                            <div className="flex flex-col items-center gap-1 text-[10px]">
+                              <div className="inline-flex items-center gap-1.5">
+                                <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                                  {entity.bankAccounts?.length || 0} Banks
+                                </span>
+                                <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+                                  {entity.numberingSeries?.length || 0} Series
+                                </span>
+                              </div>
+                              {(entity.paymentQrUrl || entity.qrCodeUrl || entity.bankAccounts?.some((b) => b.qrCodeUrl)) && (
+                                <span className="px-1.5 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[9px] font-medium inline-flex items-center gap-1">
+                                  <QrCode className="w-2.5 h-2.5" />
+                                  <span>QR Active</span>
+                                  {(entity.upiId || entity.bankAccounts?.find((b) => b.upiId)?.upiId) && (
+                                    <span className="font-mono text-slate-600">· {entity.upiId || entity.bankAccounts?.find((b) => b.upiId)?.upiId}</span>
+                                  )}
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td className="py-2.5 px-3 text-center">
@@ -1594,7 +1670,7 @@ export default function EntitiesPage() {
                     <span>Branding & Signatures</span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div className="p-3 rounded-[6px] border border-slate-200 bg-slate-50/50 text-center">
                       <span className="text-[10px] uppercase font-medium text-slate-500 block mb-2">Company Logo</span>
                       {viewingEntity.logoUrl ? (
@@ -1618,6 +1694,26 @@ export default function EntitiesPage() {
                         />
                       ) : (
                         <p className="text-[11px] text-slate-400 italic py-4">No signature uploaded</p>
+                      )}
+                    </div>
+
+                    <div className="p-3 rounded-[6px] border border-slate-200 bg-slate-50/50 text-center">
+                      <span className="text-[10px] uppercase font-medium text-slate-500 block mb-2">Payment QR Code</span>
+                      {(viewingEntity.paymentQrUrl || viewingEntity.qrCodeUrl || viewingEntity.bankAccounts?.find(b => b.qrCodeUrl)?.qrCodeUrl) ? (
+                        <div className="space-y-1">
+                          <img
+                            src={viewingEntity.paymentQrUrl || viewingEntity.qrCodeUrl || viewingEntity.bankAccounts?.find(b => b.qrCodeUrl)?.qrCodeUrl}
+                            alt="Payment QR"
+                            className="max-h-24 max-w-full mx-auto object-contain bg-white p-1 rounded border border-slate-200"
+                          />
+                          {(viewingEntity.upiId || viewingEntity.bankAccounts?.find(b => b.upiId)?.upiId) && (
+                            <span className="font-mono text-[10px] text-emerald-700 font-semibold block truncate">
+                              UPI: {viewingEntity.upiId || viewingEntity.bankAccounts?.find(b => b.upiId)?.upiId}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-slate-400 italic py-4">No QR code uploaded</p>
                       )}
                     </div>
                   </div>

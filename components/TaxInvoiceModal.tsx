@@ -882,7 +882,7 @@ export function TaxInvoiceModal({
             {/* 6. Computer Generated Invoice Disclaimer */}
             <div className="pt-4 border-t border-slate-200 text-center">
               <p className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
-                This is a computer-generated invoice. No physical copy or signature required.
+                Note : This is a system generated report and does not require any signature.
               </p>
             </div>
           </div>
@@ -912,7 +912,7 @@ export function TaxInvoiceModal({
             @media print {
               @page {
                 size: A4 portrait;
-                margin: 18mm 10mm 12mm 10mm;
+                margin: 0mm; /* Eliminates browser default headers (date/title) and footers (URL/page numbers) */
               }
 
               /* Hide the entire background web application */
@@ -979,11 +979,12 @@ export function TaxInvoiceModal({
                 border: none !important;
                 box-shadow: none !important;
                 border-radius: 0 !important;
-                padding: 0 !important;
+                padding: 16mm 12mm 12mm 12mm !important;
                 margin: 0 auto !important;
                 width: 100% !important;
-                max-width: 760px !important;
+                max-width: 100% !important;
                 background: #ffffff !important;
+                box-sizing: border-box !important;
               }
 
               * {
