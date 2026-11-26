@@ -164,8 +164,30 @@ export function TaxInvoiceModal({
       ifscCode: "HDFC0000568",
     };
 
-  const paymentQrUrl = defaultBank?.qrCodeUrl || entityData?.paymentQrUrl || null;
-  const paymentUpiId = defaultBank?.upiId || entityData?.upiId || null;
+  // Determine UPI ID with fallback
+  const effectiveUpiId =
+    defaultBank?.upiId ||
+    defaultBank?.upi ||
+    entityData?.upiId ||
+    entityData?.upi ||
+    (entityData?.phoneForPrint || entityData?.mobileNumber || supplierPhone
+      ? `${(entityData?.phoneForPrint || entityData?.mobileNumber || supplierPhone).replace(/[^0-9]/g, "")}@upi`
+      : "9948228877@upi");
+
+  // Determine Payment QR Code URL with dynamic fallback to UPI standard QR
+  const customQrUrl =
+    defaultBank?.qrCodeUrl ||
+    defaultBank?.paymentQrUrl ||
+    defaultBank?.qrUrl ||
+    entityData?.paymentQrUrl ||
+    entityData?.qrCodeUrl ||
+    null;
+
+  const effectiveQrUrl =
+    customQrUrl ||
+    `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(
+      `upi://pay?pa=${effectiveUpiId}&pn=${encodeURIComponent(supplierName)}&cu=INR`
+    )}`;
 
   // --- Customer / Bill To Profile ---
   const billToName =
@@ -469,10 +491,10 @@ export function TaxInvoiceModal({
             {/* Paper Sheet (Exact Layout from reference invoice) */}
             <div
               id="tax-invoice-printable-sheet"
-              className="max-w-[780px] mx-auto bg-white p-6 sm:p-9 shadow-sm border border-slate-200/90 rounded-[2px] space-y-3.5 text-slate-900 font-sans print:p-0 print:shadow-none print:border-none print:max-w-none"
+              className="max-w-[780px] mx-auto bg-white px-6 sm:px-10 pt-10 sm:pt-14 pb-8 sm:pb-10 shadow-sm border border-slate-200/90 rounded-[2px] space-y-4 text-slate-900 font-sans print:px-8 print:pt-10 print:pb-8 print:shadow-none print:border-none print:max-w-none"
             >
               {/* 1. Header: Left Company Branding, Right Tax Invoice Meta */}
-              <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start justify-between gap-4 pt-1">
                 {/* Left Company Details */}
                 <div className="space-y-0.5">
                   {/* Entity Logo */}
@@ -759,80 +781,79 @@ export function TaxInvoiceModal({
             <div className="grid grid-cols-1 sm:grid-cols-12 print:grid-cols-12 invoice-split-cols gap-4 pt-3 items-end">
               {/* Left: Bank Details Box */}
               <div className="sm:col-span-7 print:col-span-7 border border-slate-300 rounded-[4px] p-3 text-xs bg-white">
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center justify-between gap-3">
                   <div className="flex-1 space-y-1">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                       BANK ACCOUNT DETAILS
                     </span>
                     <div className="grid grid-cols-12 gap-1 text-[11px] pt-0.5">
-                      <span className="col-span-3 text-slate-500">Bank</span>
+                      <span className="col-span-3 text-slate-500 font-medium">Bank</span>
                       <span className="col-span-9 font-bold text-slate-900">
                         {defaultBank.bankName}
                       </span>
 
-                      <span className="col-span-3 text-slate-500">Name</span>
+                      <span className="col-span-3 text-slate-500 font-medium">Name</span>
                       <span className="col-span-9 font-bold text-slate-900">
                         {defaultBank.accountHolderName || supplierName}
                       </span>
 
-                      <span className="col-span-3 text-slate-500">A/C No</span>
+                      <span className="col-span-3 text-slate-500 font-medium">A/C No</span>
                       <span className="col-span-9 font-black text-slate-900 font-mono tracking-wider">
                         {defaultBank.accountNumber}
                       </span>
 
-                      <span className="col-span-3 text-slate-500">IFSC</span>
+                      <span className="col-span-3 text-slate-500 font-medium">IFSC</span>
                       <span className="col-span-9 font-bold text-slate-900 font-mono">
                         {defaultBank.ifscCode}
                       </span>
 
-                      {paymentUpiId && (
-                        <>
-                          <span className="col-span-3 text-slate-500">UPI ID</span>
-                          <span className="col-span-9 font-bold text-[#f16623] font-mono">
-                            {paymentUpiId}
-                          </span>
-                        </>
-                      )}
+                      <span className="col-span-3 text-slate-500 font-medium">UPI ID</span>
+                      <span className="col-span-9 font-bold text-[#f16623] font-mono">
+                        {effectiveUpiId}
+                      </span>
                     </div>
                   </div>
 
                   {/* Payment QR Code */}
-                  {paymentQrUrl && (
-                    <div className="shrink-0 flex flex-col items-center justify-center p-1.5 bg-slate-50 border border-slate-200 rounded-[4px] text-center">
-                      <img
-                        src={paymentQrUrl}
-                        alt="Payment QR"
-                        className="w-[72px] h-[72px] sm:w-[82px] sm:h-[82px] object-contain bg-white rounded-[2px] print:w-[68px] print:h-[68px]"
-                      />
-                      <span className="text-[9px] font-semibold text-slate-700 mt-1 uppercase tracking-wider">
-                        Scan &amp; Pay
-                      </span>
-                    </div>
-                  )}
+                  <div className="shrink-0 flex flex-col items-center justify-center p-1.5 bg-slate-50 border border-slate-200 rounded-[4px] text-center">
+                    <img
+                      src={effectiveQrUrl}
+                      alt="Payment QR"
+                      className="w-[84px] h-[84px] sm:w-[92px] sm:h-[92px] object-contain bg-white rounded-[2px] print:w-[76px] print:h-[76px]"
+                    />
+                    <span className="text-[9px] font-bold text-slate-700 mt-1 uppercase tracking-wider block">
+                      Scan &amp; Pay
+                    </span>
+                  </div>
                 </div>
               </div>
 
-              {/* Right: Signature */}
-              <div className="sm:col-span-5 print:col-span-5 text-right space-y-2">
-                <p className="text-xs font-bold text-slate-900">
-                  For {supplierName}
-                </p>
-                {/* Signature Image */}
-                {entityData?.signatureUrl ? (
-                  <div className="flex justify-end">
-                    <img
-                      src={entityData.signatureUrl}
-                      alt="Authorised Signature"
-                      className="h-14 max-w-[180px] object-contain print:h-12"
-                    />
+              {/* Right: Signature & Stamp */}
+              <div className="sm:col-span-5 print:col-span-5 flex flex-col items-end justify-end">
+                <div className="w-[200px] flex flex-col items-center text-center">
+                  <p className="text-xs font-bold text-slate-900 mb-1 w-full text-center">
+                    For {supplierName}
+                  </p>
+
+                  {/* Stamp / Signature Image */}
+                  {entityData?.signatureUrl ? (
+                    <div className="h-28 w-full flex items-center justify-center my-0.5">
+                      <img
+                        src={entityData.signatureUrl}
+                        alt="Authorised Stamp / Signature"
+                        className="max-h-28 max-w-[170px] w-auto h-auto object-contain print:max-h-24"
+                      />
+                    </div>
+                  ) : (
+                    <div className="h-24 w-full" />
+                  )}
+
+                  {/* Signatory Line & Text */}
+                  <div className="border-t border-slate-400 pt-1.5 w-full text-center">
+                    <span className="text-[11px] font-semibold text-slate-700 block">
+                      Authorised Signatory
+                    </span>
                   </div>
-                ) : (
-                  <div className="h-14" />
-                )}
-                <div className="border-t border-slate-300 pt-1 inline-block min-w-[180px] text-center">
-                  <span className="text-[11px] text-slate-600 block">
-                    Authorised Signatory
-                  </span>
                 </div>
               </div>
             </div>
@@ -875,7 +896,7 @@ export function TaxInvoiceModal({
             @media print {
               @page {
                 size: A4 portrait;
-                margin: 6mm 8mm;
+                margin: 12mm 10mm 10mm 10mm;
               }
 
               /* Hide the entire background web application */
