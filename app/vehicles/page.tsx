@@ -94,6 +94,7 @@ export interface VehicleItem {
   category: string;
   seatingCapacity: string;
   fuelType: string;
+  mileageKmpl: string; // km per litre — mandatory
   ownershipType: "Owned" | "Vendor Attached" | "Leased";
   vendorId?: string | null;
   vendorName?: string | null;
@@ -289,6 +290,7 @@ export default function VehiclesPage() {
   const [category, setCategory] = useState("Sedan");
   const [seatingCapacity, setSeatingCapacity] = useState("");
   const [fuelType, setFuelType] = useState("Diesel");
+  const [mileageKmpl, setMileageKmpl] = useState("");
   const [ownershipType, setOwnershipType] = useState<"Owned" | "Vendor Attached" | "Leased">("Owned");
   const [selectedVendorId, setSelectedVendorId] = useState("");
   const [selectedVendorName, setSelectedVendorName] = useState("");
@@ -474,6 +476,7 @@ export default function VehiclesPage() {
     setCategory(categoryOptions[0] || "Sedan");
     setSeatingCapacity("");
     setFuelType("Diesel");
+    setMileageKmpl("");
     setOwnershipType("Owned");
     setSelectedVendorId("");
     setSelectedVendorName("");
@@ -527,6 +530,7 @@ export default function VehiclesPage() {
     setCategory(v.category || "Sedan");
     setSeatingCapacity(v.seatingCapacity || "");
     setFuelType(v.fuelType || "Diesel");
+    setMileageKmpl(v.mileageKmpl || "");
     setOwnershipType(v.ownershipType || "Owned");
     setSelectedVendorId(v.vendorId || "");
     setSelectedVendorName(v.vendorName || "");
@@ -610,6 +614,10 @@ export default function VehiclesPage() {
       }
       if (!fuelType) {
         setTabError("Please select a fuel type.");
+        return false;
+      }
+      if (!mileageKmpl.trim() || parseFloat(mileageKmpl) <= 0) {
+        setTabError("Please enter a valid mileage (km/l). This field is mandatory.");
         return false;
       }
       if (!ownershipType) {
@@ -751,6 +759,7 @@ export default function VehiclesPage() {
         category,
         seatingCapacity: `${seatingCapacity.trim()} Seater`,
         fuelType,
+        mileageKmpl: mileageKmpl.trim(),
         ownershipType,
         vendorId: finalVendorId || null,
         vendorName: finalVendor,
@@ -1649,6 +1658,25 @@ export default function VehiclesPage() {
                 </div>
               </div>
 
+              {/* Mileage */}
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Mileage (km/l) <span className="text-[#f16623]">*</span>
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  step="0.1"
+                  required
+                  value={mileageKmpl}
+                  onChange={(e) => setMileageKmpl(e.target.value)}
+                  onWheel={(e) => (e.target as HTMLInputElement).blur()}
+                  placeholder="e.g. 12.5"
+                  className="w-full h-[34px] max-h-[34px] px-3 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white transition"
+                />
+              </div>
+
               {/* Ownership Type & Vendor Selection */}
               <div className="p-3 bg-slate-50 rounded-[6px] border border-slate-200/80 space-y-2.5">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -2474,6 +2502,12 @@ export default function VehiclesPage() {
                 <div>
                   <span className="text-[10px] text-slate-400 uppercase block">Fuel Type</span>
                   <span className="font-medium text-slate-800">{viewingVehicle.fuelType || "—"}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase block">Mileage</span>
+                  <span className="font-medium text-slate-800">
+                    {viewingVehicle.mileageKmpl ? `${viewingVehicle.mileageKmpl} km/l` : "—"}
+                  </span>
                 </div>
                 <div>
                   <span className="text-[10px] text-slate-400 uppercase block">Ownership</span>
