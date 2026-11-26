@@ -164,6 +164,9 @@ export function TaxInvoiceModal({
       ifscCode: "HDFC0000568",
     };
 
+  const paymentQrUrl = defaultBank?.qrCodeUrl || entityData?.paymentQrUrl || null;
+  const paymentUpiId = defaultBank?.upiId || entityData?.upiId || null;
+
   // --- Customer / Bill To Profile ---
   const billToName =
     companyData?.legalName ||
@@ -755,30 +758,57 @@ export function TaxInvoiceModal({
             {/* 5. Footer: Bank Details & Authorised Signatory */}
             <div className="grid grid-cols-1 sm:grid-cols-12 print:grid-cols-12 invoice-split-cols gap-4 pt-3 items-end">
               {/* Left: Bank Details Box */}
-              <div className="sm:col-span-7 print:col-span-7 border border-slate-300 rounded-[4px] p-3 text-xs space-y-1 bg-white">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                  BANK ACCOUNT DETAILS
-                </span>
-                <div className="grid grid-cols-12 gap-1 text-[11px] pt-0.5">
-                  <span className="col-span-3 text-slate-500">Bank</span>
-                  <span className="col-span-9 font-bold text-slate-900">
-                    {defaultBank.bankName}
-                  </span>
+              <div className="sm:col-span-7 print:col-span-7 border border-slate-300 rounded-[4px] p-3 text-xs bg-white">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      BANK ACCOUNT DETAILS
+                    </span>
+                    <div className="grid grid-cols-12 gap-1 text-[11px] pt-0.5">
+                      <span className="col-span-3 text-slate-500">Bank</span>
+                      <span className="col-span-9 font-bold text-slate-900">
+                        {defaultBank.bankName}
+                      </span>
 
-                  <span className="col-span-3 text-slate-500">Name</span>
-                  <span className="col-span-9 font-bold text-slate-900">
-                    {defaultBank.accountHolderName || supplierName}
-                  </span>
+                      <span className="col-span-3 text-slate-500">Name</span>
+                      <span className="col-span-9 font-bold text-slate-900">
+                        {defaultBank.accountHolderName || supplierName}
+                      </span>
 
-                  <span className="col-span-3 text-slate-500">A/C No</span>
-                  <span className="col-span-9 font-black text-slate-900 font-mono tracking-wider">
-                    {defaultBank.accountNumber}
-                  </span>
+                      <span className="col-span-3 text-slate-500">A/C No</span>
+                      <span className="col-span-9 font-black text-slate-900 font-mono tracking-wider">
+                        {defaultBank.accountNumber}
+                      </span>
 
-                  <span className="col-span-3 text-slate-500">IFSC</span>
-                  <span className="col-span-9 font-bold text-slate-900 font-mono">
-                    {defaultBank.ifscCode}
-                  </span>
+                      <span className="col-span-3 text-slate-500">IFSC</span>
+                      <span className="col-span-9 font-bold text-slate-900 font-mono">
+                        {defaultBank.ifscCode}
+                      </span>
+
+                      {paymentUpiId && (
+                        <>
+                          <span className="col-span-3 text-slate-500">UPI ID</span>
+                          <span className="col-span-9 font-bold text-[#f16623] font-mono">
+                            {paymentUpiId}
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Payment QR Code */}
+                  {paymentQrUrl && (
+                    <div className="shrink-0 flex flex-col items-center justify-center p-1.5 bg-slate-50 border border-slate-200 rounded-[4px] text-center">
+                      <img
+                        src={paymentQrUrl}
+                        alt="Payment QR"
+                        className="w-[72px] h-[72px] sm:w-[82px] sm:h-[82px] object-contain bg-white rounded-[2px] print:w-[68px] print:h-[68px]"
+                      />
+                      <span className="text-[9px] font-semibold text-slate-700 mt-1 uppercase tracking-wider">
+                        Scan &amp; Pay
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 

@@ -29,6 +29,7 @@ import {
   Edit2,
   CheckCircle,
   Eye,
+  QrCode,
 } from "lucide-react";
 import {
   collection,
@@ -59,6 +60,8 @@ export interface BankAccountItem {
   accountType: "Current" | "Savings" | "Overdraft" | "Cash Credit";
   effectiveFrom: string;
   isDefault: boolean;
+  upiId?: string;
+  qrCodeUrl?: string;
 }
 
 export interface NumberingSeriesItem {
@@ -115,6 +118,8 @@ export interface EntityFullRecord {
   // Step 5: Branding
   logoUrl?: string;
   signatureUrl?: string;
+  paymentQrUrl?: string;
+  upiId?: string;
 
   // Step 6: Status
   isActive: boolean;
@@ -204,6 +209,7 @@ export default function EntitiesPage() {
   // Step 2: Bank Accounts State
   const [bankAccounts, setBankAccounts] = useState<BankAccountItem[]>([]);
   const [showBankModal, setShowBankModal] = useState(false);
+  const [editingBankId, setEditingBankId] = useState<string | null>(null);
   const [modalBankName, setModalBankName] = useState("");
   const [modalAccountHolder, setModalAccountHolder] = useState("");
   const [modalAccountNumber, setModalAccountNumber] = useState("");
@@ -216,6 +222,11 @@ export default function EntitiesPage() {
     new Date().toISOString().split("T")[0]
   );
   const [modalIsDefault, setModalIsDefault] = useState(true);
+  const [modalUpiId, setModalUpiId] = useState("");
+  const [modalQrFile, setModalQrFile] = useState<File | null>(null);
+  const [modalQrPreviewUrl, setModalQrPreviewUrl] = useState("");
+  const [isUploadingQr, setIsUploadingQr] = useState(false);
+  const qrFileInputRef = useRef<HTMLInputElement>(null);
 
   // Step 3: Numbering & Series State
   const [numberingSeries, setNumberingSeries] = useState<NumberingSeriesItem[]>([]);
@@ -540,8 +551,9 @@ export default function EntitiesPage() {
     }
   };
 
-  // --- Sub-Modal: Add Bank Account ---
+  // --- Sub-Modal: Add / Edit Bank Account ---
   const handleOpenAddBank = () => {
+    setEditingBankId(null);
     setModalBankName("");
     setModalAccountHolder(legalName || "");
     setModalAccountNumber("");
@@ -551,18 +563,63 @@ export default function EntitiesPage() {
     setModalEffectiveFrom(new Date().toISOString().split("T")[0]);
     // If no bank accounts exist yet, default it to true
     setModalIsDefault(bankAccounts.length === 0);
+    setModalUpiId("");
+    setModalQrFile(null);
+    setModalQrPreviewUrl("");
+    if (qrFileInputRef.current) qrFileInputRef.current.value = "";
     setShowBankModal(true);
   };
 
-  const handleSaveBankModal = (e: React.FormEvent) => {
+  const handleOpenEditBank = (acc: BankAccountItem) => {
+    setEditingBankId(acc.id);
+    setModalBankName(acc.bankName || "");
+    setModalAccountHolder(acc.accountHolderName || legalName || "");
+    setModalAccountNumber(acc.accountNumber || "");
+    setModalIfscCode(acc.ifscCode || "");
+    setModalBranchName(acc.branchName || "");
+    setModalAccountType(acc.accountType || "Current");
+    setModalEffectiveFrom(acc.effectiveFrom || new Date().toISOString().split("T")[0]);
+    setModalIsDefault(!!acc.isDefault);
+    setModalUpiId(acc.upiId || "");
+    setModalQrFile(null);
+    setModalQrPreviewUrl(acc.qrCodeUrl || "");
+    if (qrFileInputRef.current) qrFileInputRef.current.value = "";
+    setShowBankModal(true);
+  };
+
+  const handleQrFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setModalQrFile(file);
+      const url = URL.createObjectURL(file);
+      setModalQrPreviewUrl(url);
+    }
+  };
+
+  const handleSaveBankModal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!modalBankName.trim() || !modalAccountNumber.trim() || !modalIfscCode.trim()) {
       alert("Please enter Bank Name, Account Number, and IFSC Code.");
       return;
     }
 
+    let finalQrUrl = modalQrPreviewUrl;
+    if (modalQrFile) {
+      try {
+        setIsUploadingQr(true);
+        finalQrUrl = await uploadImageToImageKit(modalQrFile, "/entities/bank-qr");
+      } catch (err: any) {
+        console.error("QR upload failed:", err);
+        alert("Failed to upload QR Code to ImageKit: " + (err.message || "Unknown error"));
+        setIsUploadingQr(false);
+        return;
+      } finally {
+        setIsUploadingQr(false);
+      }
+    }
+
     const newAcc: BankAccountItem = {
-      id: `bank-${Date.now()}`,
+      id: editingBankId || `bank-${Date.now()}`,
       bankName: modalBankName.trim(),
       accountHolderName: modalAccountHolder.trim() || legalName || "Authorized Account",
       accountNumber: modalAccountNumber.trim(),
@@ -571,14 +628,21 @@ export default function EntitiesPage() {
       accountType: modalAccountType,
       effectiveFrom: modalEffectiveFrom,
       isDefault: modalIsDefault,
+      upiId: modalUpiId.trim() || undefined,
+      qrCodeUrl: finalQrUrl || undefined,
     };
 
     setBankAccounts((prev) => {
-      let updated = [...prev];
+      let updated = editingBankId
+        ? prev.map((acc) => (acc.id === editingBankId ? newAcc : acc))
+        : [...prev, newAcc];
       if (newAcc.isDefault) {
-        updated = updated.map((acc) => ({ ...acc, isDefault: false }));
+        updated = updated.map((acc) => ({
+          ...acc,
+          isDefault: acc.id === newAcc.id,
+        }));
       }
-      return [...updated, newAcc];
+      return updated;
     });
 
     setShowBankModal(false);
@@ -808,6 +872,14 @@ export default function EntitiesPage() {
 
         logoUrl: finalLogoUrl,
         signatureUrl: finalSignatureUrl,
+        paymentQrUrl:
+          bankAccounts.find((b) => b.isDefault)?.qrCodeUrl ||
+          bankAccounts.find((b) => !!b.qrCodeUrl)?.qrCodeUrl ||
+          "",
+        upiId:
+          bankAccounts.find((b) => b.isDefault)?.upiId ||
+          bankAccounts.find((b) => !!b.upiId)?.upiId ||
+          "",
 
         isActive: isActiveEntity,
 
@@ -1324,22 +1396,36 @@ export default function EntitiesPage() {
                           key={acc.id}
                           className="p-2.5 rounded-[6px] border border-slate-200 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
                         >
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium text-slate-900 text-xs">{acc.bankName}</span>
-                              {acc.isDefault && (
-                                <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-emerald-100 text-emerald-800">
-                                  Default Account
-                                </span>
-                              )}
-                              <span className="text-[10px] text-slate-500">({acc.accountType})</span>
-                            </div>
-                            <div className="text-[11px] text-slate-600 mt-0.5">
-                              A/C: <span className="font-mono font-medium text-slate-900">{acc.accountNumber}</span> | IFSC: <span className="font-mono text-slate-800">{acc.ifscCode}</span>
-                            </div>
-                            {acc.branchName && (
-                              <div className="text-[10px] text-slate-400">Branch: {acc.branchName}</div>
+                          <div className="flex items-start gap-2.5">
+                            {acc.qrCodeUrl && (
+                              <img
+                                src={acc.qrCodeUrl}
+                                alt="Payment QR"
+                                className="w-12 h-12 object-contain bg-white rounded border border-slate-200 p-0.5 shrink-0"
+                              />
                             )}
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium text-slate-900 text-xs">{acc.bankName}</span>
+                                {acc.isDefault && (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-medium bg-emerald-100 text-emerald-800">
+                                    Default Account
+                                  </span>
+                                )}
+                                <span className="text-[10px] text-slate-500">({acc.accountType})</span>
+                              </div>
+                              <div className="text-[11px] text-slate-600 mt-0.5">
+                                A/C: <span className="font-mono font-medium text-slate-900">{acc.accountNumber}</span> | IFSC: <span className="font-mono text-slate-800">{acc.ifscCode}</span>
+                              </div>
+                              {acc.upiId && (
+                                <div className="text-[11px] text-[#f16623] font-mono mt-0.5">
+                                  UPI ID: <span className="font-medium">{acc.upiId}</span>
+                                </div>
+                              )}
+                              {acc.branchName && (
+                                <div className="text-[10px] text-slate-400">Branch: {acc.branchName}</div>
+                              )}
+                            </div>
                           </div>
                           <div className="text-[10px] text-slate-400 shrink-0">
                             Eff: {acc.effectiveFrom}
@@ -1878,6 +1964,7 @@ export default function EntitiesPage() {
                         <th className="py-2.5 px-3 font-medium">Account Number</th>
                         <th className="py-2.5 px-3 font-medium">IFSC Code</th>
                         <th className="py-2.5 px-3 font-medium">Type / Branch</th>
+                        <th className="py-2.5 px-3 font-medium">UPI / QR</th>
                         <th className="py-2.5 px-3 text-center font-medium">Status / Default</th>
                         <th className="py-2.5 px-3 text-right font-medium">Actions</th>
                       </tr>
@@ -1905,6 +1992,28 @@ export default function EntitiesPage() {
                               </span>
                             )}
                           </td>
+                          <td className="py-2.5 px-3">
+                            <div className="flex items-center gap-1.5">
+                              {acc.qrCodeUrl ? (
+                                <img
+                                  src={acc.qrCodeUrl}
+                                  alt="QR"
+                                  className="w-7 h-7 object-contain rounded border border-slate-200 bg-white p-0.5 shrink-0"
+                                  title="Payment QR configured"
+                                />
+                              ) : null}
+                              {acc.upiId ? (
+                                <span
+                                  className="font-mono text-[11px] text-[#f16623] truncate max-w-[120px] block"
+                                  title={acc.upiId}
+                                >
+                                  {acc.upiId}
+                                </span>
+                              ) : !acc.qrCodeUrl ? (
+                                <span className="text-[10px] text-slate-400 italic">—</span>
+                              ) : null}
+                            </div>
+                          </td>
                           <td className="py-2.5 px-3 text-center">
                             {acc.isDefault ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[4px] text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -1922,14 +2031,24 @@ export default function EntitiesPage() {
                             )}
                           </td>
                           <td className="py-2.5 px-3 text-right">
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteBank(acc.id)}
-                              className="h-[28px] max-h-[34px] w-[28px] rounded-[6px] text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 inline-flex items-center justify-center transition cursor-pointer"
-                              title="Delete bank account"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
+                            <div className="flex items-center justify-end gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditBank(acc)}
+                                className="h-[28px] max-h-[34px] w-[28px] rounded-[6px] text-slate-400 hover:text-slate-700 hover:bg-slate-100 border border-transparent hover:border-slate-200 inline-flex items-center justify-center transition cursor-pointer"
+                                title="Edit bank account & QR / UPI"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteBank(acc.id)}
+                                className="h-[28px] max-h-[34px] w-[28px] rounded-[6px] text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 inline-flex items-center justify-center transition cursor-pointer"
+                                title="Delete bank account"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}
@@ -2552,7 +2671,7 @@ export default function EntitiesPage() {
             {/* Modal Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50/50">
               <h3 className="text-xs font-medium text-slate-900">
-                Add Bank Account
+                {editingBankId ? "Edit Bank Account" : "Add Bank Account"}
               </h3>
               <button
                 type="button"
@@ -2655,7 +2774,21 @@ export default function EntitiesPage() {
                   />
                 </div>
 
-                <div className="space-y-1 sm:col-span-2">
+                {/* UPI ID */}
+                <div className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider">
+                    UPI ID
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. rktravels@icici or 9542224422@upi"
+                    value={modalUpiId}
+                    onChange={(e) => setModalUpiId(e.target.value)}
+                    className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-slate-50 border border-slate-200 rounded-[6px] text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-[#f16623] focus:bg-white font-mono font-normal transition"
+                  />
+                </div>
+
+                <div className="space-y-1">
                   <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider">
                     EFFECTIVE FROM <span className="text-[#f16623]">*</span>
                   </label>
@@ -2664,6 +2797,61 @@ export default function EntitiesPage() {
                     onChange={setModalEffectiveFrom}
                     placeholder="Select effective date..."
                   />
+                </div>
+
+                {/* Payment QR Code Image Upload */}
+                <div className="space-y-1 sm:col-span-2">
+                  <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                    PAYMENT QR CODE (SCAN &amp; PAY)
+                  </label>
+                  <div className="flex items-center gap-3 p-2.5 bg-slate-50 border border-slate-200 rounded-[6px]">
+                    {modalQrPreviewUrl ? (
+                      <div className="relative w-16 h-16 shrink-0 bg-white border border-slate-200 rounded p-1 flex items-center justify-center">
+                        <img
+                          src={modalQrPreviewUrl}
+                          alt="QR Preview"
+                          className="w-full h-full object-contain"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setModalQrFile(null);
+                            setModalQrPreviewUrl("");
+                            if (qrFileInputRef.current) qrFileInputRef.current.value = "";
+                          }}
+                          className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-500 text-white flex items-center justify-center text-[10px] hover:bg-rose-600 cursor-pointer shadow-xs"
+                          title="Remove QR"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="w-16 h-16 shrink-0 rounded bg-slate-100 border border-dashed border-slate-300 flex flex-col items-center justify-center text-slate-400">
+                        <QrCode className="w-6 h-6 stroke-[1.5]" />
+                        <span className="text-[8px] uppercase mt-0.5 font-medium">No QR</span>
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <input
+                        ref={qrFileInputRef}
+                        type="file"
+                        accept="image/*"
+                        onChange={handleQrFileChange}
+                        className="hidden"
+                        id="modalQrInput"
+                      />
+                      <label
+                        htmlFor="modalQrInput"
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[4px] bg-white border border-slate-200 hover:border-slate-300 text-slate-700 text-xs font-medium cursor-pointer shadow-2xs hover:bg-slate-50 transition"
+                      >
+                        <UploadCloud className="w-3.5 h-3.5 text-[#f16623]" />
+                        <span>{modalQrPreviewUrl ? "Change QR Image" : "Upload Payment QR"}</span>
+                      </label>
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Upload UPI QR code (Google Pay / PhonePe / Paytm / Bank). Uploaded to ImageKit on save.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -2695,9 +2883,17 @@ export default function EntitiesPage() {
                 </button>
                 <button
                   type="submit"
-                  className="h-[32px] max-h-[34px] px-3.5 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] text-white text-xs font-medium transition cursor-pointer shadow-xs shadow-[#f16623]/25"
+                  disabled={isUploadingQr}
+                  className="h-[32px] max-h-[34px] px-3.5 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] disabled:opacity-50 text-white text-xs font-medium transition cursor-pointer shadow-xs shadow-[#f16623]/25 flex items-center gap-1.5"
                 >
-                  Save Bank Account
+                  {isUploadingQr ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Uploading to ImageKit...</span>
+                    </>
+                  ) : (
+                    <span>{editingBankId ? "Update Bank Account" : "Save Bank Account"}</span>
+                  )}
                 </button>
               </div>
             </form>
