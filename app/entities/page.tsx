@@ -657,6 +657,59 @@ export default function EntitiesPage() {
     }
   };
 
+  // Auto-sync bank accounts directly to Firestore when editing an entity
+  const syncBankAccountsToFirestore = async (updatedList: BankAccountItem[]) => {
+    if (!editingEntityId) return;
+    try {
+      const targetCol = editingEntitySourceCol || "entities";
+      const cleanList = sanitizeForFirestore(updatedList);
+      const defaultAcc = cleanList.find((b: any) => b.isDefault) || cleanList[0];
+      const primaryUpiId = defaultAcc?.upiId || cleanList.find((b: any) => !!b.upiId)?.upiId || "";
+      const primaryQrUrl = defaultAcc?.qrCodeUrl || cleanList.find((b: any) => !!b.qrCodeUrl)?.qrCodeUrl || "";
+
+      await setDoc(
+        doc(db, targetCol, editingEntityId),
+        {
+          bankAccounts: cleanList,
+          upiId: primaryUpiId,
+          paymentQrUrl: primaryQrUrl,
+          qrCodeUrl: primaryQrUrl,
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      if (targetCol === "travels") {
+        try {
+          await setDoc(
+            doc(db, "entities", editingEntityId),
+            {
+              bankAccounts: cleanList,
+              upiId: primaryUpiId,
+              paymentQrUrl: primaryQrUrl,
+              qrCodeUrl: primaryQrUrl,
+              updatedAt: serverTimestamp(),
+            },
+            { merge: true }
+          );
+        } catch (e) {}
+      }
+
+      setFeedback({
+        type: "success",
+        message: "Bank account & UPI details saved successfully!",
+      });
+      setTimeout(() => setFeedback(null), 3000);
+    } catch (err) {
+      console.error("Error auto-saving bank account to Firestore:", err);
+      setFeedback({
+        type: "error",
+        message: "Failed to update bank account in Firestore.",
+      });
+      setTimeout(() => setFeedback(null), 4000);
+    }
+  };
+
   const handleSaveBankModal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!modalBankName.trim() || !modalAccountNumber.trim() || !modalIfscCode.trim()) {
@@ -693,40 +746,36 @@ export default function EntitiesPage() {
       qrCodeUrl: finalQrUrl || "",
     };
 
-    setBankAccounts((prev) => {
-      let updated = editingBankId
-        ? prev.map((acc) => (acc.id === editingBankId ? newAcc : acc))
-        : [...prev, newAcc];
-      if (newAcc.isDefault) {
-        updated = updated.map((acc) => ({
-          ...acc,
-          isDefault: acc.id === newAcc.id,
-        }));
-      }
-      return updated;
-    });
+    const updated = editingBankId
+      ? bankAccounts.map((acc) => (acc.id === editingBankId ? newAcc : acc))
+      : [...bankAccounts, newAcc];
+    const finalAccounts = newAcc.isDefault
+      ? updated.map((acc) => ({ ...acc, isDefault: acc.id === newAcc.id }))
+      : updated;
 
+    setBankAccounts(finalAccounts);
     setShowBankModal(false);
+
+    // Auto-save to Firestore immediately
+    await syncBankAccountsToFirestore(finalAccounts);
   };
 
-  const handleSetDefaultBank = (accountId: string) => {
-    setBankAccounts((prev) =>
-      prev.map((acc) => ({
-        ...acc,
-        isDefault: acc.id === accountId,
-      }))
-    );
+  const handleSetDefaultBank = async (accountId: string) => {
+    const updated = bankAccounts.map((acc) => ({
+      ...acc,
+      isDefault: acc.id === accountId,
+    }));
+    setBankAccounts(updated);
+    await syncBankAccountsToFirestore(updated);
   };
 
-  const handleDeleteBank = (accountId: string) => {
-    setBankAccounts((prev) => {
-      const filtered = prev.filter((acc) => acc.id !== accountId);
-      // If we deleted the default account, make the first one default
-      if (filtered.length > 0 && !filtered.some((acc) => acc.isDefault)) {
-        filtered[0].isDefault = true;
-      }
-      return filtered;
-    });
+  const handleDeleteBank = async (accountId: string) => {
+    const filtered = bankAccounts.filter((acc) => acc.id !== accountId);
+    if (filtered.length > 0 && !filtered.some((acc) => acc.isDefault)) {
+      filtered[0].isDefault = true;
+    }
+    setBankAccounts(filtered);
+    await syncBankAccountsToFirestore(filtered);
   };
 
   // --- Sub-Modal: Add Numbering Series ---
