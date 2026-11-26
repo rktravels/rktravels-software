@@ -1,27 +1,30 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth, normalizePermissionKey } from "@/context/AuthContext";
-import { ShieldAlert, ArrowLeft, Loader2 } from "lucide-react";
+import { ShieldAlert, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, loading, canView } = useAuth();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
   const router = useRouter();
   const [deniedToast, setDeniedToast] = useState(false);
 
   const isLoginPage = pathname === "/login";
 
+  // Check for denied query parameter on client without triggering useSearchParams prerender bailout
   useEffect(() => {
-    if (searchParams.get("denied") === "1") {
-      setDeniedToast(true);
-      const timer = setTimeout(() => setDeniedToast(false), 5000);
-      return () => clearTimeout(timer);
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("denied") === "1") {
+        setDeniedToast(true);
+        const timer = setTimeout(() => setDeniedToast(false), 5000);
+        return () => clearTimeout(timer);
+      }
     }
-  }, [searchParams]);
+  }, [pathname]);
 
   // Auth redirection checks
   useEffect(() => {

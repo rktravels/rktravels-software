@@ -112,10 +112,10 @@ function LoginForm() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col justify-center items-center p-4 relative overflow-hidden font-sans">
-      {/* Decorative background glow */}
-      <div className="absolute top-1/4 -left-20 w-96 h-96 bg-[#f16623]/15 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+    <div className="min-h-screen bg-white flex flex-col justify-center items-center p-4 relative overflow-hidden font-sans">
+      {/* Subtle soft background accents */}
+      <div className="absolute top-1/4 -left-20 w-96 h-96 bg-orange-100/40 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-1/4 -right-20 w-96 h-96 bg-slate-100/60 rounded-full blur-3xl pointer-events-none" />
 
       <div className="w-full max-w-[440px] z-10 space-y-5">
         {/* Company Header */}
@@ -123,21 +123,21 @@ function LoginForm() {
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-[#f16623] to-[#ff8c4b] shadow-lg shadow-[#f16623]/25 mb-1">
             <ShieldCheck className="w-7 h-7 text-white stroke-[2.2]" />
           </div>
-          <h1 className="text-xl font-bold tracking-tight text-white">
+          <h1 className="text-xl font-bold tracking-tight text-slate-900">
             RK TRAVELS
           </h1>
-          <p className="text-xs text-slate-400 font-normal">
+          <p className="text-xs text-slate-500 font-normal">
             Fleet, Bookings &amp; Operations Management Portal
           </p>
 
-          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[10px] font-medium tracking-wide">
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          {/* <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[10px] font-medium tracking-wide">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
             <span>256-Bit Encrypted Secure Authentication</span>
-          </div>
+          </div> */}
         </div>
 
         {/* Login Card */}
-        <div className="bg-white rounded-xl shadow-2xl border border-slate-100 p-6 sm:p-7 space-y-5">
+        <div className="bg-white rounded-xl shadow-xl border border-slate-200/80 p-6 sm:p-7 space-y-5">
           {/* Tabs: Admin Login vs Staff Login */}
           <div className="grid grid-cols-2 gap-1 p-1 bg-slate-100/90 rounded-[8px] text-xs font-medium">
             <button
@@ -379,7 +379,7 @@ export default function LoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+        <div className="min-h-screen bg-white flex items-center justify-center">
           <Loader2 className="w-8 h-8 text-[#f16623] animate-spin" />
         </div>
       }
