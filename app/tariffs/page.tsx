@@ -52,6 +52,7 @@ import {
   FuelChargesCard,
   type FuelChargesConfig,
   DEFAULT_FUEL_CHARGES_CONFIG,
+  DEFAULT_EXCLUSIVE_FUEL_CHARGES_CONFIG,
 } from "@/components/FuelChargesCard";
 
 // --- Types & Data Models ---
@@ -255,7 +256,7 @@ export default function TariffsPage() {
     nightHaltPerNight: {},
   });
   const [dayRentFuelConfig, setDayRentFuelConfig] = useState<FuelChargesConfig>(
-    DEFAULT_FUEL_CHARGES_CONFIG
+    DEFAULT_EXCLUSIVE_FUEL_CHARGES_CONFIG
   );
 
   // --- 4. OUTSTATION STATE ---
@@ -843,7 +844,7 @@ interface CompanyOptionItem {
     if (tariff.dayRentDuty) {
       setOfferDayRent(tariff.dayRentDuty.enabled ?? true);
       if (tariff.dayRentDuty.rates) setDayRentRates(tariff.dayRentDuty.rates);
-      setDayRentFuelConfig(tariff.dayRentDuty.fuelConfig || DEFAULT_FUEL_CHARGES_CONFIG);
+      setDayRentFuelConfig(tariff.dayRentDuty.fuelConfig || DEFAULT_EXCLUSIVE_FUEL_CHARGES_CONFIG);
     }
 
     // Outstation
@@ -887,7 +888,7 @@ interface CompanyOptionItem {
     setPickupDropFuelConfig(DEFAULT_FUEL_CHARGES_CONFIG);
     setOfferDayRent(false);
     setDayRentRates({ dayRent12Hrs: {}, dayRent24Hrs: {}, fuelMileage: {}, driverBata12Hrs: {}, driverBata24Hrs: {}, nightHaltPerNight: {} });
-    setDayRentFuelConfig(DEFAULT_FUEL_CHARGES_CONFIG);
+    setDayRentFuelConfig(DEFAULT_EXCLUSIVE_FUEL_CHARGES_CONFIG);
     setOfferOutstation(false);
     setOutstationRates({ baseKmSlab: {}, perKmCharge: {}, driverBataPerDay: {}, nightHaltPerNight: {} });
     setOutstationFuelConfig(DEFAULT_FUEL_CHARGES_CONFIG);

@@ -1091,26 +1091,60 @@ export default function BookingsPage() {
       } else if (selectedTariffType === "Day Rent") {
         const drRates = activeCompanyTariff.dayRentDuty?.rates;
         if (drRates) {
-          baseFare =
+          const settings = activeCompanyTariff.tariffSettings;
+          const dayMode = settings?.dayRentDayMode || "24hour";
+          const dayHours = Number(settings?.dayRentDayHours) || 24;
+          const graceMins = Number(settings?.dayRentGraceMinutes) ?? 30;
+
+          // Compute number of days based on settings
+          let daysCount = 1;
+          if (calculatedDuration.totalMinutes > 0) {
+            if (dayMode === "calendar") {
+              const dStart = new Date(startDate);
+              const dEnd = new Date(endDate);
+              const diffMs = Math.max(0, dEnd.getTime() - dStart.getTime());
+              const calDays = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)) + 1);
+              daysCount = calDays;
+            } else {
+              // 24-hour rolling with grace
+              const effectiveMinutes = Math.max(0, calculatedDuration.totalMinutes - graceMins);
+              daysCount = Math.max(1, Math.ceil(effectiveMinutes / (dayHours * 60)));
+            }
+          }
+
+          const dailyBaseFare =
             selectedPackageId === "day-rent-24hrs"
               ? Number(drRates.dayRent24Hrs?.[cat]) || 0
               : Number(drRates.dayRent12Hrs?.[cat]) || 0;
-          driverBataCost =
+          const dailyBata =
             selectedPackageId === "day-rent-24hrs"
               ? Number(drRates.driverBata24Hrs?.[cat]) || 0
               : Number(drRates.driverBata12Hrs?.[cat]) || 0;
-          nightHaltCost = Number(drRates.nightHaltPerNight?.[cat]) || 0;
+
+          baseFare = dailyBaseFare * daysCount;
+          driverBataCost = dailyBata * daysCount;
+          nightHaltCost = (Number(drRates.nightHaltPerNight?.[cat]) || 0) * Math.max(0, daysCount - 1);
         }
       } else if (selectedTariffType === "Outstation") {
         const osRates = activeCompanyTariff.outstationDuty?.rates;
         if (osRates) {
-          const slabKm = Number(osRates.baseKmSlab?.[cat]) || 300;
+          const settings = activeCompanyTariff.tariffSettings;
+          const graceMins = Number(settings?.outstationGraceMinutes) ?? 60;
+
+          // Outstation days count with grace period
+          let daysCount = 1;
+          if (calculatedDuration.totalMinutes > 0) {
+            const effectiveMinutes = Math.max(0, calculatedDuration.totalMinutes - graceMins);
+            daysCount = Math.max(1, Math.ceil(effectiveMinutes / (24 * 60)));
+          }
+
+          const slabKm = (Number(osRates.baseKmSlab?.[cat]) || 300) * daysCount;
           const perKm = Number(osRates.perKmCharge?.[cat]) || 0;
           baseFare = slabKm * perKm;
           includedKm = slabKm;
           extraKmRate = perKm;
-          driverBataCost = Number(osRates.driverBataPerDay?.[cat]) || 0;
-          nightHaltCost = Number(osRates.nightHaltPerNight?.[cat]) || 0;
+          driverBataCost = (Number(osRates.driverBataPerDay?.[cat]) || 0) * daysCount;
+          nightHaltCost = (Number(osRates.nightHaltPerNight?.[cat]) || 0) * Math.max(0, daysCount - 1);
         }
       }
     }
@@ -1148,7 +1182,9 @@ export default function BookingsPage() {
       }
     }
 
-    const isFuelExclusive = dutyFuelConfig?.fuelType === "Exclusive";
+    const isFuelExclusive =
+      dutyFuelConfig?.fuelType === "Exclusive" ||
+      (!dutyFuelConfig?.fuelType && selectedTariffType === "Day Rent");
 
     // --- Mileage-based fuel cost ---
     // 1. Find vehicle mileage km/l from assigned vehicle record (or first matching category vehicle for preview)
@@ -1198,7 +1234,7 @@ export default function BookingsPage() {
       fuelRatePerKm = Number(dutyFuelConfig.fuelRatePerKm) || 0;
       fuelChargesCost = calculatedTotalKm * fuelRatePerKm;
     }
-    const showFuelInInvoice = isFuelExclusive && !!dutyFuelConfig?.showFuelInInvoice;
+    const showFuelInInvoice = isFuelExclusive && (dutyFuelConfig?.showFuelInInvoice !== false);
 
     // Customer Advance & Discount
     const advanceVal = Math.max(0, Number(customerAdvance) || 0);

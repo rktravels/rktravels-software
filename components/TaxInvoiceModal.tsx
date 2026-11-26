@@ -206,7 +206,7 @@ export function TaxInvoiceModal({
 
   const effectiveQrUrl =
     customQrUrl ||
-    `https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(
+    `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(
       `upi://pay?pa=${effectiveUpiId}&pn=${encodeURIComponent(supplierName)}&cu=INR`
     )}`;
 
@@ -836,13 +836,13 @@ export function TaxInvoiceModal({
                   </div>
 
                   {/* Payment QR Code */}
-                  <div className="shrink-0 flex flex-col items-center justify-center p-1.5 bg-slate-50 border border-slate-200 rounded-[4px] text-center">
+                  <div className="shrink-0 flex flex-col items-center justify-center p-2 bg-slate-50 border border-slate-200 rounded-[6px] text-center shadow-2xs">
                     <img
                       src={effectiveQrUrl}
                       alt="Payment QR"
-                      className="w-[84px] h-[84px] sm:w-[92px] sm:h-[92px] object-contain bg-white rounded-[2px] print:w-[76px] print:h-[76px]"
+                      className="w-[116px] h-[116px] sm:w-[128px] sm:h-[128px] object-contain bg-white rounded-[4px] p-1 print:w-[112px] print:h-[112px]"
                     />
-                    <span className="text-[9px] font-bold text-slate-700 mt-1 uppercase tracking-wider block">
+                    <span className="text-[10px] font-bold text-slate-800 mt-1 uppercase tracking-wider block">
                       Scan &amp; Pay
                     </span>
                   </div>

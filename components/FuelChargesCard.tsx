@@ -15,6 +15,12 @@ export const DEFAULT_FUEL_CHARGES_CONFIG: FuelChargesConfig = {
   showFuelInInvoice: false,
 };
 
+export const DEFAULT_EXCLUSIVE_FUEL_CHARGES_CONFIG: FuelChargesConfig = {
+  fuelType: "Exclusive",
+  fuelRatePerKm: "",
+  showFuelInInvoice: true,
+};
+
 interface FuelChargesCardProps {
   dutyTitle: string;
   config: FuelChargesConfig;
@@ -51,7 +57,7 @@ export function FuelChargesCard({
           </div>
         </div>
         <span className="text-[10px] text-slate-500 font-mono self-start sm:self-auto bg-slate-200/60 px-2 py-0.5 rounded">
-          Default: Inclusive
+          Default: {dutyTitle === "Day Rent" ? "Exclusive" : "Inclusive"}
         </span>
       </div>
 
