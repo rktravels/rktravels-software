@@ -41,6 +41,7 @@ import {
   deleteDoc,
   doc,
   updateDoc,
+  setDoc,
   type Timestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -186,6 +187,7 @@ export default function EntitiesPage() {
   // Mode: "list" | "create" | "edit"
   const [viewMode, setViewMode] = useState<"list" | "create" | "edit">("list");
   const [editingEntityId, setEditingEntityId] = useState<string | null>(null);
+  const [editingEntitySourceCol, setEditingEntitySourceCol] = useState<string>("entities");
   const [viewingEntity, setViewingEntity] = useState<EntityFullRecord | null>(null);
 
   // Active Tab
@@ -261,9 +263,12 @@ export default function EntitiesPage() {
   const [logoPreviewUrl, setLogoPreviewUrl] = useState<string>("");
   const [signatureFile, setSignatureFile] = useState<File | null>(null);
   const [signaturePreviewUrl, setSignaturePreviewUrl] = useState<string>("");
+  const [brandingQrFile, setBrandingQrFile] = useState<File | null>(null);
+  const [brandingQrPreviewUrl, setBrandingQrPreviewUrl] = useState<string>("");
 
   const logoInputRef = useRef<HTMLInputElement>(null);
   const signatureInputRef = useRef<HTMLInputElement>(null);
+  const brandingQrInputRef = useRef<HTMLInputElement>(null);
 
   // Step 6: Status State
   const [isActiveEntity, setIsActiveEntity] = useState(true);
@@ -315,6 +320,8 @@ export default function EntitiesPage() {
                 fuelRates: Array.isArray(data.fuelRates) ? data.fuelRates : [],
                 logoUrl: data.logoUrl || "",
                 signatureUrl: data.signatureUrl || "",
+                paymentQrUrl: data.paymentQrUrl || data.qrCodeUrl || "",
+                upiId: data.upiId || "",
                 isActive: data.isActive !== false,
                 entityName: data.legalName || data.entityName || data.travelName || "Unnamed Entity",
                 travelName: data.legalName || data.entityName || data.travelName || "Unnamed Entity",
@@ -356,6 +363,8 @@ export default function EntitiesPage() {
                   fuelRates: Array.isArray(data.fuelRates) ? data.fuelRates : [],
                   logoUrl: data.logoUrl || "",
                   signatureUrl: data.signatureUrl || "",
+                  paymentQrUrl: data.paymentQrUrl || data.qrCodeUrl || "",
+                  upiId: data.upiId || "",
                   isActive: data.isActive !== false,
                   entityName: data.legalName || data.entityName || data.travelName || "Unnamed Entity",
                   travelName: data.legalName || data.entityName || data.travelName || "Unnamed Entity",
@@ -405,6 +414,8 @@ export default function EntitiesPage() {
                   fuelRates: Array.isArray(data.fuelRates) ? data.fuelRates : [],
                   logoUrl: data.logoUrl || "",
                   signatureUrl: data.signatureUrl || "",
+                  paymentQrUrl: data.paymentQrUrl || data.qrCodeUrl || "",
+                  upiId: data.upiId || "",
                   isActive: data.isActive !== false,
                   entityName: name,
                   travelName: name,
@@ -471,6 +482,7 @@ export default function EntitiesPage() {
   // Open Create Entity Wizard
   const handleOpenCreate = () => {
     setEditingEntityId(null);
+    setEditingEntitySourceCol("entities");
     setActiveTab("Profile");
     // Clear all fields
     setEntityCode("");
@@ -494,6 +506,8 @@ export default function EntitiesPage() {
     setLogoPreviewUrl("");
     setSignatureFile(null);
     setSignaturePreviewUrl("");
+    setBrandingQrFile(null);
+    setBrandingQrPreviewUrl("");
 
     setIsActiveEntity(true);
     setViewMode("create");
@@ -502,6 +516,7 @@ export default function EntitiesPage() {
   // Open Edit Entity Wizard
   const handleOpenEdit = (entity: EntityFullRecord) => {
     setEditingEntityId(entity.id);
+    setEditingEntitySourceCol(entity._sourceCollection || "entities");
     setActiveTab("Profile");
 
     setEntityCode(entity.entityCode || "");
@@ -526,6 +541,12 @@ export default function EntitiesPage() {
     setLogoPreviewUrl(entity.logoUrl || "");
     setSignatureFile(null);
     setSignaturePreviewUrl(entity.signatureUrl || "");
+    setBrandingQrFile(null);
+    setBrandingQrPreviewUrl(
+      entity.paymentQrUrl ||
+      entity.bankAccounts?.find((b) => !!b.qrCodeUrl)?.qrCodeUrl ||
+      ""
+    );
 
     setIsActiveEntity(entity.isActive !== false);
     setViewMode("edit");
@@ -784,6 +805,15 @@ export default function EntitiesPage() {
     }
   };
 
+  const handleBrandingQrFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setBrandingQrFile(file);
+      const url = URL.createObjectURL(file);
+      setBrandingQrPreviewUrl(url);
+    }
+  };
+
   // Upload an image File to ImageKit via Next.js `/api/upload`
   const uploadImageToImageKit = async (file: File, folder: string): Promise<string> => {
     const formData = new FormData();
@@ -852,6 +882,29 @@ export default function EntitiesPage() {
         }
       }
 
+      // 3. Upload Payment QR if a local File was selected
+      let finalPaymentQrUrl = brandingQrPreviewUrl;
+      if (brandingQrFile) {
+        try {
+          finalPaymentQrUrl = await uploadImageToImageKit(brandingQrFile, "/entities/bank-qr");
+        } catch (uploadErr) {
+          console.error("Payment QR upload failed, proceeding:", uploadErr);
+        }
+      }
+
+      const resolvedQrUrl =
+        finalPaymentQrUrl ||
+        bankAccounts.find((b) => b.isDefault)?.qrCodeUrl ||
+        bankAccounts.find((b) => !!b.qrCodeUrl)?.qrCodeUrl ||
+        "";
+
+      const syncedBankAccounts = bankAccounts.map((b, idx) => {
+        if ((b.isDefault || idx === 0) && !b.qrCodeUrl && resolvedQrUrl) {
+          return { ...b, qrCodeUrl: resolvedQrUrl };
+        }
+        return b;
+      });
+
       const entityPayload = {
         entityCode: trimmedCode,
         legalName: trimmedLegal,
@@ -866,16 +919,14 @@ export default function EntitiesPage() {
         pin: pin.trim(),
         supplierState: supplierState,
 
-        bankAccounts: bankAccounts,
+        bankAccounts: syncedBankAccounts,
         numberingSeries: numberingSeries,
         fuelRates: fuelRates,
 
         logoUrl: finalLogoUrl,
         signatureUrl: finalSignatureUrl,
-        paymentQrUrl:
-          bankAccounts.find((b) => b.isDefault)?.qrCodeUrl ||
-          bankAccounts.find((b) => !!b.qrCodeUrl)?.qrCodeUrl ||
-          "",
+        paymentQrUrl: resolvedQrUrl,
+        qrCodeUrl: resolvedQrUrl,
         upiId:
           bankAccounts.find((b) => b.isDefault)?.upiId ||
           bankAccounts.find((b) => !!b.upiId)?.upiId ||
@@ -890,10 +941,30 @@ export default function EntitiesPage() {
       };
 
       if (viewMode === "edit" && editingEntityId) {
-        await updateDoc(doc(db, "entities", editingEntityId), {
-          ...entityPayload,
-          updatedAt: serverTimestamp(),
-        });
+        const targetCol = editingEntitySourceCol || "entities";
+        await setDoc(
+          doc(db, targetCol, editingEntityId),
+          {
+            ...entityPayload,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        );
+        // Also sync to modern entities collection if edited document was in legacy travels collection
+        if (targetCol === "travels") {
+          try {
+            await setDoc(
+              doc(db, "entities", editingEntityId),
+              {
+                ...entityPayload,
+                updatedAt: serverTimestamp(),
+              },
+              { merge: true }
+            );
+          } catch (syncErr) {
+            console.warn("Sync to entities warning:", syncErr);
+          }
+        }
         setFeedback({
           type: "success",
           message: `Entity "${trimmedLegal}" has been updated successfully!`,
@@ -2337,11 +2408,11 @@ export default function EntitiesPage() {
               <div className="flex items-start gap-2.5 p-3 rounded-[6px] bg-orange-50/70 border border-[#f16623]/25 text-xs text-slate-700">
                 <Sparkles className="w-4 h-4 text-[#f16623] shrink-0 mt-0.5" />
                 <span>
-                  Select your <strong>Company Logo</strong> and <strong>Authorised Signature</strong>. All images are securely processed and uploaded directly to ImageKit when you click <strong>&quot;Save Details&quot;</strong>, with high-resolution CDN URLs stored on the entity.
+                  Select your <strong>Company Logo</strong>, <strong>Authorised Signature</strong>, and <strong>Payment QR Code</strong>. All images are securely processed and uploaded directly to ImageKit when you click <strong>&quot;Save Details&quot;</strong>, with high-resolution CDN URLs stored on the entity.
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* 1. Company Logo */}
                 <div className="border border-slate-200 rounded-[6px] p-4 space-y-3 bg-slate-50/30">
                   <div className="flex items-center justify-between pb-2 border-b border-slate-100">
@@ -2484,7 +2555,81 @@ export default function EntitiesPage() {
                         Click to upload Authorised Signature
                       </p>
                       <p className="text-[10px] text-slate-400 mt-1 max-w-xs">
-                        Transparent PNG recommended. Automatically prints at bottom of tax invoices & duty slips.
+                        Transparent PNG recommended. Automatically prints at bottom of tax invoices &amp; duty slips.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* 3. Payment QR Code */}
+                <div className="border border-slate-200 rounded-[6px] p-4 space-y-3 bg-slate-50/30">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <QrCode className="w-4 h-4 text-[#f16623]" />
+                      <h3 className="text-xs font-medium text-slate-900 uppercase tracking-wider">
+                        Payment QR Code
+                      </h3>
+                    </div>
+                    {brandingQrPreviewUrl && (
+                      <span className="text-[10px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-[4px] border border-emerald-200 font-medium">
+                        QR Attached
+                      </span>
+                    )}
+                  </div>
+
+                  <input
+                    ref={brandingQrInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleBrandingQrFileChange}
+                    className="hidden"
+                  />
+
+                  {brandingQrPreviewUrl ? (
+                    <div className="space-y-3">
+                      <div className="relative w-full h-40 bg-white border border-slate-200 rounded-[6px] flex items-center justify-center p-3 overflow-hidden shadow-2xs">
+                        <img
+                          src={brandingQrPreviewUrl}
+                          alt="Payment QR Preview"
+                          className="max-h-full max-w-full object-contain"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBrandingQrFile(null);
+                            setBrandingQrPreviewUrl("");
+                          }}
+                          className="absolute top-2 right-2 w-6 h-6 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-600 flex items-center justify-center transition cursor-pointer"
+                          title="Remove QR code"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] text-slate-500">
+                        <span>{brandingQrFile ? brandingQrFile.name : "Saved QR on file"}</span>
+                        <button
+                          type="button"
+                          onClick={() => brandingQrInputRef.current?.click()}
+                          className="text-[#f16623] hover:underline font-medium cursor-pointer"
+                        >
+                          Change QR Code
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={() => brandingQrInputRef.current?.click()}
+                      className="w-full h-40 border-2 border-dashed border-slate-200 hover:border-[#f16623] rounded-[6px] flex flex-col items-center justify-center p-4 bg-white hover:bg-orange-50/20 transition cursor-pointer text-center group"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-orange-50 group-hover:bg-orange-100 text-[#f16623] flex items-center justify-center mb-2 transition">
+                        <UploadCloud className="w-5 h-5" />
+                      </div>
+                      <p className="text-xs font-medium text-slate-800">
+                        Click to upload Payment QR
+                      </p>
+                      <p className="text-[10px] text-slate-400 mt-1 max-w-xs">
+                        UPI QR (Google Pay, PhonePe, Paytm, Bank). Prints on tax invoices for Scan &amp; Pay.
                       </p>
                     </div>
                   )}

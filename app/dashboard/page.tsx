@@ -1988,9 +1988,14 @@ export default function DashboardPage() {
         }}
         booking={selectedBookingForInvoice}
         entityData={
-          selectedBookingForInvoice?.entityId
-            ? entities.find((e) => e.id === selectedBookingForInvoice.entityId)
-            : entities[0]
+          entities.find(
+            (e) =>
+              e.id === selectedBookingForInvoice?.entityId ||
+              (e.legalName && e.legalName.toLowerCase() === selectedBookingForInvoice?.entityName?.toLowerCase()) ||
+              (e.tradeName && e.tradeName.toLowerCase() === selectedBookingForInvoice?.entityName?.toLowerCase()) ||
+              (e.entityName && e.entityName.toLowerCase() === selectedBookingForInvoice?.entityName?.toLowerCase()) ||
+              (e.travelName && e.travelName.toLowerCase() === selectedBookingForInvoice?.entityName?.toLowerCase())
+          ) || entities[0] || null
         }
         companyData={
           selectedBookingForInvoice?.customerName

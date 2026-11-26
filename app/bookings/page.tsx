@@ -413,33 +413,37 @@ export default function BookingsPage() {
     let unsubEntities: (() => void) | null = null;
     let unsubTravels: (() => void) | null = null;
     try {
-      const entMap = new Map<string, string>();
-      const syncEnts = () => {
+      let entitiesList: any[] = [];
+      let travelsList: any[] = [];
+
+      const syncAllEntities = () => {
+        const combinedMap = new Map<string, any>();
+        // Add travels first so entities collection takes precedence
+        travelsList.forEach((t) => combinedMap.set(t.id, t));
+        entitiesList.forEach((e) => combinedMap.set(e.id, e));
+
+        const all = Array.from(combinedMap.values());
+        setRawEntities(all);
+
+        const entMap = new Map<string, string>();
+        all.forEach((item) => {
+          const name =
+            item.tradeName || item.legalName || item.entityName || item.travelName || "RK Travels";
+          entMap.set(item.id, name);
+        });
         setEntities(
           Array.from(entMap.entries()).map(([id, name]) => ({ id, name }))
         );
       };
 
       unsubEntities = onSnapshot(collection(db, "entities"), (snap) => {
-        const rawList: any[] = [];
-        snap.docs.forEach((d) => {
-          const data = d.data();
-          rawList.push({ id: d.id, ...data });
-          const name = data.tradeName || data.legalName || data.entityName || "RK Travels";
-          entMap.set(d.id, name);
-        });
-        setRawEntities(rawList);
-        syncEnts();
+        entitiesList = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        syncAllEntities();
       });
 
       unsubTravels = onSnapshot(collection(db, "travels"), (snap) => {
-        snap.docs.forEach((d) => {
-          if (!entMap.has(d.id)) {
-            const data = d.data();
-            entMap.set(d.id, data.travelName || data.name || "RK Travels");
-          }
-        });
-        syncEnts();
+        travelsList = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        syncAllEntities();
       });
     } catch (err) {
       console.warn("Entities listener notice:", err);
@@ -4317,10 +4321,11 @@ export default function BookingsPage() {
           rawEntities.find(
             (e) =>
               e.id === invoiceBooking?.entityId ||
-              e.legalName === invoiceBooking?.entityName ||
-              e.tradeName === invoiceBooking?.entityName ||
-              e.entityName === invoiceBooking?.entityName
-          ) || null
+              (e.legalName && e.legalName.toLowerCase() === invoiceBooking?.entityName?.toLowerCase()) ||
+              (e.tradeName && e.tradeName.toLowerCase() === invoiceBooking?.entityName?.toLowerCase()) ||
+              (e.entityName && e.entityName.toLowerCase() === invoiceBooking?.entityName?.toLowerCase()) ||
+              (e.travelName && e.travelName.toLowerCase() === invoiceBooking?.entityName?.toLowerCase())
+          ) || rawEntities[0] || null
         }
         companyData={
           rawCompanies.find(

@@ -92,6 +92,8 @@ export interface InvoiceBookingData {
   // Operating entity
   entityId?: string;
   entityName?: string;
+  paymentQrUrl?: string;
+  qrCodeUrl?: string;
 }
 
 interface TaxInvoiceModalProps {
@@ -174,13 +176,32 @@ export function TaxInvoiceModal({
       ? `${(entityData?.phoneForPrint || entityData?.mobileNumber || supplierPhone).replace(/[^0-9]/g, "")}@upi`
       : "9948228877@upi");
 
-  // Determine Payment QR Code URL with dynamic fallback to UPI standard QR
+  // Find any bank account that has a QR code
+  const bankWithQr = entityData?.bankAccounts?.find(
+    (b: any) => b.qrCodeUrl || b.paymentQrUrl || b.qrUrl || b.qrImage || b.qr
+  );
+
+  // Check all possible places where the user's uploaded QR code image could be
   const customQrUrl =
+    entityData?.paymentQrUrl ||
+    entityData?.qrCodeUrl ||
+    entityData?.qrUrl ||
+    entityData?.paymentQr ||
+    entityData?.qrImage ||
+    entityData?.qr ||
+    entityData?.upiQrUrl ||
     defaultBank?.qrCodeUrl ||
     defaultBank?.paymentQrUrl ||
     defaultBank?.qrUrl ||
-    entityData?.paymentQrUrl ||
-    entityData?.qrCodeUrl ||
+    defaultBank?.qrImage ||
+    defaultBank?.qr ||
+    bankWithQr?.qrCodeUrl ||
+    bankWithQr?.paymentQrUrl ||
+    bankWithQr?.qrUrl ||
+    bankWithQr?.qrImage ||
+    bankWithQr?.qr ||
+    booking?.paymentQrUrl ||
+    booking?.qrCodeUrl ||
     null;
 
   const effectiveQrUrl =
@@ -491,10 +512,10 @@ export function TaxInvoiceModal({
             {/* Paper Sheet (Exact Layout from reference invoice) */}
             <div
               id="tax-invoice-printable-sheet"
-              className="max-w-[780px] mx-auto bg-white px-6 sm:px-10 pt-10 sm:pt-14 pb-8 sm:pb-10 shadow-sm border border-slate-200/90 rounded-[2px] space-y-4 text-slate-900 font-sans print:px-8 print:pt-10 print:pb-8 print:shadow-none print:border-none print:max-w-none"
+              className="max-w-[780px] mx-auto bg-white px-6 sm:px-10 pt-16 sm:pt-24 pb-8 sm:pb-10 shadow-sm border border-slate-200/90 rounded-[2px] space-y-4 text-slate-900 font-sans print:px-8 print:pt-20 print:pb-8 print:shadow-none print:border-none print:max-w-none"
             >
               {/* 1. Header: Left Company Branding, Right Tax Invoice Meta */}
-              <div className="flex items-start justify-between gap-4 pt-1">
+              <div className="flex items-start justify-between gap-4 pt-4">
                 {/* Left Company Details */}
                 <div className="space-y-0.5">
                   {/* Entity Logo */}
@@ -858,16 +879,11 @@ export function TaxInvoiceModal({
               </div>
             </div>
 
-            {/* 6. Legal Jurisdiction & Draft Disclaimer */}
-            <div className="pt-3 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between text-[10px] text-slate-400 gap-1">
-              <span>
-                {!isAllocated
-                  ? "DRAFT — invoice number will be allocated on finalize."
-                  : "Final Invoice issued electronically."}
-              </span>
-              <span>
-                Subject to Vijayawada jurisdiction · E.&O.E.
-              </span>
+            {/* 6. Computer Generated Invoice Disclaimer */}
+            <div className="pt-4 border-t border-slate-200 text-center">
+              <p className="text-[11px] font-semibold text-slate-600 uppercase tracking-wider">
+                This is a computer-generated invoice. No physical copy or signature required.
+              </p>
             </div>
           </div>
         </div>
@@ -896,7 +912,7 @@ export function TaxInvoiceModal({
             @media print {
               @page {
                 size: A4 portrait;
-                margin: 12mm 10mm 10mm 10mm;
+                margin: 18mm 10mm 12mm 10mm;
               }
 
               /* Hide the entire background web application */
