@@ -166,7 +166,9 @@ export interface BookingRecord {
   invoiceNumber?: string;
   invoiceDate?: string;
   fuelChargesCost?: number;
-  fuelRatePerKm?: number;
+  fuelRatePerKm?: number;       // kept for backward compat (old bookings)
+  vehicleMileageKmpl?: number;  // km per litre of assigned vehicle
+  fuelPricePerLitre?: number;   // entity fuel rate (₹/litre) used at time of booking
   showFuelInInvoice?: boolean;
 
   bookingStatus: BookingStatus;
@@ -1143,8 +1145,55 @@ export default function BookingsPage() {
     }
 
     const isFuelExclusive = dutyFuelConfig?.fuelType === "Exclusive";
-    const fuelRatePerKm = isFuelExclusive ? Number(dutyFuelConfig?.fuelRatePerKm) || 0 : 0;
-    const fuelChargesCost = isFuelExclusive ? calculatedTotalKm * fuelRatePerKm : 0;
+
+    // --- Mileage-based fuel cost ---
+    // 1. Find vehicle mileage km/l from assigned vehicle record (or first matching category vehicle for preview)
+    const assignedVehicle =
+      vehicles.find((v: any) => v.id === selectedVehicleId) ||
+      vehicles.find(
+        (v: any) =>
+          v.category?.toLowerCase() === selectedVehicleCategory?.toLowerCase() &&
+          Number(v.mileageKmpl) > 0
+      );
+    const vehicleMileageKmpl = Number(assignedVehicle?.mileageKmpl) || 0;
+
+    // 2. Find entity's active fuel rate and pick price matching the vehicle's fuel type
+    const entityRecord =
+      rawEntities.find(
+        (e: any) =>
+          e.id === selectedEntityId ||
+          e.legalName === selectedEntityName ||
+          e.tradeName === selectedEntityName ||
+          e.entityName === selectedEntityName
+      ) || rawEntities[0];
+    const activeFuelRate = entityRecord?.fuelRates?.find(
+      (fr: any) => fr.isCurrentActive
+    ) ?? entityRecord?.fuelRates?.[entityRecord?.fuelRates?.length - 1] ?? null;
+
+    // Map vehicle fuelType → entity fuel rate field
+    const vehicleFuelType = (assignedVehicle?.fuelType || "Diesel").toLowerCase();
+    let fuelPricePerLitre = 0;
+    if (activeFuelRate) {
+      if (vehicleFuelType === "diesel")  fuelPricePerLitre = Number(activeFuelRate.dieselPrice)  || 0;
+      else if (vehicleFuelType === "petrol") fuelPricePerLitre = Number(activeFuelRate.petrolPrice) || 0;
+      else if (vehicleFuelType === "cng")    fuelPricePerLitre = Number(activeFuelRate.cngPrice)    || 0;
+      else if (vehicleFuelType === "ev")     fuelPricePerLitre = Number(activeFuelRate.evRate)      || 0;
+      else if (vehicleFuelType === "hybrid") fuelPricePerLitre = Number(activeFuelRate.hybridRate)  || 0;
+      else fuelPricePerLitre = Number(activeFuelRate.dieselPrice) || 0;
+    }
+
+    // 3. Calculate: litres consumed = totalKm / mileage, cost = litres × price/litre
+    let fuelChargesCost = 0;
+    let fuelRatePerKm = 0; // derived effective per-km for display
+    if (isFuelExclusive && vehicleMileageKmpl > 0 && fuelPricePerLitre > 0) {
+      const litresConsumed = calculatedTotalKm / vehicleMileageKmpl;
+      fuelChargesCost = Math.round(litresConsumed * fuelPricePerLitre);
+      fuelRatePerKm = calculatedTotalKm > 0 ? fuelChargesCost / calculatedTotalKm : 0;
+    } else if (isFuelExclusive && dutyFuelConfig?.fuelRatePerKm) {
+      // Fallback: old-style fixed per-km rate if mileage/entity rate not available
+      fuelRatePerKm = Number(dutyFuelConfig.fuelRatePerKm) || 0;
+      fuelChargesCost = calculatedTotalKm * fuelRatePerKm;
+    }
     const showFuelInInvoice = isFuelExclusive && !!dutyFuelConfig?.showFuelInInvoice;
 
     // Customer Advance & Discount
@@ -1177,6 +1226,8 @@ export default function BookingsPage() {
       nightHaltCost,
       fuelChargesCost,
       fuelRatePerKm,
+      vehicleMileageKmpl,
+      fuelPricePerLitre,
       showFuelInInvoice,
       totalPassThrough,
       grossAmount,
@@ -1200,6 +1251,10 @@ export default function BookingsPage() {
     nightHalt,
     customerAdvance,
     discount,
+    selectedVehicleId,
+    vehicles,
+    rawEntities,
+    selectedEntityId,
   ]);
 
   // Derived Payment Status
@@ -1525,6 +1580,8 @@ export default function BookingsPage() {
           nightHaltCost: pricingBreakdown.nightHaltCost,
           fuelChargesCost: pricingBreakdown.fuelChargesCost,
           fuelRatePerKm: pricingBreakdown.fuelRatePerKm,
+          vehicleMileageKmpl: pricingBreakdown.vehicleMileageKmpl,
+          fuelPricePerLitre: pricingBreakdown.fuelPricePerLitre,
           showFuelInInvoice: pricingBreakdown.showFuelInInvoice,
           grossAmount: pricingBreakdown.grossAmount,
           netAmount: pricingBreakdown.netAmount,
@@ -1625,6 +1682,8 @@ export default function BookingsPage() {
         nightHaltCost: pricingBreakdown.nightHaltCost,
         fuelChargesCost: pricingBreakdown.fuelChargesCost,
         fuelRatePerKm: pricingBreakdown.fuelRatePerKm,
+        vehicleMileageKmpl: pricingBreakdown.vehicleMileageKmpl,
+        fuelPricePerLitre: pricingBreakdown.fuelPricePerLitre,
         showFuelInInvoice: pricingBreakdown.showFuelInInvoice,
         grossAmount: pricingBreakdown.grossAmount,
         netAmount: pricingBreakdown.netAmount,
@@ -3557,6 +3616,24 @@ export default function BookingsPage() {
                     </div>
                   )}
 
+                  {/* Fuel Charges (Exclusive) */}
+                  {pricingBreakdown.fuelChargesCost > 0 && (
+                    <div className="flex items-center justify-between pt-2">
+                      <div>
+                        <span className="text-slate-600 block">Fuel Charges (Exclusive)</span>
+                        {pricingBreakdown.vehicleMileageKmpl && pricingBreakdown.fuelPricePerLitre ? (
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {calculatedTotalKm} KM ÷ {pricingBreakdown.vehicleMileageKmpl} km/l @ ₹
+                            {pricingBreakdown.fuelPricePerLitre}/L
+                          </span>
+                        ) : null}
+                      </div>
+                      <span className="font-mono text-slate-900">
+                        + ₹{pricingBreakdown.fuelChargesCost.toLocaleString("en-IN")}
+                      </span>
+                    </div>
+                  )}
+
                   {/* Gross Total */}
                   <div className="flex items-center justify-between pt-2.5 border-t border-slate-200 font-medium">
                     <span className="text-slate-800">Gross Total Amount</span>
@@ -4223,7 +4300,19 @@ export default function BookingsPage() {
       <TaxInvoiceModal
         isOpen={!!invoiceBooking}
         onClose={() => setInvoiceBooking(null)}
-        booking={invoiceBooking}
+        booking={
+          invoiceBooking
+            ? {
+                ...invoiceBooking,
+                vehicleMileageKmpl:
+                  invoiceBooking.vehicleMileageKmpl ||
+                  Number(
+                    vehicles.find((v) => v.id === invoiceBooking.vehicleId)?.mileageKmpl
+                  ) ||
+                  undefined,
+              }
+            : null
+        }
         entityData={
           rawEntities.find(
             (e) =>

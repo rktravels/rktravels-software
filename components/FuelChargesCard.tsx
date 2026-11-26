@@ -46,7 +46,7 @@ export function FuelChargesCard({
               Fuel / Petrol Charges Policy ({dutyTitle} Duty)
             </h4>
             <p className="text-[10px] text-slate-500 font-normal">
-              Specify whether fuel cost is inclusive or charged separately per KM
+              Specify whether fuel cost is inclusive or charged separately (Exclusive)
             </p>
           </div>
         </div>
@@ -88,37 +88,18 @@ export function FuelChargesCard({
               }
               className="w-4 h-4 text-[#f16623] accent-[#f16623] cursor-pointer"
             />
-            <span>Fuel Exclusive (Per KM)</span>
+            <span>Fuel Exclusive (Billed to Client)</span>
           </label>
         </div>
 
-        {/* If Exclusive: Ask for per KM rate */}
+        {/* If Exclusive: Explain auto calculation */}
         <div className="md:col-span-6">
           {isExclusive ? (
-            <div className="flex items-center gap-2">
-              <label className="text-[11px] font-medium text-slate-700 whitespace-nowrap">
-                Cost per KM: <span className="text-[#f16623]">*</span>
-              </label>
-              <div className="relative flex-1 max-w-[180px]">
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-mono">
-                  ₹
-                </span>
-                <input
-                  type="number"
-                  min="0"
-                  step="any"
-                  placeholder="e.g. 12"
-                  value={currentConfig.fuelRatePerKm}
-                  onChange={(e) =>
-                    onChange({
-                      ...currentConfig,
-                      fuelRatePerKm: e.target.value,
-                    })
-                  }
-                  className="w-full h-[32px] max-h-[34px] pl-6 pr-2.5 text-xs bg-white border border-slate-300 rounded-[4px] text-slate-900 focus:outline-none focus:border-[#f16623] font-mono"
-                />
-              </div>
-              <span className="text-[11px] text-slate-500 font-mono">/ KM</span>
+            <div className="text-[11px] text-amber-900 bg-amber-50/80 border border-amber-200 rounded px-2.5 py-1.5 leading-snug">
+              Auto-calculated for trip: <br />
+              <strong className="font-mono text-slate-900 font-semibold">
+                (Total KM ÷ Vehicle Mileage) × Entity Fuel Rate
+              </strong>
             </div>
           ) : (
             <div className="text-[11px] text-slate-400 italic">
@@ -147,8 +128,8 @@ export function FuelChargesCard({
           </label>
           <span className="text-[11px] text-amber-800 font-normal">
             {currentConfig.showFuelInInvoice
-              ? "✓ Petrol charges will be itemized as a separate row on generated invoices (Total KM × ₹/km)."
-              : "Petrol charges will not be shown as a separate row in invoice particulars."}
+              ? "✓ Fuel charges will be itemized as a separate row on generated invoices ((Total KM ÷ Mileage) × Fuel Price)."
+              : "Fuel charges will not be shown as a separate row in invoice particulars."}
           </span>
         </div>
       )}

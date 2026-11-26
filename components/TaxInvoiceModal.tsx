@@ -69,6 +69,8 @@ export interface InvoiceBookingData {
   // Fuel configuration / cost
   fuelChargesCost?: number;
   fuelRatePerKm?: number;
+  vehicleMileageKmpl?: number;
+  fuelPricePerLitre?: number;
   showFuelInInvoice?: boolean;
 
   // Pass-through
@@ -310,12 +312,29 @@ export function TaxInvoiceModal({
   }
 
   // 6. Fuel / Petrol charges if exclusive and showFuelInInvoice is true
-  if (booking.showFuelInInvoice && (booking.fuelChargesCost || booking.fuelRatePerKm)) {
-    const fuelRate = booking.fuelRatePerKm || 12;
-    const fuelAmount = booking.fuelChargesCost || totalKm * fuelRate;
+  if (
+    booking.showFuelInInvoice &&
+    (booking.fuelChargesCost || booking.fuelRatePerKm || booking.fuelPricePerLitre)
+  ) {
+    let fuelAmount = booking.fuelChargesCost || 0;
+    let desc = `Petrol / Fuel Charges`;
+
+    if (booking.vehicleMileageKmpl && booking.fuelPricePerLitre) {
+      const litres = (totalKm / booking.vehicleMileageKmpl).toFixed(1);
+      desc = `Petrol / Fuel Charges (${totalKm}km ÷ ${booking.vehicleMileageKmpl}km/l = ${litres}L × ₹${booking.fuelPricePerLitre}/L)`;
+      if (!fuelAmount) {
+        fuelAmount = Math.round((totalKm / booking.vehicleMileageKmpl) * booking.fuelPricePerLitre);
+      }
+    } else if (booking.fuelRatePerKm) {
+      desc = `Petrol / Fuel Charges (${totalKm}km × ₹${booking.fuelRatePerKm}/km)`;
+      if (!fuelAmount) fuelAmount = totalKm * booking.fuelRatePerKm;
+    } else {
+      desc = `Petrol / Fuel Charges (${totalKm}km)`;
+    }
+
     items.push({
       num: itemCounter++,
-      description: `Petrol / Fuel Charges (${totalKm}km × ₹${fuelRate})`,
+      description: desc,
       qty: 1,
       rate: fuelAmount,
       amount: fuelAmount,
