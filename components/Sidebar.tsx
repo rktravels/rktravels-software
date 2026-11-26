@@ -4,6 +4,7 @@ import { useState, useEffect, Fragment } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { NAV_ITEMS } from "@/lib/pages-data";
+import { useAuth } from "@/context/AuthContext";
 import {
   ArrowLeftRight,
   X,
@@ -14,6 +15,9 @@ import {
   Car,
   WalletCards,
   Briefcase,
+  Shield,
+  User,
+  LogOut,
 } from "lucide-react";
 
 const REPORT_NAV_ITEMS = [
@@ -56,6 +60,7 @@ interface SidebarProps {
 
 export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
   const pathname = usePathname();
+  const { user, canView, logout } = useAuth();
   const isReportsRoute = pathname?.startsWith("/reports");
   const [reportsOpen, setReportsOpen] = useState(isReportsRoute);
 
@@ -64,6 +69,17 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
       setReportsOpen(true);
     }
   }, [isReportsRoute]);
+
+  // Filter navigation items by user role & permissions
+  const visibleNavItems = NAV_ITEMS.filter((item) => {
+    // Staff cannot view or manage /staff page
+    if (user?.role === "staff" && item.id === "staff") return false;
+    return canView(item.id || item.href);
+  });
+
+  const visibleReportItems = REPORT_NAV_ITEMS.filter((sub) =>
+    canView(sub.id || sub.href)
+  );
 
   return (
     <>
@@ -125,7 +141,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
 
         {/* Navigation Items List (strictly max-height 34px, rounded 6px, max font-weight 500) */}
         <div className="flex-1 px-2.5 py-1 space-y-1 overflow-y-auto scrollbar-thin">
-          {NAV_ITEMS.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
             const isActive =
               pathname === item.href ||
@@ -153,7 +169,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
                 </Link>
 
                 {/* Reports Accordion placed immediately below Dashboard */}
-                {item.id === "dashboard" && (
+                {item.id === "dashboard" && visibleReportItems.length > 0 && (
                   <div>
                     {/* Reports Accordion Trigger */}
                     <button
@@ -187,7 +203,7 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
                     {/* Accordion Sub-items */}
                     {reportsOpen && (
                       <div className="pl-3 pr-1 py-1 space-y-0.5 border-l-2 border-orange-200/80 ml-4 my-1 transition-all">
-                        {REPORT_NAV_ITEMS.map((sub) => {
+                        {visibleReportItems.map((sub) => {
                           const SubIcon = sub.icon;
                           const isSubActive = pathname === sub.href;
 
@@ -222,17 +238,42 @@ export function Sidebar({ mobileOpen = false, onCloseMobile }: SidebarProps) {
           })}
         </div>
 
-        {/* Footer info matching screenshot */}
-        <div className="p-2.5 border-t border-slate-100 shrink-0 bg-white">
-          <div className="flex items-center justify-between px-2 h-[34px] max-h-[34px] text-xs text-slate-400">
-            <button
-              type="button"
-              className="flex items-center gap-1.5 h-[34px] max-h-[34px] rounded-[6px] hover:text-slate-700 transition"
-            >
-              <ArrowLeftRight className="w-3.5 h-3.5 text-slate-400" />
-              <span>Onboarding</span>
-            </button>
-            <span className="font-normal text-slate-400">RKTravels</span>
+        {/* User profile & footer */}
+        <div className="p-3 border-t border-slate-100 shrink-0 bg-white space-y-2">
+          {user && (
+            <div className="flex items-center gap-2.5 p-2 rounded-[6px] bg-slate-50 border border-slate-200/70">
+              <div
+                className={`w-7 h-7 rounded-[4px] flex items-center justify-center text-white text-xs font-bold shrink-0 ${
+                  user.role === "admin" ? "bg-[#f16623]" : "bg-blue-600"
+                }`}
+              >
+                {user.name?.[0]?.toUpperCase() || (user.role === "admin" ? "A" : "S")}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-slate-800 truncate leading-tight">
+                  {user.name}
+                </p>
+                <span className="text-[10px] text-slate-400 font-normal block leading-tight">
+                  {user.role === "admin" ? "Company Admin" : `Staff (${user.mobileNumber || "PIN Login"})`}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={logout}
+                title="Sign out"
+                className="w-6 h-6 flex items-center justify-center text-slate-400 hover:text-rose-600 rounded-[4px] transition cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between px-1 text-xs text-slate-400">
+            <span className="text-[10px] text-slate-400">RK Travels v2.0</span>
+            <span className="text-[10px] text-emerald-600 font-medium flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              Secure
+            </span>
           </div>
         </div>
       </aside>

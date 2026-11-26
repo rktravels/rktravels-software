@@ -1,11 +1,16 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
+import { AuthGuard } from "./AuthGuard";
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const pathname = usePathname();
+
+  const isLoginPage = pathname === "/login";
 
   // Block value changing on scroll/wheel when number inputs are focused
   useEffect(() => {
@@ -24,6 +29,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("wheel", handleWheel);
   }, []);
 
+  if (isLoginPage) {
+    return <main className="min-h-screen bg-[#f8fafc]">{children}</main>;
+  }
+
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-800 flex flex-col font-sans">
       {/* Sidebar navigation */}
@@ -39,7 +48,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
 
         {/* Page Content with compact padding */}
         <main className="flex-1 p-2.5 sm:p-3.5 md:p-4">
-          {children}
+          <AuthGuard>{children}</AuthGuard>
         </main>
       </div>
     </div>

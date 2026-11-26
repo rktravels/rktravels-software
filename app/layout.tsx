@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Sora } from "next/font/google";
 import "./globals.css";
 import { DashboardShell } from "@/components/DashboardShell";
+import { AuthProvider } from "@/context/AuthContext";
 
 const sora = Sora({
   subsets: ["latin"],
@@ -26,7 +27,9 @@ export default function RootLayout({
       className={`${sora.variable} ${sora.className} h-full antialiased`}
     >
       <body className="min-h-full bg-[#f8fafc] text-slate-800 antialiased font-sans font-normal selection:bg-[#f16623]/20 selection:text-[#f16623]">
-        <DashboardShell>{children}</DashboardShell>
+        <AuthProvider>
+          <DashboardShell>{children}</DashboardShell>
+        </AuthProvider>
       </body>
     </html>
   );

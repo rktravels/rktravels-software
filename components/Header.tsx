@@ -5,13 +5,29 @@ import {
   ChevronDown,
   Printer,
   LogOut,
+  ShieldCheck,
+  UserCheck,
 } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
 
 interface HeaderProps {
   onOpenMobile?: () => void;
 }
 
 export function Header({ onOpenMobile }: HeaderProps) {
+  const { user, logout } = useAuth();
+
+  const userInitial = user?.name
+    ? user.name.slice(0, 2).toUpperCase()
+    : user?.role === "admin"
+    ? "AD"
+    : "ST";
+
+  const userRoleLabel =
+    user?.role === "admin" ? "Administrator" : "Staff Member";
+
+  const userNameDisplay =
+    user?.name || user?.email || (user?.role === "admin" ? "Admin" : "Staff");
   return (
     <header className="sticky top-0 z-30 h-14 bg-white/95 backdrop-blur-xs border-b border-slate-200/80 px-4 sm:px-6 flex items-center justify-between">
       {/* Mobile Menu Toggle & Brand title for small screens */}
@@ -55,23 +71,28 @@ export function Header({ onOpenMobile }: HeaderProps) {
 
         {/* User Profile Component */}
         <div className="flex items-center gap-2.5 pl-2 sm:border-l border-slate-200">
-          <div className="w-[34px] h-[34px] max-h-[34px] rounded-[6px] bg-[#f16623] flex items-center justify-center text-white text-xs font-medium shadow-xs">
-            AR
+          <div
+            className={`w-[34px] h-[34px] max-h-[34px] rounded-[6px] flex items-center justify-center text-white text-xs font-semibold shadow-xs ${
+              user?.role === "admin" ? "bg-[#f16623]" : "bg-blue-600"
+            }`}
+          >
+            {userInitial}
           </div>
 
           <div className="hidden xl:flex flex-col text-left">
-            <span className="text-xs font-medium text-slate-800 leading-tight truncate max-w-[130px]">
-              arumullasivakrishna6...
+            <span className="text-xs font-medium text-slate-800 leading-tight truncate max-w-[140px]">
+              {userNameDisplay}
             </span>
             <span className="text-[10px] text-slate-400 font-normal leading-none">
-              Administrator
+              {userRoleLabel}
             </span>
           </div>
 
           <button
             type="button"
+            onClick={logout}
             title="Sign out"
-            className="h-[34px] max-h-[34px] w-[34px] flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-[6px] transition"
+            className="h-[34px] max-h-[34px] w-[34px] flex items-center justify-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-[6px] transition cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
           </button>
