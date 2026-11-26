@@ -453,6 +453,14 @@ export function TaxInvoiceModal({
               <div className="flex items-start justify-between gap-4">
                 {/* Left Company Details */}
                 <div className="space-y-0.5">
+                  {/* Entity Logo */}
+                  {entityData?.logoUrl && (
+                    <img
+                      src={entityData.logoUrl}
+                      alt={supplierName}
+                      className="h-12 max-w-[180px] object-contain mb-1 print:h-10"
+                    />
+                  )}
                   <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 uppercase">
                     {supplierName}
                   </h1>
@@ -756,10 +764,22 @@ export function TaxInvoiceModal({
               </div>
 
               {/* Right: Signature */}
-              <div className="sm:col-span-5 print:col-span-5 text-right space-y-9">
+              <div className="sm:col-span-5 print:col-span-5 text-right space-y-2">
                 <p className="text-xs font-bold text-slate-900">
                   For {supplierName}
                 </p>
+                {/* Signature Image */}
+                {entityData?.signatureUrl ? (
+                  <div className="flex justify-end">
+                    <img
+                      src={entityData.signatureUrl}
+                      alt="Authorised Signature"
+                      className="h-14 max-w-[180px] object-contain print:h-12"
+                    />
+                  </div>
+                ) : (
+                  <div className="h-14" />
+                )}
                 <div className="border-t border-slate-300 pt-1 inline-block min-w-[180px] text-center">
                   <span className="text-[11px] text-slate-600 block">
                     Authorised Signatory
