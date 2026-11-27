@@ -108,6 +108,9 @@ export default function CreditPage() {
 
   // Collect Payment Modal state
   const [collectingBooking, setCollectingBooking] = useState<CreditBookingRecord | null>(null);
+  const [collectDate, setCollectDate] = useState<string>(
+    () => new Date().toISOString().split("T")[0]
+  );
   const [collectAmount, setCollectAmount] = useState("");
   const [collectMode, setCollectMode] = useState<"UPI" | "Cash" | "Card" | "Split">("UPI");
   const [splitUpi, setSplitUpi] = useState("");
@@ -285,6 +288,7 @@ export default function CreditPage() {
           (Number(b.receivedAmount) || 0)
       );
     setCollectAmount(String(balance > 0 ? balance : ""));
+    setCollectDate(new Date().toISOString().split("T")[0]);
     setCollectMode("UPI");
     setSplitUpi("");
     setSplitCash("");
@@ -361,7 +365,7 @@ export default function CreditPage() {
       // Sanitize new history item so NO undefined fields are present (Firestore throws on undefined)
       const cleanHistoryItem: Record<string, any> = {
         id: `pay-${Date.now()}`,
-        date: now.toISOString().split("T")[0],
+        date: collectDate || now.toISOString().split("T")[0],
         time: `${String(now.getHours()).padStart(2, "0")}:${String(
           now.getMinutes()
         ).padStart(2, "0")}`,
@@ -400,6 +404,7 @@ export default function CreditPage() {
         amountCollected: amountNum,
         amount: amountNum,
         paymentMode: collectMode.toLowerCase(),
+        date: collectDate || now.toISOString().split("T")[0],
         createdAt: serverTimestamp(),
       };
       if (collectRefNumber.trim()) paymentDocPayload.referenceNumber = collectRefNumber.trim();
@@ -1032,6 +1037,20 @@ export default function CreditPage() {
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* Payment Collection Date */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                PAYMENT COLLECTION DATE *
+              </label>
+              <input
+                type="date"
+                required
+                value={collectDate}
+                onChange={(e) => setCollectDate(e.target.value)}
+                className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal"
+              />
             </div>
 
             {/* If Single Method, show Amount Input */}

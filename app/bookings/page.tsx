@@ -241,6 +241,9 @@ export default function BookingsPage() {
   const [collectingBooking, setCollectingBooking] = useState<BookingRecord | null>(
     null
   );
+  const [collectDate, setCollectDate] = useState<string>(
+    () => new Date().toISOString().split("T")[0]
+  );
   const [collectAmount, setCollectAmount] = useState<string>("");
   const [collectMode, setCollectMode] = useState<"UPI" | "Cash" | "Card" | "Split">("UPI");
   const [splitUpi, setSplitUpi] = useState<string>("");
@@ -1896,6 +1899,7 @@ export default function BookingsPage() {
     const balance = Number(b.balanceAmount ?? b.netAmount ?? 0);
     setCollectingBooking(b);
     setCollectAmount(balance > 0 ? String(balance) : "");
+    setCollectDate(new Date().toISOString().split("T")[0]);
     setCollectMode("UPI");
     setSplitUpi("");
     setSplitCash("");
@@ -1954,7 +1958,7 @@ export default function BookingsPage() {
 
       const newHistoryItem: PaymentHistoryItem = {
         id: `pay-${Date.now()}`,
-        date: now.toISOString().split("T")[0],
+        date: collectDate || now.toISOString().split("T")[0],
         time: `${String(now.getHours()).padStart(2, "0")}:${String(
           now.getMinutes()
         ).padStart(2, "0")}`,
@@ -1993,6 +1997,7 @@ export default function BookingsPage() {
         amountCollected: amountNum,
         amount: amountNum,
         paymentMode: collectMode.toLowerCase(),
+        date: collectDate || now.toISOString().split("T")[0],
         createdAt: serverTimestamp(),
       };
       if (collectRefNumber.trim()) paymentDocPayload.referenceNumber = collectRefNumber.trim();
@@ -4343,6 +4348,20 @@ export default function BookingsPage() {
                 <span>{collectError}</span>
               </div>
             )}
+
+            {/* Payment Collection Date */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                COLLECTION DATE *
+              </label>
+              <input
+                type="date"
+                required
+                value={collectDate}
+                onChange={(e) => setCollectDate(e.target.value)}
+                className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal"
+              />
+            </div>
 
             {/* Payment Mode Selector: UPI, Cash, Card, Split */}
             <div className="space-y-1">

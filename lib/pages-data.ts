@@ -80,6 +80,22 @@ export const NAV_ITEMS: PageModuleInfo[] = [
     ],
   },
   {
+    id: "payments",
+    name: "Payments",
+    href: "/payments",
+    category: "FINANCIALS",
+    icon: CreditCard,
+    description:
+      "Daily payments and collection analytics by method: UPI, Cash, Card, and Split settlements.",
+    primaryAction: "Daily Collections",
+    secondaryAction: "Filter by Date",
+    plannedFeatures: [
+      "Real-time daily collection analytics with UPI, Cash, and Card breakdown",
+      "Dynamic date filtering with today's collections selected by default",
+      "Detailed settlement logs with transaction IDs and receipt tracking",
+    ],
+  },
+  {
     id: "credit",
     name: "Credit",
     href: "/credit",
