@@ -42,6 +42,7 @@ import {
   TrendingUp,
   Sparkles,
   MoreVertical,
+  FileSpreadsheet,
 } from "lucide-react";
 import {
   collection,
@@ -64,6 +65,7 @@ import { CustomDatePicker } from "@/components/CustomDatePicker";
 import { CustomTimePicker } from "@/components/CustomTimePicker";
 import { ALL_INDIA_STATES_DATA } from "@/app/locations/page";
 import { TaxInvoiceModal } from "@/components/TaxInvoiceModal";
+import TripSheetModal from "@/components/TripSheetModal";
 import { generateNextInvoiceNumber } from "@/lib/invoice-utils";
 
 // --- Types & Data Models ---
@@ -225,6 +227,9 @@ export default function BookingsPage() {
 
   // Invoice Modal
   const [invoiceBooking, setInvoiceBooking] = useState<BookingRecord | null>(null);
+
+  // Trip Sheet Modal
+  const [tripSheetBooking, setTripSheetBooking] = useState<BookingRecord | null>(null);
 
   // Collect Payment Modal
   const [collectingBooking, setCollectingBooking] = useState<BookingRecord | null>(
@@ -1642,12 +1647,18 @@ export default function BookingsPage() {
 
         await updateDoc(doc(db, "bookings", editingBookingId), cleanedUpdatePayload);
 
+        const updatedBookingItem = {
+          id: editingBookingId,
+          ...cleanedUpdatePayload,
+        } as BookingRecord;
+
         setFeedback({
           type: "success",
-          message: "Booking updated successfully!",
+          message: "Booking updated successfully! Trip sheet ready.",
         });
         setIsOffCanvasOpen(false);
         setEditingBookingId(null);
+        setTripSheetBooking(updatedBookingItem);
         setTimeout(() => setFeedback(null), 4000);
         return;
       }
@@ -1771,11 +1782,17 @@ export default function BookingsPage() {
         }
       }
 
+      const savedBookingItem = {
+        id: docRef.id,
+        ...cleanedBookingPayload,
+      } as BookingRecord;
+
       setFeedback({
         type: "success",
-        message: `Booking ${bookingNumber} created successfully! Vehicle and driver assigned.`,
+        message: `Booking ${bookingNumber} created successfully! Trip sheet generated.`,
       });
       setIsOffCanvasOpen(false);
+      setTripSheetBooking(savedBookingItem);
       setTimeout(() => setFeedback(null), 4000);
     } catch (err: any) {
       console.error("Error creating booking:", err);
@@ -2418,7 +2435,21 @@ export default function BookingsPage() {
             }`}
           >
             <div className="space-y-0.5">
-              {/* 1. View Details */}
+              {/* 1. Trip Sheet (First Option) */}
+              <button
+                type="button"
+                onClick={() => {
+                  const b = activeActionMenu.booking;
+                  setActiveActionMenu(null);
+                  setTripSheetBooking(b);
+                }}
+                className="w-full px-2.5 py-1.5 rounded-[5px] flex items-center gap-2.5 text-slate-800 hover:bg-orange-50 hover:text-[#f16623] font-medium transition cursor-pointer"
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5 text-[#f16623] shrink-0" />
+                <span>Trip Sheet</span>
+              </button>
+
+              {/* 2. View Details */}
               <button
                 type="button"
                 onClick={() => {
@@ -4137,6 +4168,20 @@ export default function BookingsPage() {
                   onClick={() => {
                     const b = viewingBooking;
                     setViewingBooking(null);
+                    setTripSheetBooking(b);
+                  }}
+                  className="h-[34px] max-h-[34px] px-3 rounded-[6px] border border-orange-200 bg-orange-50 hover:bg-orange-100 text-[#f16623] text-xs font-medium transition flex items-center gap-1.5 cursor-pointer"
+                  title="View / Print Trip Sheet"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span>Trip Sheet</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const b = viewingBooking;
+                    setViewingBooking(null);
                     handleOpenEditBooking(b);
                   }}
                   className="h-[34px] max-h-[34px] px-3 rounded-[6px] border border-orange-200 bg-orange-50 hover:bg-orange-100 text-[#f16623] text-xs font-medium transition flex items-center gap-1.5 cursor-pointer"
@@ -4380,6 +4425,33 @@ export default function BookingsPage() {
           }
         }}
         isGenerating={isAllocatingInvoice}
+      />
+
+      {/* ===================================================================== */}
+      {/* TRIP SHEET MODAL */}
+      {/* ===================================================================== */}
+      <TripSheetModal
+        isOpen={!!tripSheetBooking}
+        onClose={() => setTripSheetBooking(null)}
+        booking={tripSheetBooking}
+        entityData={
+          rawEntities.find(
+            (e) =>
+              e.id === tripSheetBooking?.entityId ||
+              (e.legalName &&
+                e.legalName.toLowerCase() ===
+                  tripSheetBooking?.entityName?.toLowerCase()) ||
+              (e.tradeName &&
+                e.tradeName.toLowerCase() ===
+                  tripSheetBooking?.entityName?.toLowerCase()) ||
+              (e.entityName &&
+                e.entityName.toLowerCase() ===
+                  tripSheetBooking?.entityName?.toLowerCase()) ||
+              (e.travelName &&
+                e.travelName.toLowerCase() ===
+                  tripSheetBooking?.entityName?.toLowerCase())
+          ) || rawEntities[0] || null
+        }
       />
     </div>
   );
