@@ -1121,8 +1121,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Card 3: Driver Roster (Occupied vs Free) */}
-        <button
-          type="button"
+        <div
           onClick={() => {
             setDriverRosterFilter("all");
             setIsDriverRosterModalOpen(true);
@@ -1151,7 +1150,7 @@ export default function DashboardPage() {
               {freeDriversCount} Free
             </span>
           </div>
-        </button>
+        </div>
 
         {/* Card 4: Fleet Utilization */}
         <div className="bg-white border border-slate-200/90 rounded-[6px] p-3.5 shadow-2xs hover:border-purple-300 transition">
