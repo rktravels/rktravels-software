@@ -28,7 +28,6 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  Info,
   Calendar,
   Building,
   Wrench,
@@ -523,7 +522,8 @@ export default function VehiclesPage() {
   const handleOpenEditDrawer = (v: VehicleItem) => {
     setEditingVehicleId(v.id);
     setActiveTab(1);
-    setUnlockedTabs([1, 2, 3, 4, 5]); // All tabs accessible when editing
+    const isVOwned = (v.ownershipType || "Owned") === "Owned";
+    setUnlockedTabs(isVOwned ? [1, 2, 3, 4, 5] : [1, 5]); // Owned has all tabs; Leased/Vendor has Profile & Status
     setTabError(null);
 
     setRegNumber(v.regNumber || "");
@@ -635,6 +635,11 @@ export default function VehiclesPage() {
       return true;
     }
 
+    // Tabs 2, 3, 4 (Compliance, Operations, Financial) are ONLY required for Owned vehicles!
+    if (ownershipType !== "Owned") {
+      return true;
+    }
+
     if (tabIndex === 2) {
       if (!fitnessExpiry) {
         setTabError("Please enter the Fitness Expiry Date.");
@@ -675,8 +680,8 @@ export default function VehiclesPage() {
   };
 
   // Step Continue Navigation
-  const handleContinue = (nextTab: 2 | 3 | 4 | 5) => {
-    const currentTab = (nextTab - 1) as 1 | 2 | 3 | 4;
+  const handleContinue = (nextTab: 2 | 3 | 4 | 5, fromTab?: number) => {
+    const currentTab = (fromTab ?? (nextTab - 1)) as 1 | 2 | 3 | 4;
     if (!validateTab(currentTab)) return;
 
     if (!unlockedTabs.includes(nextTab)) {
@@ -698,9 +703,15 @@ export default function VehiclesPage() {
     setFeedback(null);
     setTabError(null);
 
-    // Final checks
-    if (!validateTab(1) || !validateTab(2) || !validateTab(3)) {
-      return;
+    // Final checks: Owned vehicles require tabs 1, 2, and 3. Leased / Vendor Attached vehicles only require tab 1.
+    if (ownershipType === "Owned") {
+      if (!validateTab(1) || !validateTab(2) || !validateTab(3)) {
+        return;
+      }
+    } else {
+      if (!validateTab(1)) {
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -1551,16 +1562,26 @@ export default function VehiclesPage() {
             </div>
           )}
 
-          {/* Stepper Tabs Bar (Total 5 Tabs) */}
+          {/* Stepper Tabs Bar (Total 5 Tabs for Owned; 2 Tabs for Leased/Vendor Attached) */}
           <div className="border-b border-slate-200 pb-2">
-            <div className="grid grid-cols-5 gap-1.5 w-full py-1">
-              {[
-                { step: 1, title: "1. Profile" },
-                { step: 2, title: "2. Compliance" },
-                { step: 3, title: "3. Operations" },
-                { step: 4, title: "4. Financial" },
-                { step: 5, title: "5. Status" },
-              ].map((t) => {
+            <div
+              className={`grid ${
+                ownershipType === "Owned" ? "grid-cols-5" : "grid-cols-2"
+              } gap-1.5 w-full py-1`}
+            >
+              {(ownershipType === "Owned"
+                ? [
+                    { step: 1, title: "1. Profile" },
+                    { step: 2, title: "2. Compliance" },
+                    { step: 3, title: "3. Operations" },
+                    { step: 4, title: "4. Financial" },
+                    { step: 5, title: "5. Status" },
+                  ]
+                : [
+                    { step: 1, title: "1. Profile" },
+                    { step: 5, title: "2. Status" },
+                  ]
+              ).map((t) => {
                 const isCurrent = activeTab === t.step;
                 const isUnlocked = unlockedTabs.includes(t.step);
                 return (
@@ -1583,9 +1604,12 @@ export default function VehiclesPage() {
                     }`}
                   >
                     <span className="truncate">{t.title}</span>
-                    {unlockedTabs.includes(t.step + 1) && !isCurrent && (
-                      <Check className="w-3 h-3 text-emerald-600 shrink-0" />
-                    )}
+                    {unlockedTabs.includes(
+                      t.step === 1 ? (ownershipType === "Owned" ? 2 : 5) : t.step + 1
+                    ) &&
+                      !isCurrent && (
+                        <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                      )}
                   </button>
                 );
               })}
@@ -1693,6 +1717,11 @@ export default function VehiclesPage() {
                         if (oVal === "Owned") {
                           setSelectedVendorName("");
                           setCustomVendorName("");
+                        } else {
+                          setUnlockedTabs((prev) => Array.from(new Set([...prev, 5])));
+                          if (activeTab !== 1 && activeTab !== 5) {
+                            setActiveTab(1);
+                          }
                         }
                       }}
                       placeholder="Select Ownership Type..."
@@ -1881,15 +1910,39 @@ export default function VehiclesPage() {
               </div>
 
               {/* Bottom Continue button for Tab 1 */}
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-end">
-                <button
-                  type="button"
-                  onClick={() => handleContinue(2)}
-                  className="h-[34px] max-h-[34px] px-4 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] text-white text-xs font-medium shadow-xs shadow-[#f16623]/25 transition inline-flex items-center gap-1.5 cursor-pointer"
-                >
-                  <span>Continue to Compliance</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
+              <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
+                <div>
+                  {ownershipType !== "Owned" && (
+                    <span className="text-[11px] text-amber-700 bg-amber-50 px-2.5 py-1 rounded-[5px] border border-amber-200 inline-flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      <span>{ownershipType}: Compliance, Operations & Financial tabs are not required.</span>
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  {ownershipType !== "Owned" && (
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      className="h-[34px] max-h-[34px] px-3.5 rounded-[6px] border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-medium transition inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-70"
+                    >
+                      {isSubmitting ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Check className="w-3.5 h-3.5" />
+                      )}
+                      <span>Save Vehicle</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleContinue(ownershipType === "Owned" ? 2 : 5, 1)}
+                    className="h-[34px] max-h-[34px] px-4 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] text-white text-xs font-medium shadow-xs shadow-[#f16623]/25 transition inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <span>{ownershipType === "Owned" ? "Continue to Compliance" : "Continue to Status"}</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             </div>
           )}
@@ -2373,14 +2426,23 @@ export default function VehiclesPage() {
                     <span className="text-[10px] text-slate-400 block uppercase">Fuel & Ownership</span>
                     <span className="text-slate-800">{fuelType} • {ownershipType}</span>
                   </div>
-                  <div>
-                    <span className="text-[10px] text-slate-400 block uppercase">Fitness Expiry</span>
-                    <span className="font-medium text-slate-800">{fitnessExpiry || "—"}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-slate-400 block uppercase">State / RTO</span>
-                    <span className="text-slate-800">{registrationState} {registrationCityRto ? `• ${registrationCityRto}` : ""}</span>
-                  </div>
+                  {ownershipType === "Owned" ? (
+                    <>
+                      <div>
+                        <span className="text-[10px] text-slate-400 block uppercase">Fitness Expiry</span>
+                        <span className="font-medium text-slate-800">{fitnessExpiry || "—"}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-400 block uppercase">State / RTO</span>
+                        <span className="text-slate-800">{registrationState} {registrationCityRto ? `• ${registrationCityRto}` : ""}</span>
+                      </div>
+                    </>
+                  ) : (
+                    <div>
+                      <span className="text-[10px] text-slate-400 block uppercase">Vendor / Lessor</span>
+                      <span className="font-medium text-slate-800">{customVendorName || selectedVendorName || "In-House"}</span>
+                    </div>
+                  )}
                   <div>
                     <span className="text-[10px] text-slate-400 block uppercase">Photo Attachment</span>
                     <span className="text-slate-800">
@@ -2394,7 +2456,7 @@ export default function VehiclesPage() {
               <div className="pt-3 border-t border-slate-100 flex items-center justify-between">
                 <button
                   type="button"
-                  onClick={() => setActiveTab(4)}
+                  onClick={() => setActiveTab(ownershipType === "Owned" ? 4 : 1)}
                   className="h-[34px] max-h-[34px] px-3.5 rounded-[6px] border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-normal transition inline-flex items-center gap-1 cursor-pointer"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
