@@ -2,13 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import nodemailer from "nodemailer";
 import { generateInvoicePdf } from "@/lib/invoice-pdf-generator";
 
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const {
       booking,
-      entityData,
-      companyData,
+      entityData = {},
+      companyData = {},
       recipientEmail,
       emailSubject,
       emailMessage,
@@ -28,15 +31,92 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 1. Generate Invoice PDF Buffer
-    const pdfBuffer = generateInvoicePdf({ booking, entityData, companyData });
-    const invoiceNo = booking.invoiceNumber || booking.bookingNumber || `TRIP-${Date.now()}`;
+    // 1. Generate the exact pixel-perfect PDF attachment matching Image 2
+    const pdfBuffer = await generateInvoicePdf({ booking, entityData, companyData });
+    const invoiceNo = booking.invoiceNumber || "INV20261102";
     const filename = `Invoice_${invoiceNo}.pdf`;
 
-    // 2. SMTP Credentials from Environment or Defaults
+    const customerName =
+      booking.customerName ||
+      companyData?.legalName ||
+      companyData?.companyName ||
+      booking.clientName ||
+      "Valued Customer";
+
+    const totalAmt = Number(booking.grossAmount || booking.netAmount || booking.baseFare || 0);
+
+    // 2. Clean Email Body (just the message and invoice attachment notice as requested)
+    const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #1e293b; line-height: 1.6; padding: 24px 10px; background-color: #f8fafc; margin: 0; }
+    .card { max-width: 560px; margin: 0 auto; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 28px 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .header { font-size: 18px; font-weight: 800; color: #0f172a; margin-bottom: 16px; border-bottom: 2.5px solid #f16623; padding-bottom: 10px; }
+    .trip-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 14px 16px; font-size: 13px; margin: 16px 0; }
+    .trip-box table { width: 100%; border-collapse: collapse; }
+    .trip-box td { padding: 3px 0; }
+    .trip-box td:first-child { color: #64748b; width: 130px; }
+    .trip-box td:last-child { font-weight: 700; color: #0f172a; }
+    .footer { margin-top: 24px; font-size: 12px; color: #64748b; border-top: 1px solid #f1f5f9; padding-top: 14px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">RK TRAVELS &mdash; Tax Invoice</div>
+    <p>Dear ${customerName},</p>
+    ${
+      emailMessage
+        ? `<p>${emailMessage.replace(/\n/g, "<br/>")}</p>`
+        : `<p>Thank you for traveling with <strong>RK Travels</strong>. Please find attached your official Tax Invoice PDF for Booking <strong>#${booking.bookingNumber || invoiceNo}</strong>.</p>`
+    }
+    
+    <div class="trip-box">
+      <table>
+        <tr>
+          <td>Invoice Number:</td>
+          <td>${invoiceNo}</td>
+        </tr>
+        <tr>
+          <td>Booking Ref:</td>
+          <td>${booking.bookingNumber || "—"}</td>
+        </tr>
+        <tr>
+          <td>Route:</td>
+          <td>${booking.fromLocation || "Start"} &rarr; ${booking.toLocation || "End"}</td>
+        </tr>
+        <tr>
+          <td>Vehicle:</td>
+          <td>${booking.vehicleCategory || "Sedan"} (${booking.vehicleRegNumber || "Car"})</td>
+        </tr>
+        <tr>
+          <td>Total Amount:</td>
+          <td style="color: #f16623; font-size: 15px;">&#8377; ${totalAmt.toLocaleString("en-IN")}</td>
+        </tr>
+      </table>
+    </div>
+
+    <p style="font-size: 12.5px; color: #475569;">
+      &bull; The official Tax Invoice PDF (<strong>${filename}</strong>) is attached to this email. You can download and print it for your tax and expense reimbursement records.
+    </p>
+
+    <div class="footer">
+      Warm regards,<br/>
+      <strong style="color: #0f172a;">RK Travels &amp; Tours</strong><br/>
+      #39-15-50, Main Road, Opp My Home Apartment, Vijayawada<br/>
+      Phone: +91 9948228877 | Email: rktravels.vja@gmail.com
+    </div>
+  </div>
+</body>
+</html>
+`;
+
+    // 3. Send Email via Nodemailer
     const smtpUser = process.env.SMTP_USER || "rktravels.vja@gmail.com";
     const smtpRawPass = process.env.SMTP_PASS || "bnuc pgag kkao ccsz";
-    const smtpPass = smtpRawPass.replace(/\s+/g, ""); // Clean spaces from Google App Password
+    const smtpPass = smtpRawPass.replace(/\s+/g, "");
     const smtpFromEmail = process.env.SMTP_FROM_EMAIL || smtpUser;
     const smtpFromName = process.env.SMTP_FROM_NAME || "RK Travels";
 
@@ -51,123 +131,10 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    const customerName =
-      booking.customerName ||
-      companyData?.legalName ||
-      companyData?.companyName ||
-      booking.clientName ||
-      "Valued Customer";
-
     const subject =
       emailSubject ||
       `Tax Invoice #${invoiceNo} for Booking #${booking.bookingNumber || ""} | RK Travels`;
 
-    const totalAmt = Number(booking.grossAmount || booking.netAmount || booking.baseFare || 0);
-    const balanceAmt = Number(booking.balanceAmount ?? totalAmt);
-
-    // 3. Build HTML Email Body
-    const htmlContent = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 20px; color: #1e293b; }
-    .container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 8px; border: 1px solid #e2e8f0; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-    .header { background: #1e293b; padding: 24px; text-align: left; border-bottom: 3px solid #f16623; }
-    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -0.5px; }
-    .header p { color: #f16623; margin: 4px 0 0 0; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-    .content { padding: 24px; }
-    .greeting { font-size: 15px; font-weight: 600; color: #0f172a; margin-bottom: 12px; }
-    .message { font-size: 13px; line-height: 1.6; color: #475569; margin-bottom: 20px; }
-    .invoice-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 16px; margin-bottom: 20px; }
-    .invoice-title { font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 0.5px; margin-bottom: 12px; border-bottom: 1px solid #e2e8f0; padding-bottom: 8px; }
-    .row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; }
-    .row-label { color: #64748b; }
-    .row-value { color: #0f172a; font-weight: 600; text-align: right; }
-    .total-row { border-top: 1px solid #cbd5e1; padding-top: 10px; margin-top: 10px; font-size: 14px; font-weight: 700; }
-    .total-value { color: #f16623; font-size: 16px; }
-    .attachment-notice { background: #fff7ed; border: 1px solid #ffedd5; border-radius: 6px; padding: 12px 16px; font-size: 12px; color: #9a3412; display: flex; align-items: center; margin-bottom: 20px; }
-    .footer { background: #f8fafc; border-top: 1px solid #e2e8f0; padding: 16px 24px; text-align: center; font-size: 11px; color: #94a3b8; }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>RK TRAVELS &amp; TOURS</h1>
-      <p>Official Tax Invoice Dispatch</p>
-    </div>
-    
-    <div class="content">
-      <div class="greeting">Dear ${customerName},</div>
-      <div class="message">
-        ${
-          emailMessage
-            ? `<p>${emailMessage.replace(/\n/g, "<br/>")}</p>`
-            : `<p>Thank you for traveling with <strong>RK Travels</strong>. Please find attached the official Tax Invoice for your recent trip booking.</p>`
-        }
-      </div>
-
-      <div class="invoice-card">
-        <div class="invoice-title">Trip &amp; Invoice Highlights</div>
-        <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-          <tr>
-            <td style="padding: 4px 0; color: #64748b;">Invoice Number:</td>
-            <td style="padding: 4px 0; font-weight: 600; text-align: right; color: #0f172a;">${invoiceNo}</td>
-          </tr>
-          <tr>
-            <td style="padding: 4px 0; color: #64748b;">Booking Reference:</td>
-            <td style="padding: 4px 0; font-weight: 600; text-align: right; color: #0f172a;">#${booking.bookingNumber || "—"}</td>
-          </tr>
-          <tr>
-            <td style="padding: 4px 0; color: #64748b;">Travel Route:</td>
-            <td style="padding: 4px 0; font-weight: 600; text-align: right; color: #0f172a;">${booking.fromLocation || ""} &rarr; ${booking.toLocation || ""}</td>
-          </tr>
-          <tr>
-            <td style="padding: 4px 0; color: #64748b;">Vehicle:</td>
-            <td style="padding: 4px 0; font-weight: 600; text-align: right; color: #0f172a;">${booking.vehicleCategory || "Sedan"} (${booking.vehicleRegNumber || "Car"})</td>
-          </tr>
-          <tr>
-            <td style="padding: 4px 0; color: #64748b;">Travel Date:</td>
-            <td style="padding: 4px 0; font-weight: 600; text-align: right; color: #0f172a;">${booking.startDate || "—"}</td>
-          </tr>
-          <tr style="border-top: 1px solid #e2e8f0;">
-            <td style="padding: 8px 0 4px 0; color: #64748b; font-weight: 700;">Total Invoice Amount:</td>
-            <td style="padding: 8px 0 4px 0; font-weight: 700; text-align: right; color: #f16623; font-size: 15px;">&#8377;${totalAmt.toLocaleString("en-IN")}</td>
-          </tr>
-          ${
-            balanceAmt > 0
-              ? `<tr>
-                  <td style="padding: 2px 0; color: #b45309; font-size: 12px;">Balance Outstanding:</td>
-                  <td style="padding: 2px 0; font-weight: 600; text-align: right; color: #b45309; font-size: 12px;">&#8377;${balanceAmt.toLocaleString("en-IN")}</td>
-                </tr>`
-              : `<tr>
-                  <td style="padding: 2px 0; color: #15803d; font-size: 12px;">Payment Status:</td>
-                  <td style="padding: 2px 0; font-weight: 600; text-align: right; color: #15803d; font-size: 12px;">Paid In Full</td>
-                </tr>`
-          }
-        </table>
-      </div>
-
-      <div class="attachment-notice">
-        <span>&bull; The full official PDF Tax Invoice (<strong>${filename}</strong>) is attached to this email. You can download and print it for your tax and expense reimbursement records.</span>
-      </div>
-
-      <p style="font-size: 12px; color: #64748b; margin-top: 24px;">
-        For any billing queries or feedback, please contact us at <strong>${smtpUser}</strong> or call <strong>+91 9542224422</strong>.
-      </p>
-    </div>
-
-    <div class="footer">
-      &copy; ${new Date().getFullYear()} RK Travels. All rights reserved.<br/>
-      Vijayawada, Andhra Pradesh, India.
-    </div>
-  </div>
-</body>
-</html>
-`;
-
-    // 4. Send Email via Nodemailer
     const mailOptions = {
       from: `"${smtpFromName}" <${smtpFromEmail}>`,
       to: recipientEmail,
