@@ -43,6 +43,7 @@ import { db } from "@/lib/firebase";
 import { OffCanvas } from "@/components/OffCanvas";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { CustomDatePicker } from "@/components/CustomDatePicker";
+import { CustomTimePicker } from "@/components/CustomTimePicker";
 import {
   FuelChargesCard,
   type FuelChargesConfig,
@@ -2575,22 +2576,20 @@ export default function CustomerTariffsPage() {
                       Night Charge Time Range
                     </label>
                     <div className="flex items-center gap-3">
-                      <div className="space-y-1">
+                      <div className="space-y-1 w-[130px]">
                         <label className="text-[10px] text-slate-500 block">From</label>
-                        <input
-                          type="time"
+                        <CustomTimePicker
                           value={tariffNightChargeFrom}
-                          onChange={(e) => setTariffNightChargeFrom(e.target.value)}
-                          className="h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-mono"
+                          onChange={(val) => setTariffNightChargeFrom(val)}
+                          className="h-[34px] text-xs font-mono"
                         />
                       </div>
-                      <div className="space-y-1">
+                      <div className="space-y-1 w-[130px]">
                         <label className="text-[10px] text-slate-500 block">To</label>
-                        <input
-                          type="time"
+                        <CustomTimePicker
                           value={tariffNightChargeTo}
-                          onChange={(e) => setTariffNightChargeTo(e.target.value)}
-                          className="h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-mono"
+                          onChange={(val) => setTariffNightChargeTo(val)}
+                          className="h-[34px] text-xs font-mono"
                         />
                       </div>
                     </div>

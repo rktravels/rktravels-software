@@ -4354,12 +4354,10 @@ export default function BookingsPage() {
               <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
                 COLLECTION DATE *
               </label>
-              <input
-                type="date"
-                required
+              <CustomDatePicker
                 value={collectDate}
-                onChange={(e) => setCollectDate(e.target.value)}
-                className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] font-normal"
+                onChange={(val) => setCollectDate(val)}
+                className="w-full h-[34px] text-xs font-normal"
               />
             </div>
 

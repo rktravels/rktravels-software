@@ -31,6 +31,7 @@ import {
   Timestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { CustomDatePicker } from "@/components/CustomDatePicker";
 
 export interface PaymentRecord {
   id: string;
@@ -345,15 +346,16 @@ export default function PaymentsPage() {
               <ChevronLeft className="w-4 h-4" />
             </button>
 
-            {/* Native Date Input */}
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => {
-                if (e.target.value) setSelectedDate(e.target.value);
-              }}
-              className="h-[34px] px-3 rounded-[6px] border border-slate-200 bg-white text-xs font-mono font-medium text-slate-900 focus:outline-none focus:border-[#f16623] cursor-pointer"
-            />
+            {/* Custom Date Picker */}
+            <div className="w-[140px]">
+              <CustomDatePicker
+                value={selectedDate}
+                onChange={(val) => {
+                  if (val) setSelectedDate(val);
+                }}
+                className="h-[34px] text-xs font-mono"
+              />
+            </div>
 
             {/* Quick Step Next Day */}
             <button
