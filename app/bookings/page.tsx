@@ -44,6 +44,8 @@ import {
   MoreVertical,
   FileSpreadsheet,
   Coins,
+  Mail,
+  MessageSquare,
 } from "lucide-react";
 import {
   collection,
@@ -70,6 +72,14 @@ import TripSheetModal from "@/components/TripSheetModal";
 import { generateNextInvoiceNumber } from "@/lib/invoice-utils";
 
 // --- Types & Data Models ---
+
+function WhatsAppIcon({ className = "w-3.5 h-3.5" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z" />
+    </svg>
+  );
+}
 
 export type BookingStatus =
   | "New"
@@ -253,6 +263,14 @@ export default function BookingsPage() {
   const [collectNotes, setCollectNotes] = useState<string>("");
   const [collectError, setCollectError] = useState<string | null>(null);
   const [isCollectingPayment, setIsCollectingPayment] = useState(false);
+
+  // Email Invoice Modal State
+  const [emailBooking, setEmailBooking] = useState<BookingRecord | null>(null);
+  const [emailRecipient, setEmailRecipient] = useState<string>("");
+  const [emailSubject, setEmailSubject] = useState<string>("");
+  const [emailCustomMessage, setEmailCustomMessage] = useState<string>("");
+  const [isSendingEmail, setIsSendingEmail] = useState<boolean>(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
 
   // =========================================================================
   // TAB 1: DETAILS STATE
@@ -2026,6 +2044,112 @@ export default function BookingsPage() {
     }
   };
 
+  // Helper to resolve customer / company email
+  const getCustomerEmail = (b: BookingRecord) => {
+    if ((b as any).customerEmail) return (b as any).customerEmail;
+    if ((b as any).email) return (b as any).email;
+    if ((b as any).travelerEmail) return (b as any).travelerEmail;
+
+    const company = rawCompanies.find(
+      (c) =>
+        c.id === b.customerId ||
+        c.legalName === b.customerName ||
+        c.companyName === b.customerName ||
+        c.name === b.customerName
+    );
+    if (company?.billingEmail) return company.billingEmail;
+    if (company?.officialEmail) return company.officialEmail;
+    if (company?.email) return company.email;
+    if (company?.contactEmail) return company.contactEmail;
+
+    const cust = individualCustomers.find(
+      (c) => c.id === b.customerId || c.name === b.customerName
+    );
+    if (cust?.email) return cust.email;
+
+    return "";
+  };
+
+  const handleOpenEmailModal = (b: BookingRecord) => {
+    const defaultEmail = getCustomerEmail(b);
+    setEmailBooking(b);
+    setEmailRecipient(defaultEmail);
+    setEmailSubject(
+      `Tax Invoice #${b.invoiceNumber || b.bookingNumber} | RK Travels`
+    );
+    setEmailCustomMessage(
+      `Dear ${b.customerName || "Customer"},\n\nPlease find attached the official Tax Invoice for your booking #${b.bookingNumber}. Thank you for choosing RK Travels!`
+    );
+    setEmailError(null);
+  };
+
+  const handleSendInvoiceEmail = async () => {
+    if (!emailBooking) return;
+    if (!emailRecipient || !emailRecipient.includes("@")) {
+      setEmailError("Please enter a valid recipient email address.");
+      return;
+    }
+
+    setIsSendingEmail(true);
+    setEmailError(null);
+
+    try {
+      const entity =
+        rawEntities.find(
+          (e) =>
+            e.id === emailBooking.entityId ||
+            (e.legalName && e.legalName.toLowerCase() === emailBooking.entityName?.toLowerCase())
+        ) || rawEntities[0] || null;
+
+      const comp =
+        rawCompanies.find(
+          (c) =>
+            c.id === emailBooking.customerId ||
+            c.legalName === emailBooking.customerName ||
+            c.companyName === emailBooking.customerName ||
+            c.name === emailBooking.customerName
+        ) || null;
+
+      const res = await fetch("/api/send-invoice-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          booking: emailBooking,
+          entityData: entity,
+          companyData: comp,
+          recipientEmail: emailRecipient.trim(),
+          emailSubject: emailSubject.trim(),
+          emailMessage: emailCustomMessage.trim(),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to deliver invoice email.");
+      }
+
+      setFeedback({
+        type: "success",
+        message: `Tax Invoice PDF successfully emailed to ${emailRecipient}!`,
+      });
+      setEmailBooking(null);
+      setTimeout(() => setFeedback(null), 4000);
+    } catch (err: any) {
+      console.error("Error sending invoice email:", err);
+      setEmailError(err.message || "Failed to send email. Please try again.");
+    } finally {
+      setIsSendingEmail(false);
+    }
+  };
+
+  const handleWhatsAppClick = (b: BookingRecord) => {
+    setFeedback({
+      type: "success",
+      message: `WhatsApp dispatch for Booking #${b.bookingNumber} will be configured later.`,
+    });
+    setTimeout(() => setFeedback(null), 3000);
+  };
+
   // -------------------------------------------------------------------------
   // Filtered Bookings Table
   // -------------------------------------------------------------------------
@@ -2423,29 +2547,58 @@ export default function BookingsPage() {
                         </span>
                       </td>
 
-                      {/* Actions (3 Vertical Dots Popover - floating outside table) */}
+                      {/* Actions: Mail, WhatsApp, 3-dots */}
                       <td className="py-2.5 px-3 text-right">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (activeActionMenu?.booking.id === b.id) {
-                              setActiveActionMenu(null);
-                            } else {
-                              openActionMenu(b, e.currentTarget);
-                            }
-                          }}
-                          onMouseEnter={(e) => openActionMenu(b, e.currentTarget)}
-                          onMouseLeave={closeActionMenuWithDelay}
-                          className={`w-7 h-7 inline-flex items-center justify-center rounded-[6px] transition cursor-pointer border ${
-                            activeActionMenu?.booking.id === b.id
-                              ? "bg-slate-100 text-slate-900 border-slate-300"
-                              : "text-slate-500 hover:text-slate-900 hover:bg-slate-100 border-transparent hover:border-slate-200"
-                          }`}
-                          title="Trip actions"
-                        >
-                          <MoreVertical className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          {/* 1. Send Invoice Mail Button */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenEmailModal(b);
+                            }}
+                            className="w-7 h-7 inline-flex items-center justify-center rounded-[6px] text-slate-500 hover:text-blue-600 hover:bg-blue-50 border border-slate-200 hover:border-blue-300 transition cursor-pointer"
+                            title="Send Invoice PDF via Email"
+                          >
+                            <Mail className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* 2. WhatsApp Button */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleWhatsAppClick(b);
+                            }}
+                            className="w-7 h-7 inline-flex items-center justify-center rounded-[6px] text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 border border-slate-200 hover:border-emerald-300 transition cursor-pointer"
+                            title="WhatsApp"
+                          >
+                            <WhatsAppIcon className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* 3. Three Vertical Dots Popover Button */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (activeActionMenu?.booking.id === b.id) {
+                                setActiveActionMenu(null);
+                              } else {
+                                openActionMenu(b, e.currentTarget);
+                              }
+                            }}
+                            onMouseEnter={(e) => openActionMenu(b, e.currentTarget)}
+                            onMouseLeave={closeActionMenuWithDelay}
+                            className={`w-7 h-7 inline-flex items-center justify-center rounded-[6px] transition cursor-pointer border ${
+                              activeActionMenu?.booking.id === b.id
+                                ? "bg-slate-100 text-slate-900 border-slate-300"
+                                : "text-slate-500 hover:text-slate-900 hover:bg-slate-100 border-slate-200 hover:border-slate-300"
+                            }`}
+                            title="Trip actions"
+                          >
+                            <MoreVertical className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -4640,6 +4793,148 @@ export default function BookingsPage() {
           ) || rawEntities[0] || null
         }
       />
+      {/* ===================================================================== */}
+      {/* SEND INVOICE PDF VIA EMAIL MODAL */}
+      {/* ===================================================================== */}
+      {emailBooking && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-3 animate-in fade-in-50 duration-150">
+          <div className="w-full max-w-md bg-white rounded-[8px] shadow-2xl border border-slate-200 overflow-hidden animate-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-4 py-3 bg-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-[5px] bg-[#f16623] text-white flex items-center justify-center">
+                  <Mail className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-semibold">Send Tax Invoice via Email</h3>
+                  <p className="text-[10px] text-slate-400">
+                    Booking #{emailBooking.bookingNumber} &bull; {emailBooking.customerName}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEmailBooking(null)}
+                className="w-6 h-6 flex items-center justify-center rounded text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSendInvoiceEmail();
+              }}
+              className="p-4 space-y-3"
+            >
+              {emailError && (
+                <div className="p-2.5 rounded-[6px] bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-500" />
+                  <span>{emailError}</span>
+                </div>
+              )}
+
+              {/* Recipient Email */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                  CUSTOMER / COMPANY EMAIL ADDRESS *
+                </label>
+                <input
+                  type="email"
+                  required
+                  placeholder="name@company.com"
+                  value={emailRecipient}
+                  onChange={(e) => setEmailRecipient(e.target.value)}
+                  className="w-full h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623]"
+                />
+                <span className="text-[10px] text-slate-400 block">
+                  Pre-filled from company / customer records. You can modify before sending.
+                </span>
+              </div>
+
+              {/* Subject */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                  EMAIL SUBJECT *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={emailSubject}
+                  onChange={(e) => setEmailSubject(e.target.value)}
+                  className="w-full h-[34px] px-2.5 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623]"
+                />
+              </div>
+
+              {/* Custom Note/Message */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                  NOTE / MESSAGE (OPTIONAL)
+                </label>
+                <textarea
+                  rows={2}
+                  value={emailCustomMessage}
+                  onChange={(e) => setEmailCustomMessage(e.target.value)}
+                  className="w-full p-2 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623] resize-none"
+                />
+              </div>
+
+              {/* Attachment Badge */}
+              <div className="p-2.5 rounded-[6px] bg-slate-50 border border-slate-200 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-[#f16623]" />
+                  <div className="text-xs">
+                    <span className="font-medium text-slate-800">Attached Tax Invoice:</span>
+                    <span className="text-[11px] text-slate-500 font-mono block">
+                      Invoice_{emailBooking.invoiceNumber || emailBooking.bookingNumber}.pdf
+                    </span>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-medium">
+                  PDF Generated
+                </span>
+              </div>
+
+              {/* Sender Info Notice */}
+              <div className="text-[10px] text-slate-500 bg-orange-50/60 p-2 rounded-[5px] border border-orange-100 flex items-center justify-between">
+                <span>Sender: <strong className="text-slate-800">rktravels.vja@gmail.com</strong></span>
+                <span className="text-slate-400 font-mono">Via Gmail SMTP</span>
+              </div>
+
+              {/* Modal Actions */}
+              <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEmailBooking(null)}
+                  disabled={isSendingEmail}
+                  className="h-[34px] px-3.5 rounded-[6px] border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-normal transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSendingEmail}
+                  className="h-[34px] px-4 rounded-[6px] bg-[#f16623] hover:bg-[#d95318] text-white text-xs font-medium transition flex items-center gap-1.5 cursor-pointer shadow-xs shadow-[#f16623]/25 disabled:opacity-50"
+                >
+                  {isSendingEmail ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Sending PDF Email...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Mail className="w-3.5 h-3.5" />
+                      <span>Send Invoice Email</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
