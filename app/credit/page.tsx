@@ -25,6 +25,7 @@ import {
   Calendar,
   X,
   ExternalLink,
+  Coins,
 } from "lucide-react";
 import {
   collection,
@@ -44,9 +45,14 @@ export interface PaymentHistoryItem {
   date: string;
   time: string;
   amount: number;
-  paymentMode: "Cash" | "Card" | "UPI";
+  paymentMode: "UPI" | "Cash" | "Card" | "Split" | string;
   referenceNumber?: string;
   notes?: string;
+  splits?: {
+    upi?: number;
+    cash?: number;
+    card?: number;
+  };
   recordedAt: string;
 }
 
@@ -103,9 +109,13 @@ export default function CreditPage() {
   // Collect Payment Modal state
   const [collectingBooking, setCollectingBooking] = useState<CreditBookingRecord | null>(null);
   const [collectAmount, setCollectAmount] = useState("");
-  const [collectMode, setCollectMode] = useState<"Cash" | "Card" | "UPI">("Cash");
+  const [collectMode, setCollectMode] = useState<"UPI" | "Cash" | "Card" | "Split">("UPI");
+  const [splitUpi, setSplitUpi] = useState("");
+  const [splitCash, setSplitCash] = useState("");
+  const [splitCard, setSplitCard] = useState("");
   const [collectRefNumber, setCollectRefNumber] = useState("");
   const [collectNotes, setCollectNotes] = useState("");
+  const [collectError, setCollectError] = useState<string | null>(null);
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
 
   // Payment History Drawer state
@@ -274,25 +284,46 @@ export default function CreditPage() {
         (Number(b.grossAmount) || Number(b.netAmount) || 0) -
           (Number(b.receivedAmount) || 0)
       );
-    setCollectAmount(String(balance));
-    setCollectMode("Cash");
+    setCollectAmount(String(balance > 0 ? balance : ""));
+    setCollectMode("UPI");
+    setSplitUpi("");
+    setSplitCash("");
+    setSplitCard("");
     setCollectRefNumber("");
     setCollectNotes("");
+    setCollectError(null);
   };
 
   // Submit Collect Payment
   const handleSubmitCollectPayment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!collectingBooking) return;
+    setCollectError(null);
 
-    const amountNum = Number(collectAmount);
-    if (isNaN(amountNum) || amountNum <= 0) {
-      alert("Please enter a valid payment amount greater than ₹0.");
-      return;
+    let amountNum = 0;
+    let splitsData: { upi: number; cash: number; card: number } | undefined = undefined;
+
+    if (collectMode === "Split") {
+      const u = Math.max(0, Number(splitUpi) || 0);
+      const c = Math.max(0, Number(splitCash) || 0);
+      const cd = Math.max(0, Number(splitCard) || 0);
+      amountNum = u + c + cd;
+      splitsData = { upi: u, cash: c, card: cd };
+
+      if (amountNum <= 0) {
+        setCollectError("Please enter amount for at least one payment method (UPI, Cash, or Card).");
+        return;
+      }
+    } else {
+      amountNum = Number(collectAmount);
+      if (isNaN(amountNum) || amountNum <= 0) {
+        setCollectError("Please enter a valid payment amount greater than ₹0.");
+        return;
+      }
     }
 
     if (collectMode === "UPI" && !collectRefNumber.trim()) {
-      alert("Please enter the UPI Reference Number (UTR / Ref ID).");
+      setCollectError("Please enter the UPI Reference Number (UTR / Ref ID).");
       return;
     }
 
@@ -304,9 +335,9 @@ export default function CreditPage() {
           (Number(collectingBooking.receivedAmount) || 0)
       );
 
-    if (amountNum > currentBalance) {
-      alert(
-        `Amount cannot exceed the remaining balance due of ₹${currentBalance.toLocaleString("en-IN")}.`
+    if (amountNum > currentBalance && currentBalance > 0) {
+      setCollectError(
+        `Amount (₹${amountNum.toLocaleString("en-IN")}) cannot exceed the remaining balance due of ₹${currentBalance.toLocaleString("en-IN")}.`
       );
       return;
     }
@@ -327,7 +358,8 @@ export default function CreditPage() {
       if (newBalance <= 0) newPayStatus = "Paid";
       else if (newReceived <= 0) newPayStatus = "Unpaid";
 
-      const newHistoryItem: PaymentHistoryItem = {
+      // Sanitize new history item so NO undefined fields are present (Firestore throws on undefined)
+      const cleanHistoryItem: Record<string, any> = {
         id: `pay-${Date.now()}`,
         date: now.toISOString().split("T")[0],
         time: `${String(now.getHours()).padStart(2, "0")}:${String(
@@ -335,14 +367,15 @@ export default function CreditPage() {
         ).padStart(2, "0")}`,
         amount: amountNum,
         paymentMode: collectMode,
-        referenceNumber: collectRefNumber.trim() || undefined,
-        notes: collectNotes.trim() || undefined,
         recordedAt: now.toISOString(),
       };
+      if (collectRefNumber.trim()) cleanHistoryItem.referenceNumber = collectRefNumber.trim();
+      if (collectNotes.trim()) cleanHistoryItem.notes = collectNotes.trim();
+      if (splitsData) cleanHistoryItem.splits = splitsData;
 
       const updatedHistory = [
         ...(collectingBooking.paymentHistory || []),
-        newHistoryItem,
+        cleanHistoryItem,
       ];
 
       // 1. Update booking in Firestore
@@ -354,10 +387,10 @@ export default function CreditPage() {
         updatedAt: serverTimestamp(),
       });
 
-      // 2. Add ledger record in payments collection
-      await addDoc(collection(db, "payments"), {
+      // 2. Add ledger record in payments collection (no undefined values)
+      const paymentDocPayload: Record<string, any> = {
         bookingId: collectingBooking.id,
-        bookingNumber: collectingBooking.bookingNumber,
+        bookingNumber: collectingBooking.bookingNumber || "",
         clientType: "customer",
         clientName: collectingBooking.customerName || collectingBooking.companyName || "Direct",
         clientMobile: collectingBooking.travelerMobile || "",
@@ -365,11 +398,15 @@ export default function CreditPage() {
         fromLocation: collectingBooking.fromLocation || "",
         toLocation: collectingBooking.toLocation || "",
         amountCollected: amountNum,
+        amount: amountNum,
         paymentMode: collectMode.toLowerCase(),
-        referenceNumber: collectRefNumber.trim() || null,
-        note: collectNotes.trim() || null,
         createdAt: serverTimestamp(),
-      });
+      };
+      if (collectRefNumber.trim()) paymentDocPayload.referenceNumber = collectRefNumber.trim();
+      if (collectNotes.trim()) paymentDocPayload.note = collectNotes.trim();
+      if (splitsData) paymentDocPayload.splits = splitsData;
+
+      await addDoc(collection(db, "payments"), paymentDocPayload);
 
       setFeedback({
         type: "success",
@@ -378,9 +415,9 @@ export default function CreditPage() {
 
       setCollectingBooking(null);
       setTimeout(() => setFeedback(null), 4000);
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error collecting payment in credit page:", err);
-      alert("Failed to record payment. Please try again.");
+      setCollectError(`Failed to record payment: ${err?.message || "Please try again."}`);
     } finally {
       setIsSubmittingPayment(false);
     }
@@ -957,42 +994,36 @@ export default function CreditPage() {
               </div>
             </div>
 
-            {/* Amount Input */}
-            <div className="space-y-1">
-              <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
-                AMOUNT TO COLLECT (₹) *
-              </label>
-              <input
-                type="number"
-                step="any"
-                min="1"
-                max={collectingBooking.balanceAmount || undefined}
-                value={collectAmount}
-                onChange={(e) => setCollectAmount(e.target.value)}
-                placeholder="0.00"
-                required
-                className="w-full h-[34px] max-h-[34px] px-2.5 text-sm font-mono font-medium bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623]"
-              />
-            </div>
+            {/* Error Alert Box */}
+            {collectError && (
+              <div className="p-2.5 rounded-[6px] bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{collectError}</span>
+              </div>
+            )}
 
-            {/* Payment Mode Selection: Cash, Card, UPI */}
+            {/* Payment Mode Selection: UPI, Cash, Card, Split */}
             <div className="space-y-1">
               <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
                 PAYMENT MODE *
               </label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-4 gap-1.5">
                 {[
+                  { mode: "UPI" as const, icon: QrCode },
                   { mode: "Cash" as const, icon: Banknote },
                   { mode: "Card" as const, icon: CreditCard },
-                  { mode: "UPI" as const, icon: QrCode },
+                  { mode: "Split" as const, icon: Coins },
                 ].map(({ mode, icon: Icon }) => (
                   <button
                     key={mode}
                     type="button"
-                    onClick={() => setCollectMode(mode)}
-                    className={`h-[34px] max-h-[34px] rounded-[6px] text-xs font-medium border flex items-center justify-center gap-1.5 transition ${
+                    onClick={() => {
+                      setCollectMode(mode);
+                      setCollectError(null);
+                    }}
+                    className={`h-[34px] max-h-[34px] rounded-[6px] text-xs font-medium border flex items-center justify-center gap-1.5 transition cursor-pointer ${
                       collectMode === mode
-                        ? "border-[#f16623] bg-orange-50/50 text-[#f16623]"
+                        ? "border-[#f16623] bg-orange-50/70 text-[#f16623]"
                         : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
                     }`}
                   >
@@ -1003,18 +1034,103 @@ export default function CreditPage() {
               </div>
             </div>
 
-            {/* If UPI, Reference Number is mandatory */}
-            {collectMode === "UPI" && (
+            {/* If Single Method, show Amount Input */}
+            {collectMode !== "Split" ? (
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-slate-600 uppercase tracking-wider block">
+                  AMOUNT TO COLLECT (₹) *
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  min="1"
+                  max={collectingBooking.balanceAmount || undefined}
+                  value={collectAmount}
+                  onChange={(e) => setCollectAmount(e.target.value)}
+                  placeholder="0.00"
+                  required
+                  className="w-full h-[34px] max-h-[34px] px-2.5 text-sm font-mono font-medium bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623]"
+                />
+              </div>
+            ) : (
+              /* If Split Method, ask for in which method how much amount is received */
+              <div className="p-3 bg-orange-50/40 rounded-[6px] border border-orange-200/80 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-semibold text-slate-800">
+                    Split Breakdown per Payment Method:
+                  </span>
+                  <span className="text-[11px] font-mono font-bold text-[#f16623]">
+                    Total: ₹{(Number(splitUpi || 0) + Number(splitCash || 0) + Number(splitCard || 0)).toLocaleString("en-IN")}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  {/* UPI Input */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-medium text-slate-700 flex items-center gap-1">
+                      <QrCode className="w-3 h-3 text-purple-600" />
+                      UPI Amount (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="0.00"
+                      value={splitUpi}
+                      onChange={(e) => setSplitUpi(e.target.value)}
+                      className="w-full h-[32px] px-2 text-xs font-mono font-medium bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623]"
+                    />
+                  </div>
+
+                  {/* Cash Input */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-medium text-slate-700 flex items-center gap-1">
+                      <Banknote className="w-3 h-3 text-emerald-600" />
+                      Cash Amount (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="0.00"
+                      value={splitCash}
+                      onChange={(e) => setSplitCash(e.target.value)}
+                      className="w-full h-[32px] px-2 text-xs font-mono font-medium bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623]"
+                    />
+                  </div>
+
+                  {/* Card Input */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-medium text-slate-700 flex items-center gap-1">
+                      <CreditCard className="w-3 h-3 text-blue-600" />
+                      Card Amount (₹)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="0.00"
+                      value={splitCard}
+                      onChange={(e) => setSplitCard(e.target.value)}
+                      className="w-full h-[32px] px-2 text-xs font-mono font-medium bg-white border border-slate-200 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623]"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* If UPI (or Split with UPI > 0), Reference Number */}
+            {(collectMode === "UPI" || (collectMode === "Split" && Number(splitUpi) > 0)) && (
               <div className="space-y-1">
                 <label className="text-[10px] font-medium text-[#f16623] uppercase tracking-wider block">
-                  UPI REFERENCE NUMBER / UTR *
+                  UPI REFERENCE NUMBER / UTR {collectMode === "UPI" ? "*" : "(Optional)"}
                 </label>
                 <input
                   type="text"
                   value={collectRefNumber}
                   onChange={(e) => setCollectRefNumber(e.target.value)}
                   placeholder="e.g. UPI/409218291039"
-                  required
+                  required={collectMode === "UPI"}
                   className="w-full h-[34px] max-h-[34px] px-2.5 text-xs bg-white border border-[#f16623]/60 rounded-[6px] text-slate-900 focus:outline-none focus:border-[#f16623]"
                 />
               </div>
@@ -1156,12 +1272,25 @@ export default function CreditPage() {
                           {item.paymentMode === "UPI" && (
                             <QrCode className="w-3.5 h-3.5 text-purple-600" />
                           )}
+                          {item.paymentMode === "Split" && (
+                            <Coins className="w-3.5 h-3.5 text-[#f16623]" />
+                          )}
                           <span>{item.paymentMode}</span>
                         </div>
                         <span className="font-mono font-medium text-emerald-600">
                           +₹{(Number(item.amount) || 0).toLocaleString("en-IN")}
                         </span>
                       </div>
+
+                      {item.splits && (
+                        <div className="text-[10px] text-slate-600 font-mono bg-orange-50/50 px-2 py-1 rounded-[4px] border border-orange-100 flex items-center gap-2">
+                          <span>UPI: ₹{Number(item.splits.upi || 0).toLocaleString("en-IN")}</span>
+                          <span>•</span>
+                          <span>Cash: ₹{Number(item.splits.cash || 0).toLocaleString("en-IN")}</span>
+                          <span>•</span>
+                          <span>Card: ₹{Number(item.splits.card || 0).toLocaleString("en-IN")}</span>
+                        </div>
+                      )}
 
                       <div className="text-[10px] text-slate-400 flex items-center justify-between">
                         <span>

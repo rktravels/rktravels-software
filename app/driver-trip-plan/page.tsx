@@ -102,9 +102,9 @@ export default function DriverTripPlanPage() {
   const [completingBooking, setCompletingBooking] = useState<BookingRecord | null>(null);
   const [hasPaymentReceived, setHasPaymentReceived] = useState<boolean>(true);
   const [receivedAmountInput, setReceivedAmountInput] = useState<string>("");
-  const [receivedMode, setReceivedMode] = useState<"cash" | "upi" | "card" | "split">("cash");
-  const [splitCash, setSplitCash] = useState<string>("");
+  const [receivedMode, setReceivedMode] = useState<"upi" | "cash" | "card" | "split">("upi");
   const [splitUpi, setSplitUpi] = useState<string>("");
+  const [splitCash, setSplitCash] = useState<string>("");
   const [splitCard, setSplitCard] = useState<string>("");
   const [isSubmittingCompletion, setIsSubmittingCompletion] = useState(false);
 
@@ -257,9 +257,9 @@ export default function DriverTripPlanPage() {
       setHasPaymentReceived(false);
       setReceivedAmountInput("0");
     }
-    setReceivedMode("cash");
-    setSplitCash("");
+    setReceivedMode("upi");
     setSplitUpi("");
+    setSplitCash("");
     setSplitCard("");
   };
 
@@ -821,19 +821,6 @@ export default function DriverTripPlanPage() {
                   <div className="grid grid-cols-4 gap-1">
                     <button
                       type="button"
-                      onClick={() => setReceivedMode("cash")}
-                      className={`h-[32px] rounded-[6px] border text-[11px] font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
-                        receivedMode === "cash"
-                          ? "bg-emerald-50 border-emerald-500 text-emerald-700 shadow-xs"
-                          : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
-                      }`}
-                    >
-                      <Banknote className="w-3 h-3" />
-                      <span>Cash</span>
-                    </button>
-
-                    <button
-                      type="button"
                       onClick={() => setReceivedMode("upi")}
                       className={`h-[32px] rounded-[6px] border text-[11px] font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
                         receivedMode === "upi"
@@ -843,6 +830,19 @@ export default function DriverTripPlanPage() {
                     >
                       <QrCode className="w-3 h-3" />
                       <span>UPI</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setReceivedMode("cash")}
+                      className={`h-[32px] rounded-[6px] border text-[11px] font-medium flex items-center justify-center gap-1 transition cursor-pointer ${
+                        receivedMode === "cash"
+                          ? "bg-emerald-50 border-emerald-500 text-emerald-700 shadow-xs"
+                          : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      <Banknote className="w-3 h-3" />
+                      <span>Cash</span>
                     </button>
 
                     <button
@@ -878,21 +878,6 @@ export default function DriverTripPlanPage() {
                   <div className="pt-1 grid grid-cols-1 sm:grid-cols-3 gap-1.5">
                     <div className="space-y-0.5">
                       <label className="text-[9px] font-medium text-slate-600 flex items-center gap-1">
-                        <Banknote className="w-2.5 h-2.5 text-emerald-600" />
-                        Cash (₹)
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        placeholder="0"
-                        value={splitCash}
-                        onChange={(e) => setSplitCash(e.target.value)}
-                        className="w-full h-[30px] px-2 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800"
-                      />
-                    </div>
-
-                    <div className="space-y-0.5">
-                      <label className="text-[9px] font-medium text-slate-600 flex items-center gap-1">
                         <QrCode className="w-2.5 h-2.5 text-blue-600" />
                         UPI (₹)
                       </label>
@@ -902,6 +887,21 @@ export default function DriverTripPlanPage() {
                         placeholder="0"
                         value={splitUpi}
                         onChange={(e) => setSplitUpi(e.target.value)}
+                        className="w-full h-[30px] px-2 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800"
+                      />
+                    </div>
+
+                    <div className="space-y-0.5">
+                      <label className="text-[9px] font-medium text-slate-600 flex items-center gap-1">
+                        <Banknote className="w-2.5 h-2.5 text-emerald-600" />
+                        Cash (₹)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="0"
+                        value={splitCash}
+                        onChange={(e) => setSplitCash(e.target.value)}
                         className="w-full h-[30px] px-2 text-xs bg-white border border-slate-200 rounded-[6px] text-slate-800"
                       />
                     </div>

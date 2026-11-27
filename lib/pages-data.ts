@@ -80,22 +80,6 @@ export const NAV_ITEMS: PageModuleInfo[] = [
     ],
   },
   {
-    id: "payments",
-    name: "Payments",
-    href: "/payments",
-    category: "FINANCIALS",
-    icon: CreditCard,
-    description:
-      "Omnichannel payment reconciliation console tracking cash collections, UPI payouts, card swipes, and bank deposits.",
-    primaryAction: "Record Payment",
-    secondaryAction: "Settlement Reports",
-    plannedFeatures: [
-      "Automated UPI QR generation & instant webhook payment verification",
-      "Driver trip cash handover ledger & branch day-close auditing",
-      "Payment gateway reconciliation & refund processing matrix",
-    ],
-  },
-  {
     id: "credit",
     name: "Credit",
     href: "/credit",
