@@ -144,6 +144,15 @@ export default function PaymentsPage() {
     let cashAmount = 0;
     let cardAmount = 0;
 
+    let upiDirectAmount = 0;
+    let cashDirectAmount = 0;
+    let cardDirectAmount = 0;
+
+    let splitTotalAmount = 0;
+    let splitUpiAmount = 0;
+    let splitCashAmount = 0;
+    let splitCardAmount = 0;
+
     let upiCount = 0;
     let cashCount = 0;
     let cardCount = 0;
@@ -156,24 +165,35 @@ export default function PaymentsPage() {
 
       if (mode === "split" && p.splits) {
         splitCount++;
+        splitTotalAmount += amt;
         const u = Number(p.splits.upi || 0);
         const c = Number(p.splits.cash || 0);
         const cd = Number(p.splits.card || 0);
+
+        splitUpiAmount += u;
+        splitCashAmount += c;
+        splitCardAmount += cd;
+
+        // Add to respective method totals so all collections in that method are reflected
         upiAmount += u;
         cashAmount += c;
         cardAmount += cd;
+
         if (u > 0) upiCount++;
         if (c > 0) cashCount++;
         if (cd > 0) cardCount++;
       } else if (mode === "upi") {
         upiAmount += amt;
+        upiDirectAmount += amt;
         upiCount++;
       } else if (mode === "card") {
         cardAmount += amt;
+        cardDirectAmount += amt;
         cardCount++;
       } else {
         // default to Cash (including "cash", "advance", etc.)
         cashAmount += amt;
+        cashDirectAmount += amt;
         cashCount++;
       }
     });
@@ -181,6 +201,7 @@ export default function PaymentsPage() {
     const upiShare = totalReceived > 0 ? Math.round((upiAmount / totalReceived) * 100) : 0;
     const cashShare = totalReceived > 0 ? Math.round((cashAmount / totalReceived) * 100) : 0;
     const cardShare = totalReceived > 0 ? Math.round((cardAmount / totalReceived) * 100) : 0;
+    const splitShare = totalReceived > 0 ? Math.round((splitTotalAmount / totalReceived) * 100) : 0;
 
     return {
       totalReceived,
@@ -188,6 +209,13 @@ export default function PaymentsPage() {
       upiAmount,
       cashAmount,
       cardAmount,
+      upiDirectAmount,
+      cashDirectAmount,
+      cardDirectAmount,
+      splitTotalAmount,
+      splitUpiAmount,
+      splitCashAmount,
+      splitCardAmount,
       upiCount,
       cashCount,
       cardCount,
@@ -195,6 +223,7 @@ export default function PaymentsPage() {
       upiShare,
       cashShare,
       cardShare,
+      splitShare,
       averageTicket: datePayments.length > 0 ? Math.round(totalReceived / datePayments.length) : 0,
     };
   }, [datePayments]);
@@ -410,7 +439,7 @@ export default function PaymentsPage() {
       </div>
 
       {/* 3. Analytics KPI Metrics Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
         {/* Metric 1: Total Received */}
         <div className="bg-white border border-slate-200 rounded-[6px] p-3.5 shadow-2xs hover:border-[#f16623]/40 transition">
           <div className="flex items-center justify-between">
@@ -428,7 +457,7 @@ export default function PaymentsPage() {
           </div>
           <div className="mt-2 text-[10px] text-slate-500 flex items-center gap-1.5">
             <span className="font-semibold text-slate-700">{analytics.totalCount}</span>
-            <span>settlements recorded</span>
+            <span>settlements</span>
             <span>•</span>
             <span>Avg ₹{analytics.averageTicket.toLocaleString("en-IN")}</span>
           </div>
@@ -449,11 +478,14 @@ export default function PaymentsPage() {
               ₹{analytics.upiAmount.toLocaleString("en-IN")}
             </span>
             <span className="text-[10px] font-semibold text-purple-600">
-              {analytics.upiShare}% share
+              {analytics.upiShare}%
             </span>
           </div>
-          <div className="mt-2 text-[10px] text-slate-400 flex items-center gap-1">
-            <span>{analytics.upiCount} UPI transactions</span>
+          <div className="mt-2 text-[10px] text-slate-500 flex items-center gap-1">
+            <span>{analytics.upiCount} txns</span>
+            {analytics.splitUpiAmount > 0 && (
+              <span className="text-purple-600 font-mono">(incl. ₹{analytics.splitUpiAmount.toLocaleString("en-IN")} split)</span>
+            )}
           </div>
         </div>
 
@@ -472,11 +504,14 @@ export default function PaymentsPage() {
               ₹{analytics.cashAmount.toLocaleString("en-IN")}
             </span>
             <span className="text-[10px] font-semibold text-emerald-600">
-              {analytics.cashShare}% share
+              {analytics.cashShare}%
             </span>
           </div>
-          <div className="mt-2 text-[10px] text-slate-400 flex items-center gap-1">
-            <span>{analytics.cashCount} Cash transactions</span>
+          <div className="mt-2 text-[10px] text-slate-500 flex items-center gap-1">
+            <span>{analytics.cashCount} txns</span>
+            {analytics.splitCashAmount > 0 && (
+              <span className="text-emerald-600 font-mono">(incl. ₹{analytics.splitCashAmount.toLocaleString("en-IN")} split)</span>
+            )}
           </div>
         </div>
 
@@ -495,11 +530,44 @@ export default function PaymentsPage() {
               ₹{analytics.cardAmount.toLocaleString("en-IN")}
             </span>
             <span className="text-[10px] font-semibold text-blue-600">
-              {analytics.cardShare}% share
+              {analytics.cardShare}%
             </span>
           </div>
-          <div className="mt-2 text-[10px] text-slate-400 flex items-center gap-1">
-            <span>{analytics.cardCount} Card transactions</span>
+          <div className="mt-2 text-[10px] text-slate-500 flex items-center gap-1">
+            <span>{analytics.cardCount} txns</span>
+            {analytics.splitCardAmount > 0 && (
+              <span className="text-blue-600 font-mono">(incl. ₹{analytics.splitCardAmount.toLocaleString("en-IN")} split)</span>
+            )}
+          </div>
+        </div>
+
+        {/* Metric 5: Split Payment Collections */}
+        <div className="bg-white border border-slate-200 rounded-[6px] p-3.5 shadow-2xs hover:border-orange-300 transition">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider">
+              Split Payment
+            </span>
+            <span className="w-7 h-7 rounded-[5px] bg-orange-50 text-[#f16623] flex items-center justify-center">
+              <Coins className="w-4 h-4" />
+            </span>
+          </div>
+          <div className="mt-2 flex items-baseline gap-2">
+            <span className="text-2xl font-bold font-mono text-[#f16623]">
+              ₹{analytics.splitTotalAmount.toLocaleString("en-IN")}
+            </span>
+            <span className="text-[10px] font-semibold text-orange-600">
+              {analytics.splitShare}%
+            </span>
+          </div>
+          <div className="mt-2 text-[10px] text-slate-500 flex items-center gap-1">
+            <span className="font-semibold text-slate-700">{analytics.splitCount} split</span>
+            {analytics.splitTotalAmount > 0 ? (
+              <span className="text-slate-400 font-mono truncate">
+                (U: ₹{analytics.splitUpiAmount} • C: ₹{analytics.splitCashAmount})
+              </span>
+            ) : (
+              <span className="text-slate-400">payments</span>
+            )}
           </div>
         </div>
       </div>
@@ -557,6 +625,15 @@ export default function PaymentsPage() {
                 ₹{analytics.cardAmount.toLocaleString("en-IN")} ({analytics.cardShare}%)
               </span>
             </div>
+            {analytics.splitTotalAmount > 0 && (
+              <div className="flex items-center gap-1.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-orange-500" />
+                <span className="text-slate-600">Split Payment:</span>
+                <span className="font-mono font-semibold text-[#f16623]">
+                  ₹{analytics.splitTotalAmount.toLocaleString("en-IN")} ({analytics.splitShare}%)
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -572,7 +649,7 @@ export default function PaymentsPage() {
                 { id: "upi", label: "UPI", count: analytics.upiCount },
                 { id: "cash", label: "Cash", count: analytics.cashCount },
                 { id: "card", label: "Card", count: analytics.cardCount },
-                { id: "split", label: "Split", count: analytics.splitCount },
+                { id: "split", label: "Split Payment", count: analytics.splitCount },
               ] as const
             ).map((tab) => (
               <button
@@ -707,25 +784,28 @@ export default function PaymentsPage() {
                             {mode === "CASH" && <Banknote className="w-2.5 h-2.5" />}
                             {mode === "CARD" && <CreditCard className="w-2.5 h-2.5" />}
                             {mode === "SPLIT" && <Coins className="w-2.5 h-2.5" />}
-                            <span>{mode}</span>
+                            <span>{mode === "SPLIT" ? "Split Payment" : mode}</span>
                           </span>
 
                           {/* Split Breakdown */}
                           {mode === "SPLIT" && p.splits && (
                             <div className="flex flex-wrap items-center gap-1 text-[10px] font-mono mt-0.5">
                               {Number(p.splits.upi) > 0 && (
-                                <span className="px-1 py-0.2 rounded bg-purple-50 text-purple-700 border border-purple-100">
-                                  UPI: ₹{Number(p.splits.upi).toLocaleString("en-IN")}
+                                <span className="px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-100 flex items-center gap-0.5">
+                                  <QrCode className="w-2.5 h-2.5 text-purple-600" />
+                                  <span>UPI: ₹{Number(p.splits.upi).toLocaleString("en-IN")}</span>
                                 </span>
                               )}
                               {Number(p.splits.cash) > 0 && (
-                                <span className="px-1 py-0.2 rounded bg-emerald-50 text-emerald-700 border border-emerald-100">
-                                  Cash: ₹{Number(p.splits.cash).toLocaleString("en-IN")}
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-100 flex items-center gap-0.5">
+                                  <Banknote className="w-2.5 h-2.5 text-emerald-600" />
+                                  <span>Cash: ₹{Number(p.splits.cash).toLocaleString("en-IN")}</span>
                                 </span>
                               )}
                               {Number(p.splits.card) > 0 && (
-                                <span className="px-1 py-0.2 rounded bg-blue-50 text-blue-700 border border-blue-100">
-                                  Card: ₹{Number(p.splits.card).toLocaleString("en-IN")}
+                                <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 flex items-center gap-0.5">
+                                  <CreditCard className="w-2.5 h-2.5 text-blue-600" />
+                                  <span>Card: ₹{Number(p.splits.card).toLocaleString("en-IN")}</span>
                                 </span>
                               )}
                             </div>

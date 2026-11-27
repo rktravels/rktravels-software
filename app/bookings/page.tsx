@@ -4176,24 +4176,25 @@ export default function BookingsPage() {
                                 : "bg-slate-100 text-slate-700 border-slate-200"
                             }`}
                           >
-                            {item.paymentMode}
+                            {item.paymentMode === "Split" ? "Split Payment" : item.paymentMode}
                           </span>
                           <span>{item.date} {item.time ? `@ ${item.time}` : ""}</span>
                         </div>
                         {item.paymentMode === "Split" && item.splits && (
-                          <div className="flex flex-wrap items-center gap-1 mt-1 text-[10px] font-mono">
+                          <div className="flex flex-wrap items-center gap-1.5 mt-1 text-[10px] font-mono">
+                            <span className="font-semibold text-slate-700 font-sans">Split Breakdown:</span>
                             {Number(item.splits.upi) > 0 && (
-                              <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded border border-blue-100">
+                              <span className="px-1.5 py-0.5 bg-purple-50 text-purple-700 rounded border border-purple-100 flex items-center gap-0.5">
                                 UPI: ₹{Number(item.splits.upi).toLocaleString("en-IN")}
                               </span>
                             )}
                             {Number(item.splits.cash) > 0 && (
-                              <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded border border-emerald-100">
+                              <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-700 rounded border border-emerald-100 flex items-center gap-0.5">
                                 Cash: ₹{Number(item.splits.cash).toLocaleString("en-IN")}
                               </span>
                             )}
                             {Number(item.splits.card) > 0 && (
-                              <span className="px-1.5 py-0.5 bg-purple-50 text-purple-700 rounded border border-purple-100">
+                              <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded border border-blue-100 flex items-center gap-0.5">
                                 Card: ₹{Number(item.splits.card).toLocaleString("en-IN")}
                               </span>
                             )}
@@ -4385,7 +4386,7 @@ export default function BookingsPage() {
                     {m === "Cash" && <Banknote className="w-3.5 h-3.5" />}
                     {m === "Card" && <CreditCard className="w-3.5 h-3.5" />}
                     {m === "Split" && <Coins className="w-3.5 h-3.5" />}
-                    <span>{m}</span>
+                    <span>{m === "Split" ? "Split Payment" : m}</span>
                   </button>
                 ))}
               </div>
@@ -4410,11 +4411,11 @@ export default function BookingsPage() {
               /* If Split: Ask in which method how much amount is received */
               <div className="p-3 bg-orange-50/50 border border-[#f16623]/25 rounded-[6px] space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-medium text-slate-800 flex items-center gap-1">
+                  <span className="text-[11px] font-semibold text-slate-800 flex items-center gap-1.5">
                     <Coins className="w-3.5 h-3.5 text-[#f16623]" />
-                    Split Amount Breakdown
+                    Split Payment Breakdown (Amounts in Each Method):
                   </span>
-                  <span className="text-[10px] font-mono text-slate-500">
+                  <span className="text-[10px] font-mono text-slate-500 font-bold">
                     Total: ₹{((Number(splitUpi) || 0) + (Number(splitCash) || 0) + (Number(splitCard) || 0)).toLocaleString("en-IN")}
                   </span>
                 </div>

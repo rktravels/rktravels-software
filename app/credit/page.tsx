@@ -1034,7 +1034,7 @@ export default function CreditPage() {
                     }`}
                   >
                     <Icon className="w-3.5 h-3.5" />
-                    <span>{mode}</span>
+                    <span>{mode === "Split" ? "Split Payment" : mode}</span>
                   </button>
                 ))}
               </div>
@@ -1074,8 +1074,9 @@ export default function CreditPage() {
               /* If Split Method, ask for in which method how much amount is received */
               <div className="p-3 bg-orange-50/40 rounded-[6px] border border-orange-200/80 space-y-2.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-semibold text-slate-800">
-                    Split Breakdown per Payment Method:
+                  <span className="text-[11px] font-semibold text-slate-800 flex items-center gap-1.5">
+                    <Coins className="w-3.5 h-3.5 text-[#f16623]" />
+                    Split Payment Breakdown (Amounts in Each Method):
                   </span>
                   <span className="text-[11px] font-mono font-bold text-[#f16623]">
                     Total: ₹{(Number(splitUpi || 0) + Number(splitCash || 0) + Number(splitCard || 0)).toLocaleString("en-IN")}
@@ -1293,7 +1294,7 @@ export default function CreditPage() {
                           {item.paymentMode === "Split" && (
                             <Coins className="w-3.5 h-3.5 text-[#f16623]" />
                           )}
-                          <span>{item.paymentMode}</span>
+                          <span>{item.paymentMode === "Split" ? "Split Payment" : item.paymentMode}</span>
                         </div>
                         <span className="font-mono font-medium text-emerald-600">
                           +₹{(Number(item.amount) || 0).toLocaleString("en-IN")}
@@ -1301,12 +1302,13 @@ export default function CreditPage() {
                       </div>
 
                       {item.splits && (
-                        <div className="text-[10px] text-slate-600 font-mono bg-orange-50/50 px-2 py-1 rounded-[4px] border border-orange-100 flex items-center gap-2">
-                          <span>UPI: ₹{Number(item.splits.upi || 0).toLocaleString("en-IN")}</span>
+                        <div className="text-[10px] text-slate-700 font-mono bg-orange-50/60 px-2 py-1.5 rounded-[5px] border border-orange-200 flex flex-wrap items-center gap-2">
+                          <span className="font-semibold text-slate-800 font-sans">Split Breakdown:</span>
+                          <span className="text-purple-700">UPI: ₹{Number(item.splits.upi || 0).toLocaleString("en-IN")}</span>
                           <span>•</span>
-                          <span>Cash: ₹{Number(item.splits.cash || 0).toLocaleString("en-IN")}</span>
+                          <span className="text-emerald-700">Cash: ₹{Number(item.splits.cash || 0).toLocaleString("en-IN")}</span>
                           <span>•</span>
-                          <span>Card: ₹{Number(item.splits.card || 0).toLocaleString("en-IN")}</span>
+                          <span className="text-blue-700">Card: ₹{Number(item.splits.card || 0).toLocaleString("en-IN")}</span>
                         </div>
                       )}
 
